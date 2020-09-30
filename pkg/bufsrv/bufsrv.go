@@ -1,6 +1,7 @@
 package bufsrv
 
 import (
+	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -248,7 +249,7 @@ func (s *Server) DoPush(pushCtx string, pushRecvId string, payload interface{}) 
 		return nil, fmt.Errorf("No server session registered for pushctx[%s]", pushCtx)
 	}
 	pp := PushType{PushCtx: pushCtx, PushRecvId: pushRecvId, PushPayload: payload}
-	barr, err := json.Marshal(pp)
+	barr, err := marshalJsonNoEnc(pp)
 	if err != nil {
 		return nil, fmt.Errorf("Error marshaling push payload: %v", err)
 	}
@@ -294,7 +295,7 @@ func readPacket(conn net.Conn, rtn interface{}) (*PacketHeader, error) {
 }
 
 func (ss *ServerSession) writeRespPacket(conn net.Conn, h PacketHeader, resp ResponseType) error {
-	barr, err := json.Marshal(resp)
+	barr, err := marshalJsonNoEnc(resp)
 	if err != nil {
 		barr, err = json.Marshal(ResponseType{Response: nil, Error: fmt.Sprintf("Error marshaling response: %v", err)})
 		if err != nil {
@@ -531,12 +532,23 @@ func (c *Client) Close() {
 	c.Closed = true
 }
 
+func marshalJsonNoEnc(val interface{}) ([]byte, error) {
+	var jsonBuf bytes.Buffer
+	enc := json.NewEncoder(&jsonBuf)
+	enc.SetEscapeHTML(false)
+	err := enc.Encode(val)
+	if err != nil {
+		return nil, err
+	}
+	return jsonBuf.Bytes(), nil
+}
+
 func (c *Client) writePacket(module string, dir string, val interface{}) (string, error) {
 	if c.Closed {
 		return "", fmt.Errorf("Client closed, cannot request")
 	}
 	idnum := atomic.AddInt64(&c.IdNum, 1)
-	barr, err := json.Marshal(val)
+	barr, err := marshalJsonNoEnc(val)
 	if err != nil {
 		return "", err
 	}
