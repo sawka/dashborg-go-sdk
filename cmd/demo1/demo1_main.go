@@ -48,16 +48,16 @@ func DefinePanelHW() {
 
 func DefinePanel() {
 	panel := dash.DefinePanel("demo1")
-	panel.Print("<div>[@padding=10px @col @height=100%]")
-	panel.Print("[@h1] Demo Dashboard")
+	panel.Print("<div>[rootdiv]")
+	panel.Print("[h1] Demo Dashboard")
 	panel.Print("<div>[@margintop=10px @marginbottom=10px]")
-	panel.Print("  <button>[@name=b-1 @primary] Run Process #1")
-	panel.Print("  <button>[@name=b-stop @marginleft=15px] Stop")
+	panel.Print("  <button b-1/>[primary] Run Process #1")
+	panel.Print("  <button b-stop/>[@marginleft=15px] Stop")
 	panel.Print("</div>")
-	panel.Print("<log>[@logstyle @name=demo-logger @grow]")
+	panel.Print("<log demo-logger/>[dark @grow]")
 	panel.Print("</div>")
 	panel.Flush()
-	panel.DoneElem().Dump("")
+	panel.DoneElem().Dump()
 }
 
 func main() {

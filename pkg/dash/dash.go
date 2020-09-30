@@ -23,6 +23,7 @@ type ControlTypeMeta struct {
 	HasData         bool
 	HasRowData      bool
 	HasEph          bool
+	HasSubControls  bool
 	SubElemType     string
 	AllowedSubTypes map[string]bool
 }
@@ -43,7 +44,7 @@ func init() {
 	CMeta["dyntext"] = makeCTM("inline embed control hasdata sub-T")
 	CMeta["dynelem"] = makeCTM("embed control hasdata sub-1")
 	CMeta["image"] = makeCTM("inline embed")
-	CMeta["log"] = makeCTM("rowdata sub-*")
+	CMeta["log"] = makeCTM("rowdata control subctl")
 	CMeta["button"] = makeCTM("inline embed control sub-1")
 	CMeta["context"] = makeCTM("control sub-* eph")
 	CMeta["progress"] = makeCTM("inline embed control hasdata")
@@ -51,7 +52,7 @@ func init() {
 	CMeta["counter"] = makeCTM("inline embed control hasdata")
 	CMeta["input"] = makeCTM("inline embed")
 	CMeta["inputselect"] = makeCTM("inline embed control rowdata")
-	CMeta["table"] = makeCTM("embed control rowdata sub-*")
+	CMeta["table"] = makeCTM("embed control rowdata subctl sub-*")
 	CMeta["datatable"] = makeCTM("embed control rowdata sub-*")
 	CMeta["th"] = makeCTM("sub-*")
 	CMeta["tdformat"] = makeCTM("sub-*")
@@ -70,6 +71,7 @@ func makeCTM(text string) *ControlTypeMeta {
 	rtn.HasData = strings.Contains(text, "hasdata")
 	rtn.HasRowData = strings.Contains(text, "rowdata")
 	rtn.HasEph = strings.Contains(text, "eph")
+	rtn.HasSubControls = strings.Contains(text, "subctl")
 	if strings.Contains(text, "sub-T") {
 		rtn.SubElemType = "T"
 	}
@@ -115,11 +117,11 @@ type Elem struct {
 	List        []*Elem           `json:"list,omitempty"`
 }
 
-func (e *Elem) attrsStr() string {
+// returns true if there was output, false if none
+func (e *Elem) writeAttrsStr(buf *bytes.Buffer) bool {
 	if len(e.ClassNames) == 0 && len(e.Attrs) == 0 {
-		return ""
+		return false
 	}
-	var buf bytes.Buffer
 	buf.WriteByte('[')
 	for idx, cn := range e.ClassNames {
 		if idx != 0 {
@@ -148,69 +150,89 @@ func (e *Elem) attrsStr() string {
 		attrIdx++
 	}
 	buf.WriteByte(']')
-	return buf.String()
+	return true
 }
 
-func (e *Elem) Dump(indent string) {
+func (e *Elem) writeTextElem(buf *bytes.Buffer) {
+	wroteAttrs := e.writeAttrsStr(buf)
+	if wroteAttrs {
+		buf.WriteByte(' ')
+	}
+	buf.WriteString(e.Text)
+	return
+}
+
+func (e *Elem) elemTextEx(indent string, et []string) []string {
+	var buf bytes.Buffer
 	meta := CMeta[e.ElemType]
 	if meta == nil {
-		fmt.Printf("ERROR - bad ElemType:%s\n", e.ElemType)
-		return
+		panic(fmt.Sprintf("dashborg.ElemText() bad ElemType:%s\n", e.ElemType))
 	}
+	buf.WriteString(indent)
 	if e.ElemType == "text" {
-		attrsStr := e.attrsStr()
-		optSpace := ""
-		if attrsStr != "" {
-			optSpace = " "
-		}
-		fmt.Printf("%s%s%s%s\n", indent, attrsStr, optSpace, e.Text)
-		return
+		e.writeTextElem(&buf)
+		et = append(et, buf.String())
+		return et
 	}
 	hasSubElems := e.SubElem != nil || len(e.List) > 0
 	textSubElem := e.SubElem != nil && e.SubElem.ElemType == "text"
 	isSelfClose := textSubElem || !hasSubElems
-	selfCloseStr := ""
-	if isSelfClose {
-		selfCloseStr = "/"
-	}
-	fmt.Printf("%s<%s", indent, e.ElemType)
+
+	buf.WriteByte('<')
+	buf.WriteString(e.ElemType)
 	if e.ElemSubType != "" {
-		fmt.Printf(":%s", e.ElemSubType)
+		buf.WriteByte(':')
+		buf.WriteString(e.ElemSubType)
 	}
 	if e.ControlLoc != "" {
-		// should be controlid
 		cloc, err := dashutil.ParseControlLocator(e.ControlLoc)
 		if err == nil {
-			fmt.Printf(" *%s", cloc.ControlId)
+			buf.WriteString(" *")
+			buf.WriteString(cloc.ControlId)
 		}
 	} else if e.ControlName != "" {
-		fmt.Printf(" \"%s\"", e.ControlName)
+		buf.WriteString(" \"")
+		buf.WriteString(e.ControlName)
+		buf.WriteString("\"")
 	}
-	attrsStr := e.attrsStr()
-	fmt.Printf("%s>%s", selfCloseStr, attrsStr)
+	if isSelfClose {
+		buf.WriteByte('/')
+	}
+	buf.WriteByte('>')
+	wroteAttrs := e.writeAttrsStr(&buf)
 	if e.Text != "" {
-		if attrsStr != "" {
-			fmt.Printf(" ")
+		if wroteAttrs {
+			buf.WriteByte(' ')
 		}
-		fmt.Printf("%s\n", e.Text)
-		return
+		buf.WriteString(e.Text)
+		et = append(et, buf.String())
+		return et
 	}
 	if textSubElem {
-		if attrsStr != "" {
-			fmt.Printf(" ")
+		if wroteAttrs {
+			buf.WriteByte(' ')
 		}
-		e.SubElem.Dump("")
-		return
+		e.SubElem.writeTextElem(&buf)
+		et = append(et, buf.String())
+		return et
 	}
 	if hasSubElems {
-		fmt.Printf("\n")
+		et = append(et, buf.String())
+		newIndent := indent + "  "
 		for _, se := range e.List {
-			se.Dump(indent + "  ")
+			et = se.elemTextEx(newIndent, et)
 		}
-		fmt.Printf("%s</%s>\n", indent, e.ElemType)
-		return
+		closeTag := fmt.Sprintf("%s</%s>", indent, e.ElemType)
+		et = append(et, closeTag)
+		return et
 	}
-	fmt.Printf("\n")
+	et = append(et, buf.String())
+	return et
+}
+
+func (e *Elem) Dump() {
+	elemText := e.elemTextEx("", nil)
+	fmt.Printf("%s\n", strings.Join(elemText, "\n"))
 }
 
 // Elem
@@ -226,7 +248,7 @@ type IPanelRequest interface {
 }
 
 type IContextWriter interface {
-	IElemBuilder
+	// IElemBuilder
 	Flush()
 	Revert()
 }

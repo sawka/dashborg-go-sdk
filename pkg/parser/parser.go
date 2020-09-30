@@ -299,7 +299,7 @@ func (ctx *ParseContext) attr() (string, string, bool) {
 		return "", "", false
 	}
 	ch := ctx.peek()
-	if unicode.IsSpace(ch) {
+	if unicode.IsSpace(ch) || ch == ']' {
 		return attrName, "1", true
 	}
 	if ch != '=' {
@@ -323,22 +323,42 @@ func (ctx *ParseContext) attr() (string, string, bool) {
 	return attrName, attrVal, true
 }
 
-func (ctx *ParseContext) attrs() (map[string]string, bool) {
+// returns (classnames, attrs, ok)
+func (ctx *ParseContext) attrs() ([]string, map[string]string, bool) {
 	if !ctx.match('[') {
 		ctx.addErr("bad attribute, no opening '['")
-		return nil, false
+		return nil, nil, false
 	}
+	var cns []string
 	rtn := make(map[string]string)
 	// classnames
 	if ctx.isSimpleAlpha() {
-
+		for {
+			cn := ctx.varname()
+			if cn == "" {
+				return nil, nil, false
+			}
+			cns = append(cns, cn)
+			if ctx.iseof() {
+				ctx.addErr("unterminated attributes block")
+				return nil, nil, false
+			}
+			ch := ctx.peek()
+			if ch == ']' || unicode.IsSpace(ch) {
+				break
+			}
+			if !ctx.match(':') {
+				ctx.addErr("bad classname character")
+				return nil, nil, false
+			}
+		}
 	}
 	// attrs
 	for {
 		ctx.ws()
 		if ctx.iseof() {
 			ctx.addErr("unterminated attributes block")
-			return nil, false
+			return nil, nil, false
 		}
 		ch := ctx.peek()
 		if ch == ']' {
@@ -346,26 +366,26 @@ func (ctx *ParseContext) attrs() (map[string]string, bool) {
 		}
 		if !ctx.match('@') {
 			ctx.addErr("attribute names must start with '@'")
-			return nil, false
+			return nil, nil, false
 		}
 		attrName, attrVal, ok := ctx.attr()
 		if !ok {
-			return nil, false
+			return nil, nil, false
 		}
 		rtn[strings.ToLower(attrName)] = attrVal
 	}
 	if !ctx.match(']') {
 		ctx.addErr("attributes not terminated correct with closing ']'")
-		return nil, false
+		return nil, nil, false
 	}
-	return rtn, true
+	return cns, rtn, true
 }
 
 func (ctx *ParseContext) itext() *ElemDecl {
 	rtn := &ElemDecl{ElemType: "text"}
 	if ctx.test('[') {
 		var ok bool
-		rtn.Attrs, ok = ctx.attrs()
+		rtn.ClassNames, rtn.Attrs, ok = ctx.attrs()
 		if !ok {
 			return nil
 		}
@@ -525,7 +545,7 @@ func (ctx *ParseContext) openelem() *ElemDecl {
 	ctx.ws()
 	if ctx.test('[') {
 		var ok bool
-		rtn.Attrs, ok = ctx.attrs()
+		rtn.ClassNames, rtn.Attrs, ok = ctx.attrs()
 		if !ok {
 			return nil
 		}

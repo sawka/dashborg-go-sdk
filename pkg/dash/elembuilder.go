@@ -90,6 +90,9 @@ func (b *ElemBuilder) DoneElem() *Elem {
 }
 
 func (b *ElemBuilder) declToElem(edecl *parser.ElemDecl) *Elem {
+	if edecl == nil {
+		return nil
+	}
 	meta := CMeta[edecl.ElemType]
 	if meta == nil {
 		return nil
@@ -117,7 +120,9 @@ func (b *ElemBuilder) declToElem(edecl *parser.ElemDecl) *Elem {
 		if meta.SubElemType == SUBELEM_ONE {
 			rtn.SubElem = b.declToElem(edecl.SubElem)
 		} else if meta.SubElemType == SUBELEM_LIST {
-			rtn.List = []*Elem{b.declToElem(edecl.SubElem)}
+			if edecl.SubElem != nil {
+				rtn.List = []*Elem{b.declToElem(edecl.SubElem)}
+			}
 		}
 	}
 	return rtn

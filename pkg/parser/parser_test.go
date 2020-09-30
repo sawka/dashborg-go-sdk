@@ -45,13 +45,13 @@ func TestBasic(t *testing.T) {
 	}
 
 	pc = MakeParseContext("[]", 1, nil)
-	attrs, ok := pc.attrs()
+	_, _, ok := pc.attrs()
 	if !ok {
 		reportErr(t, pc, "attrs0 not ok")
 	}
 
 	pc = MakeParseContext("[ @h1 @foo=bar @maxHeight=5px]", 1, nil)
-	attrs, ok = pc.attrs()
+	_, attrs, ok := pc.attrs()
 	if !ok {
 		reportErr(t, pc, "attrs1 not ok")
 	}
@@ -63,6 +63,30 @@ func TestBasic(t *testing.T) {
 	}
 	if attrs["maxheight"] != "5px" {
 		reportErr(t, pc, "attrs1 attrs not lowercased")
+	}
+
+	pc = MakeParseContext("[rootdiv @foo=bar]", 1, nil)
+	cns, attrs, ok := pc.attrs()
+	if !ok {
+		reportErr(t, pc, "attrs2 not ok")
+	}
+	if attrs["foo"] != "bar" {
+		reportErr(t, pc, "attrs2 foo != bar")
+	}
+	if len(cns) != 1 || cns[0] != "rootdiv" {
+		reportErr(t, pc, "attrs2 bad classnames parse")
+	}
+
+	pc = MakeParseContext("[rootdiv:dark @foo=bar]", 1, nil)
+	cns, attrs, ok = pc.attrs()
+	if !ok {
+		reportErr(t, pc, "attrs3 not ok")
+	}
+	if attrs["foo"] != "bar" {
+		reportErr(t, pc, "attrs3 foo != bar")
+	}
+	if len(cns) != 2 || cns[0] != "rootdiv" || cns[1] != "dark" {
+		reportErr(t, pc, "attrs3 bad classnames parse")
 	}
 
 	pc = MakeParseContext("[@foo=bar]  hello", 1, vars)
@@ -201,5 +225,35 @@ func TestBasic(t *testing.T) {
 	}
 	if e != nil && !e.IsSelfClose {
 		reportErrElem(t, pc, e, "line5 not self close")
+	}
+
+	pc = MakeParseContext("<div>[rootdiv]", 1, vars)
+	e = pc.ParseLine()
+	if e == nil {
+		reportErr(t, pc, "line6 no elem returned")
+	}
+	if e != nil && (len(e.ClassNames) != 1 || e.ClassNames[0] != "rootdiv") {
+		reportErrElem(t, pc, e, "line6 bad classnames parse")
+	}
+
+	pc = MakeParseContext("<button b-1>[primary] Run Process #1", 1, vars)
+	e = pc.ParseLine()
+	if e == nil {
+		reportErr(t, pc, "line7 no elem returned")
+	}
+	if e != nil && e.ControlName != "b-1" {
+		reportErr(t, pc, "line7 bad controlname")
+	}
+	if e != nil && (e.SubElem == nil || e.SubElem.ElemType != "text") {
+		reportErr(t, pc, "line7 bad subelem")
+	}
+
+	pc = MakeParseContext("<log demo-logger/>[dark @grow] ", 1, vars)
+	e = pc.ParseLine()
+	if e == nil {
+		reportErr(t, pc, "line8 no elem returned")
+	}
+	if e.SubElem != nil {
+		reportErr(t, pc, "line8 should not have subelem")
 	}
 }
