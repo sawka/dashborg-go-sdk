@@ -3,6 +3,7 @@ package dash
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"strings"
 	"time"
@@ -162,13 +163,16 @@ func (e *Elem) writeTextElem(buf *bytes.Buffer) {
 	return
 }
 
-func (e *Elem) elemTextEx(indent string, et []string) []string {
+// pass negative indentSize for no indenting
+func (e *Elem) elemTextEx(indentSize int, et []string) []string {
 	var buf bytes.Buffer
 	meta := CMeta[e.ElemType]
 	if meta == nil {
 		panic(fmt.Sprintf("dashborg.ElemText() bad ElemType:%s\n", e.ElemType))
 	}
-	buf.WriteString(indent)
+	for i := 0; i < indentSize; i++ {
+		buf.WriteByte(' ')
+	}
 	if e.ElemType == "text" {
 		e.writeTextElem(&buf)
 		et = append(et, buf.String())
@@ -218,28 +222,31 @@ func (e *Elem) elemTextEx(indent string, et []string) []string {
 	}
 	if hasSubElems {
 		et = append(et, buf.String())
-		newIndent := indent + "  "
-		for _, se := range e.List {
-			et = se.elemTextEx(newIndent, et)
+		newIndentSize := indentSize
+		if indentSize >= 0 {
+			newIndentSize += 2
 		}
-		closeTag := fmt.Sprintf("%s</%s>", indent, e.ElemType)
-		et = append(et, closeTag)
+		for _, se := range e.List {
+			et = se.elemTextEx(newIndentSize, et)
+		}
+		var closeTagBuf bytes.Buffer
+		for i := 0; i < indentSize; i++ {
+			closeTagBuf.WriteByte(' ')
+		}
+		closeTagBuf.WriteString("</")
+		closeTagBuf.WriteString(e.ElemType)
+		closeTagBuf.WriteString(">")
+		et = append(et, closeTagBuf.String())
 		return et
 	}
 	et = append(et, buf.String())
 	return et
 }
 
-func (e *Elem) Dump() {
-	elemText := e.elemTextEx("", nil)
-	fmt.Printf("%s\n", strings.Join(elemText, "\n"))
+func (e *Elem) Dump(w io.Writer) {
+	elemText := e.elemTextEx(0, nil)
+	fmt.Fprintf(w, "%s\n", strings.Join(elemText, "\n"))
 }
-
-// Elem
-//
-// elemtype
-// elemsubtype
-// controlid
 
 type IPanelRequest interface {
 	LookupContext(name string) IContextWriter
@@ -264,8 +271,20 @@ func DefinePanel(panelName string) *PanelWriter {
 	return rtn
 }
 
-func (p *PanelWriter) Flush() {
+func (p *PanelWriter) Flush() error {
+	return nil
+}
 
+func (p *PanelWriter) Dump(w io.Writer) {
+	p.DoneElem().Dump(w)
+}
+
+func (p *PanelWriter) DoneText() []string {
+	e := p.DoneElem()
+	if e == nil {
+		return nil
+	}
+	return e.elemTextEx(0, nil)
 }
 
 func (p *PanelWriter) PanelLink() string {

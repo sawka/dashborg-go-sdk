@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/sawka/dashborg-go-sdk/pkg/dash"
@@ -57,7 +59,8 @@ func DefinePanel() {
 	panel.Print("<log demo-logger/>[dark @grow]")
 	panel.Print("</div>")
 	panel.Flush()
-	panel.DoneElem().Dump()
+	panel.Dump(os.Stdout)
+	fmt.Printf("Panel Link %s\n", panel.PanelLink())
 }
 
 func main() {
