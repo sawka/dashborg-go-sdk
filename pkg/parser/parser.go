@@ -35,8 +35,6 @@ import (
 // attr_doublequote := '"' (dqtext | varexpr | '\\"')* '"'
 // dqtext := all chars except '${' and '"' and '$('
 // charexpr := '$(' ws varname ws ',' ws (attr_doublequote | attr_singlequote) ws ')'
-//
-// <progress "p-1">
 
 type ElemDecl struct {
 	ElemType    string
@@ -53,17 +51,17 @@ type ElemDecl struct {
 
 type ParseErr struct {
 	LineNo int
-	Pos    int
+	Col    int
 	Err    string
 }
 
 type ParseContext struct {
-	Line     []byte
-	LineNo   int
-	Pos      int
-	Vars     map[string]string
-	Errs     []ParseErr
-	Warnings []ParseErr
+	Line   []byte
+	LineNo int
+	Pos    int
+	Vars   map[string]string
+	Errs   []ParseErr
+	Warns  []ParseErr
 }
 
 func MakeParseContext(line string, lineno int, vars map[string]string) *ParseContext {
@@ -77,7 +75,7 @@ func MakeParseContext(line string, lineno int, vars map[string]string) *ParseCon
 
 func (ctx *ParseContext) addErr(fmtStr string, params ...interface{}) {
 	err := fmt.Sprintf(fmtStr, params...)
-	ctx.Errs = append(ctx.Errs, ParseErr{LineNo: ctx.LineNo, Pos: ctx.Pos, Err: err})
+	ctx.Errs = append(ctx.Errs, ParseErr{LineNo: ctx.LineNo, Col: ctx.Pos + 1, Err: err})
 }
 
 func (ctx *ParseContext) iseof() bool {
