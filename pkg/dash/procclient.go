@@ -135,13 +135,19 @@ func (c *ProcClient) SendMessageWithCallback(m interface{}, callback func(interf
 }
 
 func (c *ProcClient) SendMessageWait(m interface{}) (interface{}, error) {
-	// ch := make(chan bool)
+	var outerRtn interface{}
+	var outerErr error
+	ch := make(chan bool)
 	sendErr := c.SendMessageWithCallback(m, func(rtn interface{}, err error) {
+		outerRtn = rtn
+		outerErr = err
+		close(ch)
 	})
 	if sendErr != nil {
 		return nil, sendErr
 	}
-	return nil, nil
+	<-ch
+	return outerRtn, outerErr
 }
 
 func (c *ProcClient) goConnectClient() {

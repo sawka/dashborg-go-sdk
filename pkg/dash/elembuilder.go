@@ -110,13 +110,16 @@ func (b *ElemBuilder) declToElem(edecl *parser.ElemDecl) *Elem {
 		ClassNames:  edecl.ClassNames,
 		Attrs:       edecl.Attrs,
 	}
-	if meta.HasControl && edecl.ControlName != "" {
-		rtn.ControlName = edecl.ControlName
-	}
-	if meta.HasControl && edecl.ControlId != "" {
-		rtn.ControlLoc = b.LocId + "|" + edecl.ControlId
-	} else if meta.HasControl {
-		rtn.ControlLoc = b.LocId + "|" + uuid.New().String()
+	if meta.HasControl {
+		if edecl.ControlName != "" {
+			rtn.ControlName = edecl.ControlName
+		}
+		if edecl.ControlId != "" {
+			rtn.ControlLoc = b.LocId + "|" + edecl.ControlId
+		}
+		if rtn.ControlName == "" && rtn.ControlLoc == "" {
+			rtn.ControlLoc = b.LocId + "|" + uuid.New().String()
+		}
 	}
 	if meta.SubElemType == SUBELEM_TEXT {
 		rtn.Text = edecl.Text
