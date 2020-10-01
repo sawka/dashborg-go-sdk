@@ -252,7 +252,7 @@ func (p *Panel) RefreshControlMappings() error {
 	}
 	p.ControlMappings = make(map[string]*Control)
 	for _, m := range mrtn.Mappings {
-		p.ControlMappings[m.ControlName] = &Control{ElemType: m.ControlType, ControlLoc: m.ControlLoc}
+		p.ControlMappings[m.ControlName] = &Control{PanelName: p.PanelName, ElemType: m.ControlType, ControlLoc: m.ControlLoc}
 	}
 	return nil
 }

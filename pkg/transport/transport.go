@@ -65,10 +65,8 @@ type ControlAppendMessage struct {
 	Ts         int64       `json:"ts"`
 	PanelName  string      `json:"panelname"`
 	ControlLoc string      `json:"controlloc"`
-	ExpSec     int64       `json:"expsec"` // seconds to expire data
+	ExpSec     int64       `json:"expsec,omitempty"` // seconds to expire data
 	Data       interface{} `json:"data"`
-
-	ClientId string `json:"-"` // for client side
 }
 
 type ControlMapping struct {
@@ -86,4 +84,12 @@ type MappingsReturn struct {
 func GetMType(m interface{}) string {
 	v := reflect.ValueOf(m)
 	return v.FieldByName("MType").String()
+}
+
+type LogEntry struct {
+	Ts        int64       `json:"ts"`
+	ProcRunId string      `json:"procrunid"`
+	Text      string      `json:"text,omitempty"`
+	ElemText  []string    `json:"elemtext,omitempty"`
+	Data      interface{} `json:"data,omitempty"`
 }

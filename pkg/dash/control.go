@@ -1,8 +1,13 @@
 package dash
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/sawka/dashborg-go-sdk/pkg/transport"
+)
 
 type Control struct {
+	PanelName  string `json:"panelname"`
 	ElemType   string `json:"elemtype"`
 	ControlLoc string `json:"controlloc"`
 }
@@ -24,7 +29,24 @@ func (c *Control) ProgressError(err string) {
 }
 
 func (c *Control) LogText(fmtStr string, data ...interface{}) {
-	fmt.Printf("LogText called type:%s cloc:%s\n", c.ElemType, c.ControlLoc)
+	if c.ElemType != "log" || !c.IsValid() {
+		return
+	}
+	text := fmt.Sprintf(fmtStr, data...)
+	ts := Ts()
+	entry := transport.LogEntry{
+		Ts:        ts,
+		ProcRunId: Client.GetProcRunId(),
+		Text:      text,
+	}
+	m := transport.ControlAppendMessage{
+		MType:      "controlappend",
+		Ts:         ts,
+		PanelName:  c.PanelName,
+		ControlLoc: c.ControlLoc,
+		Data:       entry,
+	}
+	Client.SendMessage(m)
 }
 
 func (c *Control) LogControl(text string, attrs ...string) *Control {
