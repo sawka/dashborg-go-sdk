@@ -49,6 +49,8 @@ func (c *Control) Release() {
 	c.ClientId = ""
 	c.ControlType = "invalid"
 	c.ControlLoc = ""
+
+	// TODO release handlers (onclick, onrequest, etc.)
 }
 
 func (c *Control) ProgressSet(val int, status string) {

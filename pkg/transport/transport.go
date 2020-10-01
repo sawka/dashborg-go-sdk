@@ -2,6 +2,7 @@ package transport
 
 import "reflect"
 
+// proc
 type ProcMessage struct {
 	MType          string            `json:"mtype"`
 	Ts             int64             `json:"ts"`
@@ -19,12 +20,13 @@ type ProcMessage struct {
 	Pk256 string `json:"-"` // used on server side
 }
 
+// done
 type DoneMessage struct {
 	MType string `json:"mtype"`
 	Ts    int64  `json:"ts"`
 }
 
-// "definepanel"
+// definepanel
 type DefinePanelMessage struct {
 	MType     string   `json:"mtype"`
 	Ts        int64    `json:"ts"`
@@ -33,7 +35,7 @@ type DefinePanelMessage struct {
 	ElemText  []string `json:"elemtext"`
 }
 
-// "lookuppanel"
+// lookuppanel
 type LookupPanelMessage struct {
 	MType     string `json:"mtype"`
 	Ts        int64  `json:"ts"`
@@ -41,6 +43,7 @@ type LookupPanelMessage struct {
 	PanelName string `json:"panelname"`
 }
 
+// writeelem-eph
 type WriteContextMessage struct {
 	MType      string   `json:"mtype"`
 	Ts         int64    `json:"ts"`
@@ -56,6 +59,7 @@ type ResetTsData struct {
 	ResetTs int64 `json:"resetts"`
 }
 
+// controlupdate
 type ControlUpdateMessage struct {
 	MType      string      `json:"mtype"`
 	Ts         int64       `json:"ts"`
@@ -64,6 +68,7 @@ type ControlUpdateMessage struct {
 	Data       interface{} `json:"data"`
 }
 
+// controlappend
 type ControlAppendMessage struct {
 	MType      string      `json:"mtype"`
 	Ts         int64       `json:"ts"`
@@ -71,6 +76,14 @@ type ControlAppendMessage struct {
 	ControlLoc string      `json:"controlloc"`
 	ExpSec     int64       `json:"expsec,omitempty"` // seconds to expire data
 	Data       interface{} `json:"data"`
+}
+
+// "activecontrols"
+type ActiveControlsMessage struct {
+	MType      string   `json:"mtype"`
+	Ts         int64    `json:"ts"`
+	Activate   []string `json:"activate"`
+	Deactivate []string `json:"deactivate"`
 }
 
 type ControlMapping struct {

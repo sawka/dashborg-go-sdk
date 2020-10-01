@@ -47,7 +47,7 @@ type ProcClient struct {
 	Connected     bool // connection is open to BufSrv
 	ConnectGiveUp bool // we've given up on trying to reconnect the client
 
-	ActiveControls map[string]bool
+	ActiveControls map[string]map[string]bool
 }
 
 var Client *ProcClient
@@ -57,7 +57,7 @@ func newProcClient() *ProcClient {
 	rtn.CVar = sync.NewCond(&sync.Mutex{})
 	rtn.StartTs = Ts()
 	rtn.ProcRunId = uuid.New().String()
-	rtn.ActiveControls = make(map[string]bool)
+	rtn.ActiveControls = make(map[string]map[string]bool)
 
 	queueSize := DEFAULT_QUEUESIZE
 	if os.Getenv("DASHBORG_QUEUESIZE") != "" {
@@ -391,16 +391,10 @@ func sendProcMessage(client *bufsrv.Client) error {
 			"HostName": hostname,
 			"Pid":      strconv.Itoa(os.Getpid()),
 		},
-		// ActiveControls: Cache.GetActiveControls(),
+		ActiveControls: Client.getActiveControls(),
 	}
 	resp := client.DoRequest("msg", pm)
 	return resp.Err()
-}
-
-func (pc *ProcClient) addToActiveControls(controlLoc string) {
-	pc.CVar.L.Lock()
-	defer pc.CVar.L.Unlock()
-	pc.ActiveControls[controlLoc] = true
 }
 
 func (pc *ProcClient) RegisterPushFn(id string, pfn PushFn, prepend bool) string {
@@ -433,10 +427,46 @@ func (pc *ProcClient) UnregisterPushFn(id string, pfnId string) {
 	pc.PushMap[id] = append(arr[0:pos], arr[pos+1:]...)
 }
 
+func (pc *ProcClient) getActiveControls() []string {
+	pc.CVar.L.Lock()
+	defer pc.CVar.L.Unlock()
+
+	rtn := make([]string, 0, len(pc.ActiveControls))
+	for cloc, _ := range pc.ActiveControls {
+		rtn = append(rtn, cloc)
+	}
+	return rtn
+}
+
 func (pc *ProcClient) TrackActive(controlType string, controlLoc string, clientId string) {
-	fmt.Printf("** track-active %s:%s\n", controlType, controlLoc)
+	pc.CVar.L.Lock()
+	defer pc.CVar.L.Unlock()
+	amap := pc.ActiveControls[controlLoc]
+	if amap == nil {
+		amap = make(map[string]bool)
+		m := transport.ActiveControlsMessage{
+			MType:    "activecontrols",
+			Ts:       Ts(),
+			Activate: []string{controlLoc},
+		}
+		go pc.SendMessage(m)
+	}
+	amap[clientId] = true
+	pc.ActiveControls[controlLoc] = amap
 }
 
 func (pc *ProcClient) UntrackActive(controlType string, controlLoc string, clientId string) {
-	fmt.Printf("** UNtrack-active %s:%s\n", controlType, controlLoc)
+	pc.CVar.L.Lock()
+	defer pc.CVar.L.Unlock()
+	amap := pc.ActiveControls[controlLoc]
+	delete(amap, clientId)
+	if len(amap) == 0 {
+		delete(pc.ActiveControls, controlLoc)
+		m := transport.ActiveControlsMessage{
+			MType:      "activecontrols",
+			Ts:         Ts(),
+			Deactivate: []string{controlLoc},
+		}
+		go pc.SendMessage(m)
+	}
 }
