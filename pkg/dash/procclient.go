@@ -24,10 +24,10 @@ type queueEntry struct {
 
 type pushFnWrap struct {
 	Id string
-	Fn pushFn
+	Fn PushFn
 }
 
-type pushFn func(interface{}) (interface{}, error)
+type PushFn func(interface{}) (interface{}, error)
 
 type ProcClient struct {
 	CVar *sync.Cond
@@ -401,4 +401,42 @@ func (pc *ProcClient) addToActiveControls(controlLoc string) {
 	pc.CVar.L.Lock()
 	defer pc.CVar.L.Unlock()
 	pc.ActiveControls[controlLoc] = true
+}
+
+func (pc *ProcClient) RegisterPushFn(id string, pfn PushFn, prepend bool) string {
+	pfnWrap := pushFnWrap{Id: uuid.New().String(), Fn: pfn}
+	pc.CVar.L.Lock()
+	defer pc.CVar.L.Unlock()
+	if prepend {
+		pc.PushMap[id] = append([]pushFnWrap{pfnWrap}, pc.PushMap[id]...)
+	} else {
+		pc.PushMap[id] = append(pc.PushMap[id], pfnWrap)
+	}
+	return pfnWrap.Id
+}
+
+func (pc *ProcClient) UnregisterPushFn(id string, pfnId string) {
+	pc.CVar.L.Lock()
+	defer pc.CVar.L.Unlock()
+
+	arr := pc.PushMap[id]
+	pos := -1
+	for idx, v := range arr {
+		if v.Id == pfnId {
+			pos = idx
+			break
+		}
+	}
+	if pos == -1 {
+		return
+	}
+	pc.PushMap[id] = append(arr[0:pos], arr[pos+1:]...)
+}
+
+func (pc *ProcClient) TrackActive(controlType string, controlLoc string, clientId string) {
+	fmt.Printf("** track-active %s:%s\n", controlType, controlLoc)
+}
+
+func (pc *ProcClient) UntrackActive(controlType string, controlLoc string, clientId string) {
+	fmt.Printf("** UNtrack-active %s:%s\n", controlType, controlLoc)
 }

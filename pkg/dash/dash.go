@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 	"github.com/sawka/dashborg-go-sdk/pkg/transport"
@@ -19,6 +20,7 @@ const (
 )
 
 type ControlTypeMeta struct {
+	IsValid         bool
 	CanInline       bool
 	CanEmbed        bool
 	HasControl      bool
@@ -26,6 +28,7 @@ type ControlTypeMeta struct {
 	HasRowData      bool
 	HasEph          bool
 	HasSubControls  bool
+	TrackActive     bool
 	SubElemType     string
 	AllowedSubTypes map[string]bool
 }
@@ -46,11 +49,11 @@ func init() {
 	CMeta["dyntext"] = makeCTM("inline embed control hasdata sub-T")
 	CMeta["dynelem"] = makeCTM("embed control hasdata sub-1")
 	CMeta["image"] = makeCTM("inline embed")
-	CMeta["log"] = makeCTM("rowdata control subctl")
-	CMeta["button"] = makeCTM("inline embed control sub-1")
+	CMeta["log"] = makeCTM("rowdata control hasdata active subctl")
+	CMeta["button"] = makeCTM("inline embed control active sub-1")
 	CMeta["context"] = makeCTM("control sub-* eph")
-	CMeta["progress"] = makeCTM("inline embed control hasdata")
-	CMeta["handler"] = makeCTM("control")
+	CMeta["progress"] = makeCTM("inline embed control active hasdata")
+	CMeta["handler"] = makeCTM("control active")
 	CMeta["counter"] = makeCTM("inline embed control hasdata")
 	CMeta["input"] = makeCTM("inline embed")
 	CMeta["inputselect"] = makeCTM("inline embed control rowdata")
@@ -67,6 +70,7 @@ func init() {
 
 func makeCTM(text string) *ControlTypeMeta {
 	rtn := &ControlTypeMeta{}
+	rtn.IsValid = true
 	rtn.CanInline = strings.Contains(text, "inline")
 	rtn.CanEmbed = strings.Contains(text, "embed")
 	rtn.HasControl = strings.Contains(text, "control")
@@ -74,6 +78,7 @@ func makeCTM(text string) *ControlTypeMeta {
 	rtn.HasRowData = strings.Contains(text, "rowdata")
 	rtn.HasEph = strings.Contains(text, "eph")
 	rtn.HasSubControls = strings.Contains(text, "subctl")
+	rtn.TrackActive = strings.Contains(text, "active")
 	if strings.Contains(text, "sub-T") {
 		rtn.SubElemType = "T"
 	}
@@ -126,7 +131,11 @@ func (e *Elem) GetMeta() *ControlTypeMeta {
 	if e == nil {
 		return &ControlTypeMeta{}
 	}
-	return CMeta[e.ElemType]
+	meta := CMeta[e.ElemType]
+	if meta == nil {
+		meta = &ControlTypeMeta{}
+	}
+	return meta
 }
 
 func (e *Elem) Walk(visitFn func(*Elem)) {
@@ -252,17 +261,22 @@ func (p *Panel) RefreshControlMappings() error {
 	}
 	p.ControlMappings = make(map[string]*Control)
 	for _, m := range mrtn.Mappings {
-		p.ControlMappings[m.ControlName] = &Control{PanelName: p.PanelName, ElemType: m.ControlType, ControlLoc: m.ControlLoc}
+		p.ControlMappings[m.ControlName] = &Control{PanelName: p.PanelName, ControlType: m.ControlType, ControlLoc: m.ControlLoc}
 	}
 	return nil
 }
 
 func (p *Panel) LookupControl(controlType string, controlName string) *Control {
 	c := p.ControlMappings[controlName]
-	if c.ElemType != controlType {
-		return &Control{ElemType: "invalid"}
+	if c.ControlType != controlType {
+		return &Control{ControlType: "invalid"}
 	}
-	return c
+	rtn := &Control{PanelName: p.PanelName, ControlType: c.ControlType, ControlLoc: c.ControlLoc}
+	if rtn.GetMeta().TrackActive {
+		rtn.ClientId = uuid.New().String()
+		Client.TrackActive(rtn.ControlType, rtn.ControlLoc, rtn.ClientId)
+	}
+	return rtn
 }
 
 type IZone interface {

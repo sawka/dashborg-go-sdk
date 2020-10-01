@@ -7,16 +7,48 @@ import (
 )
 
 type Control struct {
-	PanelName  string `json:"panelname"`
-	ElemType   string `json:"elemtype"`
-	ControlLoc string `json:"controlloc"`
+	ClientId    string `json:"clientid"`
+	PanelName   string `json:"panelname"`
+	ControlType string `json:"controltype"` // elemtype
+	ControlLoc  string `json:"controlloc"`
 }
 
 func (c *Control) IsValid() bool {
-	return c.ControlLoc != "" && c.ElemType != "" && c.ElemType != "invalid"
+	return c.ControlLoc != "" && c.ControlType != "" && c.ControlType != "invalid"
+}
+
+func (c *Control) GetMeta() *ControlTypeMeta {
+	if c == nil {
+		return &ControlTypeMeta{}
+	}
+	meta := CMeta[c.ControlType]
+	if meta == nil {
+		meta = &ControlTypeMeta{}
+	}
+	return meta
 }
 
 func (c *Control) OnClick(fn func() error) {
+	if c.ControlType != "button" || !c.IsValid() {
+		return
+	}
+	runFn := func(v interface{}) (interface{}, error) {
+		err := fn()
+		if err != nil {
+			return nil, err
+		}
+		return true, nil
+	}
+	Client.RegisterPushFn(c.ControlLoc, runFn, false)
+}
+
+func (c *Control) Release() {
+	if c.ClientId != "" {
+		Client.UntrackActive(c.ControlType, c.ControlLoc, c.ClientId)
+	}
+	c.ClientId = ""
+	c.ControlType = "invalid"
+	c.ControlLoc = ""
 }
 
 func (c *Control) ProgressSet(val int, status string) {
@@ -29,7 +61,7 @@ func (c *Control) ProgressError(err string) {
 }
 
 func (c *Control) LogText(fmtStr string, data ...interface{}) {
-	if c.ElemType != "log" || !c.IsValid() {
+	if c.ControlType != "log" || !c.IsValid() {
 		return
 	}
 	text := fmt.Sprintf(fmtStr, data...)
@@ -54,6 +86,21 @@ func (c *Control) LogControl(text string, attrs ...string) *Control {
 }
 
 func (c *Control) RowDataClear() {
+	if !c.GetMeta().HasRowData {
+		return
+	}
+	ts := Ts()
+	rdata := transport.ResetTsData{
+		ResetTs: ts,
+	}
+	m := transport.ControlUpdateMessage{
+		MType:      "controlupdate",
+		Cmd:        "clearrowdata",
+		Ts:         ts,
+		ControlLoc: c.ControlLoc,
+		Data:       rdata,
+	}
+	Client.SendMessage(m)
 }
 
 func (c *Control) DynSetFStr(fmt string) {

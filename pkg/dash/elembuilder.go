@@ -81,7 +81,7 @@ func (b *ElemBuilder) Print(text string, attrs ...string) *Control {
 	}
 	b.append(elem, edecl.IsSelfClose)
 	if elem.ControlLoc != "" {
-		return &Control{ElemType: elem.ElemType, ControlLoc: elem.ControlLoc}
+		return &Control{ControlType: elem.ElemType, ControlLoc: elem.ControlLoc}
 	}
 	return nil
 }

@@ -10,7 +10,7 @@ import (
 
 func RunProcess1() {
 	panel, _ := dash.LookupPanel("demo1")
-	logger := panel.LookupControl("log", "demo-logger")
+	logger := panel.LookupControl("log", "demo-log2")
 	logger.LogText("Running Process #1")
 	// run the actual process
 	p := logger.LogControl("<progress>[@progresslabel=P1 @progressmax=10]")
@@ -25,7 +25,7 @@ func RunProcess1() {
 
 func Control() {
 	panel, _ := dash.LookupPanel("demo1")
-	logger := panel.LookupControl("log", "demo-logger")
+	logger := panel.LookupControl("log", "demo-log2")
 	logger.LogText("demo1 restarted")
 	stopButton := panel.LookupControl("button", "b-stop")
 	b1 := panel.LookupControl("button", "b-1")
@@ -56,7 +56,7 @@ func DefinePanel() {
 	panel.Print("  <button b-1/>[@primary] Run Process #1")
 	panel.Print("  <button b-stop/>[@marginleft=15px] Stop")
 	panel.Print("</div>")
-	panel.Print("<log demo-logger/>[@logstyle @grow]")
+	panel.Print("<log demo-log2/>[@logstyle @grow]")
 	// panel.Print("<progress/>")
 	panel.Print("</div>")
 	panel.Flush()

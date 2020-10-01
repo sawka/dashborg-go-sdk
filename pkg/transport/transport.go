@@ -52,6 +52,10 @@ type WriteContextMessage struct {
 	ElemText   []string `json:"elemtext"`
 }
 
+type ResetTsData struct {
+	ResetTs int64 `json:"resetts"`
+}
+
 type ControlUpdateMessage struct {
 	MType      string      `json:"mtype"`
 	Ts         int64       `json:"ts"`
