@@ -519,7 +519,9 @@ func (ctx *ParseContext) openelem() *ElemDecl {
 			return nil
 		}
 		rtn.ControlId = controlId
-	} else if ctx.test('"') {
+		ctx.ws()
+	}
+	if ctx.test('"') {
 		controlName := ctx.controlname_quoted()
 		if controlName == "" {
 			return nil

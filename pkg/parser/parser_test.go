@@ -256,4 +256,16 @@ func TestBasic(t *testing.T) {
 	if e.SubElem != nil {
 		reportErr(t, pc, "line8 should not have subelem")
 	}
+
+	pc = MakeParseContext("<log *10300ca2-2325-4315-90ad-b8f0988dde4b \"demo\"/>[dark @grow] ", 1, vars)
+	e = pc.ParseLine()
+	if e == nil {
+		reportErr(t, pc, "line9 no elem returned")
+	}
+	if e != nil && e.ControlId != "10300ca2-2325-4315-90ad-b8f0988dde4b" {
+		reportErrElem(t, pc, e, "line9 did not parse controlid")
+	}
+	if e != nil && e.ControlName != "demo" {
+		reportErrElem(t, pc, e, "line9 did not parse controlname")
+	}
 }

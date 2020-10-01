@@ -112,7 +112,8 @@ func (b *ElemBuilder) declToElem(edecl *parser.ElemDecl) *Elem {
 	}
 	if meta.HasControl && edecl.ControlName != "" {
 		rtn.ControlName = edecl.ControlName
-	} else if meta.HasControl && edecl.ControlId != "" {
+	}
+	if meta.HasControl && edecl.ControlId != "" {
 		rtn.ControlLoc = b.LocId + "|" + edecl.ControlId
 	} else if meta.HasControl {
 		rtn.ControlLoc = b.LocId + "|" + uuid.New().String()
@@ -248,7 +249,7 @@ func (e *Elem) writeTextElem(buf *bytes.Buffer) {
 }
 
 // pass negative indentSize for no indenting
-func (e *Elem) elemTextEx(indentSize int, et []string) []string {
+func (e *Elem) ElemTextEx(indentSize int, et []string) []string {
 	var buf bytes.Buffer
 	for i := 0; i < indentSize; i++ {
 		buf.WriteByte(' ')
@@ -274,7 +275,8 @@ func (e *Elem) elemTextEx(indentSize int, et []string) []string {
 			buf.WriteString(" *")
 			buf.WriteString(cloc.ControlId)
 		}
-	} else if e.ControlName != "" {
+	}
+	if e.ControlName != "" {
 		buf.WriteString(" \"")
 		buf.WriteString(e.ControlName)
 		buf.WriteString("\"")
@@ -307,7 +309,7 @@ func (e *Elem) elemTextEx(indentSize int, et []string) []string {
 			newIndentSize += 2
 		}
 		for _, se := range e.List {
-			et = se.elemTextEx(newIndentSize, et)
+			et = se.ElemTextEx(newIndentSize, et)
 		}
 		var closeTagBuf bytes.Buffer
 		for i := 0; i < indentSize; i++ {
@@ -324,6 +326,6 @@ func (e *Elem) elemTextEx(indentSize int, et []string) []string {
 }
 
 func (e *Elem) Dump(w io.Writer) {
-	elemText := e.elemTextEx(0, nil)
+	elemText := e.ElemTextEx(0, nil)
 	fmt.Fprintf(w, "%s\n", strings.Join(elemText, "\n"))
 }

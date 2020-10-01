@@ -116,6 +116,9 @@ type Elem struct {
 	Text        string            `json:"text,omitempty"`
 	SubElem     *Elem             `json:"subelem,omitempty"`
 	List        []*Elem           `json:"list,omitempty"`
+
+	// used by server
+	AnonProcRunId string `json:"anonprocrunid,omitempty"`
 }
 
 func (e *Elem) GetMeta() *ControlTypeMeta {
@@ -195,7 +198,7 @@ func (p *PanelWriter) DoneText() []string {
 	if e == nil {
 		return nil
 	}
-	return e.elemTextEx(0, nil)
+	return e.ElemTextEx(0, nil)
 }
 
 func (p *PanelWriter) PanelLink() string {
