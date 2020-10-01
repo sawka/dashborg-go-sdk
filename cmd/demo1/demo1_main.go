@@ -9,7 +9,7 @@ import (
 )
 
 func RunProcess1() {
-	panel := dash.LookupPanel("demo1")
+	panel, _ := dash.LookupPanel("demo1")
 	logger := panel.LookupControl("log", "demo-logger")
 	logger.LogText("Running Process #1")
 	// run the actual process
@@ -24,7 +24,7 @@ func RunProcess1() {
 }
 
 func Control() {
-	panel := dash.LookupPanel("demo1")
+	panel, _ := dash.LookupPanel("demo1")
 	logger := panel.LookupControl("log", "demo-logger")
 	logger.LogText("demo1 restarted")
 	stopButton := panel.LookupControl("button", "b-stop")

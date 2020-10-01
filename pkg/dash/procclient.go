@@ -135,6 +135,7 @@ func (c *ProcClient) SendMessageWithCallback(m interface{}, callback func(interf
 }
 
 func (c *ProcClient) SendMessageWait(m interface{}) (interface{}, error) {
+	startTs := time.Now()
 	var outerRtn interface{}
 	var outerErr error
 	ch := make(chan bool)
@@ -147,6 +148,7 @@ func (c *ProcClient) SendMessageWait(m interface{}) (interface{}, error) {
 		return nil, sendErr
 	}
 	<-ch
+	fmt.Printf("Message %s elapsed:%dms\n", transport.GetMType(m), int(time.Since(startTs)/time.Millisecond))
 	return outerRtn, outerErr
 }
 

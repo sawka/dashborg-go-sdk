@@ -1,8 +1,14 @@
 package dash
 
+import "fmt"
+
 type Control struct {
 	ElemType   string `json:"elemtype"`
 	ControlLoc string `json:"controlloc"`
+}
+
+func (c *Control) IsValid() bool {
+	return c.ControlLoc != "" && c.ElemType != "" && c.ElemType != "invalid"
 }
 
 func (c *Control) OnClick(fn func() error) {
@@ -17,7 +23,8 @@ func (c *Control) ProgressDone() {
 func (c *Control) ProgressError(err string) {
 }
 
-func (c *Control) LogText(fmt string, data ...interface{}) {
+func (c *Control) LogText(fmtStr string, data ...interface{}) {
+	fmt.Printf("LogText called type:%s cloc:%s\n", c.ElemType, c.ControlLoc)
 }
 
 func (c *Control) LogControl(text string, attrs ...string) *Control {

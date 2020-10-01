@@ -12,15 +12,7 @@ type ControlLocator struct {
 	ControlId string
 }
 
-var UUID_RE = regexp.MustCompile("^[a-fA-F0-9-]{36}$")
 var LocIdRe = regexp.MustCompile("^((/eph-ctx/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-f0-9-]{36})|(/panel/[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)|(/eph-sc/[a-f0-9-]{36}))$")
-
-func IsUUIDValid(uuid string) bool {
-	if len(uuid) != 36 {
-		return false
-	}
-	return UUID_RE.MatchString(uuid)
-}
 
 func (cl ControlLocator) String() string {
 	if cl.ControlId == "" || cl.LocId == "" {
@@ -48,10 +40,10 @@ func MakeControlLocErr(locId string, controlId string) (ControlLocator, error) {
 }
 
 func MakeZPLocId(zoneName string, panelName string) string {
-	locId := "/panel/" + zoneName + "/" + panelName
-	if !LocIdRe.MatchString(locId) {
+	if !IsZoneNameValid(zoneName) || !IsPanelNameValid(panelName) {
 		panic("Invalid zonename/panelname passed to MakeZPLocId")
 	}
+	locId := "/panel/" + zoneName + "/" + panelName
 	return locId
 }
 

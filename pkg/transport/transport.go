@@ -33,6 +33,7 @@ type DefinePanelMessage struct {
 	ElemText  []string `json:"elemtext"`
 }
 
+// "lookuppanel"
 type LookupPanelMessage struct {
 	MType     string `json:"mtype"`
 	Ts        int64  `json:"ts"`

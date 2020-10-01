@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mitchellh/mapstructure"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 	"github.com/sawka/dashborg-go-sdk/pkg/transport"
 )
@@ -206,11 +207,14 @@ func (p *PanelWriter) PanelLink() string {
 }
 
 type Panel struct {
-	PanelName string
+	PanelName       string
+	ControlMappings map[string]*Control
 }
 
-func LookupPanel(panelName string) *Panel {
-	return &Panel{PanelName: panelName}
+func LookupPanel(panelName string) (*Panel, error) {
+	p := &Panel{PanelName: panelName}
+	err := p.RefreshControlMappings()
+	return p, err
 }
 
 func panelLink(accId string, zoneName string, panelName string) string {
@@ -228,8 +232,37 @@ func (p *Panel) PanelLink() string {
 	return panelLink(Client.Config.AccId, Client.Config.ZoneName, p.PanelName)
 }
 
-func (p *Panel) LookupControl(controlType string, controlName string) *Control {
+func (p *Panel) RefreshControlMappings() error {
+	lpm := transport.LookupPanelMessage{
+		MType:     "lookuppanel",
+		Ts:        Ts(),
+		ZoneName:  Client.Config.ZoneName,
+		PanelName: p.PanelName,
+	}
+	rtn, err := Client.SendMessageWait(lpm)
+	if err != nil {
+		log.Printf("Dashborg.LookupPanel() error looking up panel err:%v\n", err)
+		return err
+	}
+	var mrtn transport.MappingsReturn
+	err = mapstructure.Decode(rtn, &mrtn)
+	if err != nil {
+		log.Printf("Dashborg.LookupPanel() bad return value from server err:%v\n", err)
+		return err
+	}
+	p.ControlMappings = make(map[string]*Control)
+	for _, m := range mrtn.Mappings {
+		p.ControlMappings[m.ControlName] = &Control{ElemType: m.ControlType, ControlLoc: m.ControlLoc}
+	}
 	return nil
+}
+
+func (p *Panel) LookupControl(controlType string, controlName string) *Control {
+	c := p.ControlMappings[controlName]
+	if c.ElemType != controlType {
+		return &Control{ElemType: "invalid"}
+	}
+	return c
 }
 
 type IZone interface {
