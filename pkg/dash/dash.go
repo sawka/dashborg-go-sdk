@@ -1,7 +1,6 @@
 package dash
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -9,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
+	"github.com/sawka/dashborg-go-sdk/pkg/transport"
 )
 
 const (
@@ -118,134 +118,24 @@ type Elem struct {
 	List        []*Elem           `json:"list,omitempty"`
 }
 
-// returns true if there was output, false if none
-func (e *Elem) writeAttrsStr(buf *bytes.Buffer) bool {
-	if len(e.ClassNames) == 0 && len(e.Attrs) == 0 {
-		return false
+func (e *Elem) GetMeta() *ControlTypeMeta {
+	if e == nil {
+		return &ControlTypeMeta{}
 	}
-	buf.WriteByte('[')
-	for idx, cn := range e.ClassNames {
-		if idx != 0 {
-			buf.WriteByte(':')
-		}
-		buf.WriteString(cn)
-	}
-	if len(e.ClassNames) > 0 && len(e.Attrs) > 0 {
-		buf.WriteByte(' ')
-	}
-	attrIdx := 0
-	for name, val := range e.Attrs {
-		escVal := strings.ReplaceAll(val, "\\", "\\\\")
-		escVal = strings.ReplaceAll(val, "\"", "\\\"")
-		if attrIdx != 0 {
-			buf.WriteByte(' ')
-		}
-		buf.WriteByte('@')
-		buf.WriteString(name)
-		if escVal != "1" {
-			buf.WriteByte('=')
-			buf.WriteByte('"')
-			buf.WriteString(escVal)
-			buf.WriteByte('"')
-		}
-		attrIdx++
-	}
-	buf.WriteByte(']')
-	return true
+	return CMeta[e.ElemType]
 }
 
-func (e *Elem) writeTextElem(buf *bytes.Buffer) {
-	wroteAttrs := e.writeAttrsStr(buf)
-	if wroteAttrs {
-		buf.WriteByte(' ')
+func (e *Elem) Walk(visitFn func(*Elem)) {
+	if e == nil {
+		return
 	}
-	buf.WriteString(e.Text)
-	return
-}
-
-// pass negative indentSize for no indenting
-func (e *Elem) elemTextEx(indentSize int, et []string) []string {
-	var buf bytes.Buffer
-	meta := CMeta[e.ElemType]
-	if meta == nil {
-		panic(fmt.Sprintf("dashborg.ElemText() bad ElemType:%s\n", e.ElemType))
+	visitFn(e)
+	if e.SubElem != nil {
+		e.SubElem.Walk(visitFn)
 	}
-	for i := 0; i < indentSize; i++ {
-		buf.WriteByte(' ')
+	for _, se := range e.List {
+		se.Walk(visitFn)
 	}
-	if e.ElemType == "text" {
-		e.writeTextElem(&buf)
-		et = append(et, buf.String())
-		return et
-	}
-	hasSubElems := e.SubElem != nil || len(e.List) > 0
-	textSubElem := e.SubElem != nil && e.SubElem.ElemType == "text"
-	isSelfClose := textSubElem || !hasSubElems
-
-	buf.WriteByte('<')
-	buf.WriteString(e.ElemType)
-	if e.ElemSubType != "" {
-		buf.WriteByte(':')
-		buf.WriteString(e.ElemSubType)
-	}
-	if e.ControlLoc != "" {
-		cloc, err := dashutil.ParseControlLocator(e.ControlLoc)
-		if err == nil {
-			buf.WriteString(" *")
-			buf.WriteString(cloc.ControlId)
-		}
-	} else if e.ControlName != "" {
-		buf.WriteString(" \"")
-		buf.WriteString(e.ControlName)
-		buf.WriteString("\"")
-	}
-	if isSelfClose {
-		buf.WriteByte('/')
-	}
-	buf.WriteByte('>')
-	wroteAttrs := e.writeAttrsStr(&buf)
-	if e.Text != "" {
-		if wroteAttrs {
-			buf.WriteByte(' ')
-		}
-		buf.WriteString(e.Text)
-		et = append(et, buf.String())
-		return et
-	}
-	if textSubElem {
-		if wroteAttrs {
-			buf.WriteByte(' ')
-		}
-		e.SubElem.writeTextElem(&buf)
-		et = append(et, buf.String())
-		return et
-	}
-	if hasSubElems {
-		et = append(et, buf.String())
-		newIndentSize := indentSize
-		if indentSize >= 0 {
-			newIndentSize += 2
-		}
-		for _, se := range e.List {
-			et = se.elemTextEx(newIndentSize, et)
-		}
-		var closeTagBuf bytes.Buffer
-		for i := 0; i < indentSize; i++ {
-			closeTagBuf.WriteByte(' ')
-		}
-		closeTagBuf.WriteString("</")
-		closeTagBuf.WriteString(e.ElemType)
-		closeTagBuf.WriteString(">")
-		et = append(et, closeTagBuf.String())
-		return et
-	}
-	et = append(et, buf.String())
-	return et
-}
-
-func (e *Elem) Dump(w io.Writer) {
-	elemText := e.elemTextEx(0, nil)
-	fmt.Fprintf(w, "%s\n", strings.Join(elemText, "\n"))
 }
 
 type IPanelRequest interface {
@@ -265,6 +155,17 @@ type PanelWriter struct {
 	PanelName string
 }
 
+func ParseElemText(elemText []string, locId string) *Elem {
+	if len(elemText) == 0 {
+		return nil
+	}
+	b := MakeElemBuilder(locId)
+	for _, text := range elemText {
+		b.Print(text)
+	}
+	return b.DoneElem()
+}
+
 func DefinePanel(panelName string) *PanelWriter {
 	rtn := &PanelWriter{PanelName: panelName}
 	rtn.ElemBuilder = MakeElemBuilder(dashutil.MakeZPLocId(Client.Config.ZoneName, panelName))
@@ -272,6 +173,16 @@ func DefinePanel(panelName string) *PanelWriter {
 }
 
 func (p *PanelWriter) Flush() error {
+	m := transport.DefinePanelMessage{
+		MType:     "definepanel",
+		Ts:        Ts(),
+		ZoneName:  Client.Config.ZoneName,
+		PanelName: p.PanelName,
+		ElemText:  p.DoneText(),
+	}
+	Client.SendMessageWithCallback(m, func(rtn interface{}, err error) {
+		fmt.Printf("DefinePanel err:%v rtn:%v\n", rtn, err)
+	})
 	return nil
 }
 

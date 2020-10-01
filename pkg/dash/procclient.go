@@ -132,7 +132,16 @@ func (c *ProcClient) SendMessageWithCallback(m interface{}, callback func(interf
 		return fmt.Errorf("ProcClient queue full, dropping message")
 	}
 	return nil
+}
 
+func (c *ProcClient) SendMessageWait(m interface{}) (interface{}, error) {
+	// ch := make(chan bool)
+	sendErr := c.SendMessageWithCallback(m, func(rtn interface{}, err error) {
+	})
+	if sendErr != nil {
+		return nil, sendErr
+	}
+	return nil, nil
 }
 
 func (c *ProcClient) goConnectClient() {

@@ -1,9 +1,13 @@
 package dash
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/google/uuid"
+	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 	"github.com/sawka/dashborg-go-sdk/pkg/parser"
 )
 
@@ -171,7 +175,7 @@ func (b *ElemBuilder) maybePush(elem *Elem, selfClose bool) {
 	if selfClose {
 		return
 	}
-	meta := CMeta[elem.ElemType]
+	meta := elem.GetMeta()
 	if meta.SubElemType != SUBELEM_ONE && meta.SubElemType != SUBELEM_LIST {
 		return
 	}
@@ -183,7 +187,7 @@ func (b *ElemBuilder) append(elem *Elem, selfClose bool) {
 	if top == nil {
 		panic("ElemBuilder.append should never see an empty stack")
 	}
-	topMeta := CMeta[top.ElemType]
+	topMeta := top.GetMeta()
 	if topMeta.SubElemType == SUBELEM_ONE {
 		if top.SubElem != nil {
 			b.addWarn("Tag can only have one child, overwriting previous tag")
@@ -196,4 +200,130 @@ func (b *ElemBuilder) append(elem *Elem, selfClose bool) {
 	} else {
 		panic(fmt.Sprintf("ElemBuilder.append top of stack has ElemType[%s], cannot append", top.ElemType))
 	}
+}
+
+// returns true if there was output, false if none
+func (e *Elem) writeAttrsStr(buf *bytes.Buffer) bool {
+	if len(e.ClassNames) == 0 && len(e.Attrs) == 0 {
+		return false
+	}
+	buf.WriteByte('[')
+	for idx, cn := range e.ClassNames {
+		if idx != 0 {
+			buf.WriteByte(':')
+		}
+		buf.WriteString(cn)
+	}
+	if len(e.ClassNames) > 0 && len(e.Attrs) > 0 {
+		buf.WriteByte(' ')
+	}
+	attrIdx := 0
+	for name, val := range e.Attrs {
+		escVal := strings.ReplaceAll(val, "\\", "\\\\")
+		escVal = strings.ReplaceAll(val, "\"", "\\\"")
+		if attrIdx != 0 {
+			buf.WriteByte(' ')
+		}
+		buf.WriteByte('@')
+		buf.WriteString(name)
+		if escVal != "1" {
+			buf.WriteByte('=')
+			buf.WriteByte('"')
+			buf.WriteString(escVal)
+			buf.WriteByte('"')
+		}
+		attrIdx++
+	}
+	buf.WriteByte(']')
+	return true
+}
+
+func (e *Elem) writeTextElem(buf *bytes.Buffer) {
+	wroteAttrs := e.writeAttrsStr(buf)
+	if wroteAttrs {
+		buf.WriteByte(' ')
+	}
+	buf.WriteString(e.Text)
+	return
+}
+
+// pass negative indentSize for no indenting
+func (e *Elem) elemTextEx(indentSize int, et []string) []string {
+	var buf bytes.Buffer
+	for i := 0; i < indentSize; i++ {
+		buf.WriteByte(' ')
+	}
+	if e.ElemType == "text" {
+		e.writeTextElem(&buf)
+		et = append(et, buf.String())
+		return et
+	}
+	hasSubElems := e.SubElem != nil || len(e.List) > 0
+	textSubElem := e.SubElem != nil && e.SubElem.ElemType == "text"
+	isSelfClose := textSubElem || !hasSubElems
+
+	buf.WriteByte('<')
+	buf.WriteString(e.ElemType)
+	if e.ElemSubType != "" {
+		buf.WriteByte(':')
+		buf.WriteString(e.ElemSubType)
+	}
+	if e.ControlLoc != "" {
+		cloc, err := dashutil.ParseControlLocator(e.ControlLoc)
+		if err == nil {
+			buf.WriteString(" *")
+			buf.WriteString(cloc.ControlId)
+		}
+	} else if e.ControlName != "" {
+		buf.WriteString(" \"")
+		buf.WriteString(e.ControlName)
+		buf.WriteString("\"")
+	}
+	if isSelfClose {
+		buf.WriteByte('/')
+	}
+	buf.WriteByte('>')
+	wroteAttrs := e.writeAttrsStr(&buf)
+	if e.Text != "" {
+		if wroteAttrs {
+			buf.WriteByte(' ')
+		}
+		buf.WriteString(e.Text)
+		et = append(et, buf.String())
+		return et
+	}
+	if textSubElem {
+		if wroteAttrs {
+			buf.WriteByte(' ')
+		}
+		e.SubElem.writeTextElem(&buf)
+		et = append(et, buf.String())
+		return et
+	}
+	if hasSubElems {
+		et = append(et, buf.String())
+		newIndentSize := indentSize
+		if indentSize >= 0 {
+			newIndentSize += 2
+		}
+		for _, se := range e.List {
+			et = se.elemTextEx(newIndentSize, et)
+		}
+		var closeTagBuf bytes.Buffer
+		for i := 0; i < indentSize; i++ {
+			closeTagBuf.WriteByte(' ')
+		}
+		closeTagBuf.WriteString("</")
+		closeTagBuf.WriteString(e.ElemType)
+		closeTagBuf.WriteString(">")
+		et = append(et, closeTagBuf.String())
+		return et
+	}
+	et = append(et, buf.String())
+	return et
+}
+
+func (e *Elem) Dump(w io.Writer) {
+	elemText := e.elemTextEx(0, nil)
+	fmt.Fprintf(w, "%s\n", strings.Join(elemText, "\n"))
 }

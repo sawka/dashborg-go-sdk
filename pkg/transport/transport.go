@@ -24,6 +24,7 @@ type DoneMessage struct {
 	Ts    int64  `json:"ts"`
 }
 
+// "definepanel"
 type DefinePanelMessage struct {
 	MType     string   `json:"mtype"`
 	Ts        int64    `json:"ts"`
