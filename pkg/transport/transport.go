@@ -110,3 +110,17 @@ type LogEntry struct {
 	ElemText  []string    `json:"elemtext,omitempty"`
 	Data      interface{} `json:"data,omitempty"`
 }
+
+type ProgressData struct {
+	DisplayMode string `json:"displaymode"` // "progress", "status", "spinner"
+	Ts          int64  `json:"ts"`
+	Label       string `json:"label"`
+	Err         string `json:"err"`
+	Max         int    `json:"max"`
+	Val         int    `json:"val"`
+	Inc         int    `json:"inc"`
+	Status      string `json:"status"`
+	ClearStatus bool   `json:"clearstatus"`
+	Done        bool   `json:"done"`
+	Reset       bool   `json:"reset"`
+}

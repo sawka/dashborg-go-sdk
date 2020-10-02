@@ -54,7 +54,7 @@ func (b *ElemBuilder) Print(text string, attrs ...string) *Control {
 		b.closeTag(edecl)
 		return nil
 	}
-	elem := b.declToElem(edecl)
+	elem := DeclToElem(edecl, b.LocId)
 	if elem == nil {
 		return nil
 	}
@@ -93,7 +93,7 @@ func (b *ElemBuilder) DoneElem() *Elem {
 	return b.Root
 }
 
-func (b *ElemBuilder) declToElem(edecl *parser.ElemDecl) *Elem {
+func DeclToElem(edecl *parser.ElemDecl, locId string) *Elem {
 	if edecl == nil {
 		return nil
 	}
@@ -115,10 +115,10 @@ func (b *ElemBuilder) declToElem(edecl *parser.ElemDecl) *Elem {
 			rtn.ControlName = edecl.ControlName
 		}
 		if edecl.ControlId != "" {
-			rtn.ControlLoc = b.LocId + "|" + edecl.ControlId
+			rtn.ControlLoc = locId + "|" + edecl.ControlId
 		}
 		if rtn.ControlName == "" && rtn.ControlLoc == "" {
-			rtn.ControlLoc = b.LocId + "|" + uuid.New().String()
+			rtn.ControlLoc = locId + "|" + uuid.New().String()
 		}
 	}
 	if meta.SubElemType == SUBELEM_TEXT {
@@ -126,10 +126,10 @@ func (b *ElemBuilder) declToElem(edecl *parser.ElemDecl) *Elem {
 	} else if edecl.IsSelfClose {
 		// subelems are only set for self closing tags
 		if meta.SubElemType == SUBELEM_ONE {
-			rtn.SubElem = b.declToElem(edecl.SubElem)
+			rtn.SubElem = DeclToElem(edecl.SubElem, locId)
 		} else if meta.SubElemType == SUBELEM_LIST {
 			if edecl.SubElem != nil {
-				rtn.List = []*Elem{b.declToElem(edecl.SubElem)}
+				rtn.List = []*Elem{DeclToElem(edecl.SubElem, locId)}
 			}
 		}
 	}

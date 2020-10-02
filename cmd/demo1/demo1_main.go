@@ -13,13 +13,16 @@ func RunProcess1() {
 	logger := panel.LookupControl("log", "demo-log2")
 	logger.LogText("Running Process #1")
 	// run the actual process
-	p := logger.LogControl("<progress>[@progresslabel=P1 @progressmax=10]")
+	p := logger.LogControl("<progress/>[@progresslabel=P1 @progressmax=10]")
+	if p == nil {
+		fmt.Printf("process1 - nil return from LogControl\n")
+		return
+	}
 	for i := 0; i < 10; i++ {
 		time.Sleep(1 * time.Second)
 		p.ProgressSet(i+1, "running")
 	}
 	p.ProgressDone()
-	// p.UpdateProgress(transport.ProgressData{Done: true, ClearStatus: true})
 	logger.LogText("Process #1 Done")
 }
 

@@ -2,7 +2,9 @@ package dash
 
 import (
 	"fmt"
+	"os"
 
+	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 	"github.com/sawka/dashborg-go-sdk/pkg/transport"
 )
 
@@ -26,6 +28,20 @@ func (c *Control) GetMeta() *ControlTypeMeta {
 		meta = &ControlTypeMeta{}
 	}
 	return meta
+}
+
+func (c *Control) GenericUpdate(cmd string, data interface{}) {
+	if !c.IsValid() || !c.GetMeta().HasData {
+		return
+	}
+	m := transport.ControlUpdateMessage{
+		MType:      "controlupdate",
+		Ts:         Ts(),
+		ControlLoc: c.ControlLoc,
+		Cmd:        cmd,
+		Data:       data,
+	}
+	Client.SendMessage(m)
 }
 
 func (c *Control) OnClick(fn func() error) {
@@ -54,12 +70,24 @@ func (c *Control) Release() {
 }
 
 func (c *Control) ProgressSet(val int, status string) {
+	if c.ControlType != "progress" || !c.IsValid() {
+		return
+	}
+	c.GenericUpdate("genupdate", transport.ProgressData{Val: val, Status: status})
 }
 
 func (c *Control) ProgressDone() {
+	if c.ControlType != "progress" || !c.IsValid() {
+		return
+	}
+	c.GenericUpdate("genupdate", transport.ProgressData{Done: true, ClearStatus: true})
 }
 
 func (c *Control) ProgressError(err string) {
+	if c.ControlType != "progress" || !c.IsValid() {
+		return
+	}
+	c.GenericUpdate("genupdate", transport.ProgressData{Done: true, ClearStatus: true, Err: err})
 }
 
 func (c *Control) LogText(fmtStr string, data ...interface{}) {
@@ -84,6 +112,38 @@ func (c *Control) LogText(fmtStr string, data ...interface{}) {
 }
 
 func (c *Control) LogControl(text string, attrs ...string) *Control {
+	if c.ControlType != "log" || !c.IsValid() {
+		return nil
+	}
+
+	cloc := dashutil.MustParseControlLocator(c.ControlLoc)
+	elem := ParseElemText([]string{text}, dashutil.MakeEphScLocId(cloc.ControlId), false)
+	if elem == nil {
+		return nil
+	}
+	fmt.Printf("logcontrol elem:\n")
+	elem.Dump(os.Stdout)
+	fmt.Printf("elem cloc:%s\n", elem.ControlLoc)
+	if !elem.GetMeta().CanEmbed {
+		return nil
+	}
+	ts := Ts()
+	entry := transport.LogEntry{
+		Ts:        ts,
+		ProcRunId: Client.GetProcRunId(),
+		ElemText:  elem.ElemTextEx(0, nil),
+	}
+	m := transport.ControlAppendMessage{
+		MType:      "controlappend",
+		Ts:         ts,
+		PanelName:  c.PanelName,
+		ControlLoc: c.ControlLoc,
+		Data:       entry,
+	}
+	Client.SendMessage(m)
+	if elem.ControlLoc != "" {
+		return &Control{PanelName: c.PanelName, ControlType: elem.ElemType, ControlLoc: elem.ControlLoc}
+	}
 	return nil
 }
 

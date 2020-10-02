@@ -168,7 +168,7 @@ type PanelWriter struct {
 	PanelName string
 }
 
-func ParseElemText(elemText []string, locId string) *Elem {
+func ParseElemText(elemText []string, locId string, allowImplicitRoot bool) *Elem {
 	if len(elemText) == 0 {
 		return nil
 	}
@@ -176,7 +176,14 @@ func ParseElemText(elemText []string, locId string) *Elem {
 	for _, text := range elemText {
 		b.Print(text)
 	}
-	return b.DoneElem()
+	elem := b.DoneElem()
+	if !allowImplicitRoot && b.ImplicitRoot {
+		if len(elem.List) == 0 {
+			return nil
+		}
+		return elem.List[0]
+	}
+	return elem
 }
 
 func DefinePanel(panelName string) *PanelWriter {
