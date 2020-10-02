@@ -2,7 +2,6 @@ package dash
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 	"github.com/sawka/dashborg-go-sdk/pkg/transport"
@@ -121,9 +120,6 @@ func (c *Control) LogControl(text string, attrs ...string) *Control {
 	if elem == nil {
 		return nil
 	}
-	fmt.Printf("logcontrol elem:\n")
-	elem.Dump(os.Stdout)
-	fmt.Printf("elem cloc:%s\n", elem.ControlLoc)
 	if !elem.GetMeta().CanEmbed {
 		return nil
 	}

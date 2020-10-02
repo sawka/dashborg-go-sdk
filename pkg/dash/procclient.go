@@ -135,7 +135,6 @@ func (c *ProcClient) SendMessageWithCallback(m interface{}, callback func(interf
 }
 
 func (c *ProcClient) SendMessageWait(m interface{}) (interface{}, error) {
-	startTs := time.Now()
 	var outerRtn interface{}
 	var outerErr error
 	ch := make(chan bool)
@@ -148,7 +147,6 @@ func (c *ProcClient) SendMessageWait(m interface{}) (interface{}, error) {
 		return nil, sendErr
 	}
 	<-ch
-	fmt.Printf("Message %s elapsed:%dms\n", transport.GetMType(m), int(time.Since(startTs)/time.Millisecond))
 	return outerRtn, outerErr
 }
 
@@ -189,7 +187,9 @@ func (c *ProcClient) sendLoop() {
 		}
 
 		// deal with error conditions
+		startTs := time.Now()
 		resp := c.Client.DoRequest("msg", entry.Message)
+		log.Printf("Message %s elapsed:%dms\n", transport.GetMType(entry.Message), int(time.Since(startTs)/time.Millisecond))
 		if resp.ConnError != nil {
 			log.Printf("Dashborg ProcClient ConnError:%v\n", resp.ConnError)
 			retryEntry = &entry

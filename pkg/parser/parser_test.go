@@ -25,14 +25,16 @@ func TestBasic(t *testing.T) {
 		t.Errorf("error parsing comment 1 len=%d, pos=%d", len(pc.Line), pc.Pos)
 	}
 
-	vars := make(map[string]string)
-	pc = MakeParseContext("$foo = bar", 1, vars)
-	pc.vardecl()
-	if pc.Vars["foo"] != "bar" {
-		reportErr(t, pc, "error parsing vardecl 1")
+	pc = MakeParseContext("$foo = bar", 1, nil)
+	vdecl := pc.vardecl()
+	if vdecl == nil {
+		reportErr(t, pc, "vardecl1 no decl returned")
+	}
+	if vdecl != nil && (vdecl.VarName != "foo" || vdecl.VarValue != "bar") {
+		reportErrElem(t, pc, vdecl, "vardecl1 bad vardecl parse")
 	}
 
-	pc = MakeParseContext("hello", 1, vars)
+	pc = MakeParseContext("hello", 1, nil)
 	e := pc.itext()
 	if e == nil {
 		reportErr(t, pc, "itext1 no elem returned")
@@ -89,7 +91,7 @@ func TestBasic(t *testing.T) {
 		reportErr(t, pc, "attrs3 bad classnames parse")
 	}
 
-	pc = MakeParseContext("[@foo=bar]  hello", 1, vars)
+	pc = MakeParseContext("[@foo=bar]  hello", 1, nil)
 	e = pc.itext()
 	if e == nil {
 		reportErr(t, pc, "itext2 no elem returned")
@@ -104,7 +106,7 @@ func TestBasic(t *testing.T) {
 		reportErr(t, pc, "itext2 bad attr parse")
 	}
 
-	pc = MakeParseContext("</div>", 1, vars)
+	pc = MakeParseContext("</div>", 1, nil)
 	e = pc.elem()
 	if e == nil {
 		reportErr(t, pc, "closeelem1 no elem returned")
@@ -113,7 +115,7 @@ func TestBasic(t *testing.T) {
 		reportErrElem(t, pc, e, "closeelem1 not parsed correctly")
 	}
 
-	pc = MakeParseContext("</div:s1>", 1, vars)
+	pc = MakeParseContext("</div:s1>", 1, nil)
 	e = pc.elem()
 	if e == nil {
 		reportErr(t, pc, "closeelem2 no elem returned")
@@ -122,7 +124,7 @@ func TestBasic(t *testing.T) {
 		reportErrElem(t, pc, e, "closeelem2 not parsed correctly")
 	}
 
-	pc = MakeParseContext("<div>", 1, vars)
+	pc = MakeParseContext("<div>", 1, nil)
 	e = pc.elem()
 	if e == nil {
 		reportErr(t, pc, "openelem1 no elem returned")
@@ -131,7 +133,7 @@ func TestBasic(t *testing.T) {
 		reportErrElem(t, pc, e, "openelem1 not parsed correctly")
 	}
 
-	pc = MakeParseContext("<div:foo/>", 1, vars)
+	pc = MakeParseContext("<div:foo/>", 1, nil)
 	e = pc.elem()
 	if e == nil {
 		reportErr(t, pc, "openelem2 no elem returned")
@@ -140,7 +142,7 @@ func TestBasic(t *testing.T) {
 		reportErrElem(t, pc, e, "openelem2 not parsed correctly")
 	}
 
-	pc = MakeParseContext("<div> [@h1 @height=20px]", 1, vars)
+	pc = MakeParseContext("<div> [@h1 @height=20px]", 1, nil)
 	e = pc.elem()
 	if e == nil {
 		reportErr(t, pc, "openelem3 no elem returned")
@@ -152,7 +154,7 @@ func TestBasic(t *testing.T) {
 		reportErrElem(t, pc, e, "openelem3 bad attrs")
 	}
 
-	pc = MakeParseContext("<button/> [@primary @height=30px] Click!", 1, vars)
+	pc = MakeParseContext("<button/> [@primary @height=30px] Click!", 1, nil)
 	e = pc.elem()
 	if e == nil {
 		reportErr(t, pc, "openelem4 no elem returned")
@@ -173,7 +175,7 @@ func TestBasic(t *testing.T) {
 		}
 	}
 
-	pc = MakeParseContext("<div> [@border='1px solid black' @foo=\"dq test \\\"ab\\\\c\\\"\"]", 1, vars)
+	pc = MakeParseContext("<div> [@border='1px solid black' @foo=\"dq test \\\"ab\\\\c\\\"\"]", 1, nil)
 	e = pc.ParseLine()
 	if e == nil {
 		reportErr(t, pc, "line1 no elem returned")
@@ -188,7 +190,7 @@ func TestBasic(t *testing.T) {
 		reportErrElem(t, pc, e, "line1 bad doublequote attr parse")
 	}
 
-	pc = MakeParseContext("<div *cd2a95fb-40e5-48bc-b475-f38ec7a5263d>", 1, vars)
+	pc = MakeParseContext("<div *cd2a95fb-40e5-48bc-b475-f38ec7a5263d>", 1, nil)
 	e = pc.ParseLine()
 	if e == nil {
 		reportErr(t, pc, "line2 no elem returned")
@@ -197,7 +199,7 @@ func TestBasic(t *testing.T) {
 		reportErrElem(t, pc, e, "line2 controlid not parsed")
 	}
 
-	pc = MakeParseContext("<div \"p-1\">", 1, vars)
+	pc = MakeParseContext("<div \"p-1\">", 1, nil)
 	e = pc.ParseLine()
 	if e == nil {
 		reportErr(t, pc, "line3 no elem returned")
@@ -206,7 +208,7 @@ func TestBasic(t *testing.T) {
 		reportErrElem(t, pc, e, "line3 quoted controlname not parsed")
 	}
 
-	pc = MakeParseContext("<handler /acc-test>", 1, vars)
+	pc = MakeParseContext("<handler /acc-test>", 1, nil)
 	e = pc.ParseLine()
 	if e == nil {
 		reportErr(t, pc, "line4 no elem returned")
@@ -215,7 +217,7 @@ func TestBasic(t *testing.T) {
 		reportErrElem(t, pc, e, "line4 quoted controlname not parsed")
 	}
 
-	pc = MakeParseContext("<handler /acc-test/>", 1, vars)
+	pc = MakeParseContext("<handler /acc-test/>", 1, nil)
 	e = pc.ParseLine()
 	if e == nil {
 		reportErr(t, pc, "line5 no elem returned")
@@ -227,7 +229,7 @@ func TestBasic(t *testing.T) {
 		reportErrElem(t, pc, e, "line5 not self close")
 	}
 
-	pc = MakeParseContext("<div>[rootdiv]", 1, vars)
+	pc = MakeParseContext("<div>[rootdiv]", 1, nil)
 	e = pc.ParseLine()
 	if e == nil {
 		reportErr(t, pc, "line6 no elem returned")
@@ -236,7 +238,7 @@ func TestBasic(t *testing.T) {
 		reportErrElem(t, pc, e, "line6 bad classnames parse")
 	}
 
-	pc = MakeParseContext("<button b-1>[primary] Run Process #1", 1, vars)
+	pc = MakeParseContext("<button b-1>[primary] Run Process #1", 1, nil)
 	e = pc.ParseLine()
 	if e == nil {
 		reportErr(t, pc, "line7 no elem returned")
@@ -248,7 +250,7 @@ func TestBasic(t *testing.T) {
 		reportErr(t, pc, "line7 bad subelem")
 	}
 
-	pc = MakeParseContext("<log demo-logger/>[dark @grow] ", 1, vars)
+	pc = MakeParseContext("<log demo-logger/>[dark @grow] ", 1, nil)
 	e = pc.ParseLine()
 	if e == nil {
 		reportErr(t, pc, "line8 no elem returned")
@@ -257,7 +259,7 @@ func TestBasic(t *testing.T) {
 		reportErr(t, pc, "line8 should not have subelem")
 	}
 
-	pc = MakeParseContext("<log *10300ca2-2325-4315-90ad-b8f0988dde4b \"demo\"/>[dark @grow] ", 1, vars)
+	pc = MakeParseContext("<log *10300ca2-2325-4315-90ad-b8f0988dde4b \"demo\"/>[dark @grow] ", 1, nil)
 	e = pc.ParseLine()
 	if e == nil {
 		reportErr(t, pc, "line9 no elem returned")

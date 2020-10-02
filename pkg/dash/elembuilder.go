@@ -13,7 +13,7 @@ import (
 
 type ElemBuilder struct {
 	LocId        string
-	Vars         map[string]string
+	Vars         map[string]interface{}
 	Root         *Elem
 	ImplicitRoot bool
 	Stack        []*Elem
@@ -24,25 +24,81 @@ type ElemBuilder struct {
 	Warns        []parser.ParseErr
 }
 
+type BuilderAttr struct {
+	AttrName string
+	AttrVal  string
+}
+
+type BuilderVar struct {
+	VarName string
+	VarVal  interface{}
+}
+
+type BuilderArg interface {
+	IsBuilderArg() bool
+}
+
+func (_ BuilderAttr) IsBuilderArg() bool {
+	return true
+}
+
+func (_ BuilderVar) IsBuilderArg() bool {
+	return true
+}
+
+func Attr(name string, val string) BuilderAttr {
+	return BuilderAttr{AttrName: name, AttrVal: val}
+}
+
+func Var(name string, val interface{}) BuilderVar {
+	return BuilderVar{VarName: name, VarVal: val}
+}
+
 func MakeElemBuilder(locId string) *ElemBuilder {
-	return &ElemBuilder{LocId: locId, Vars: make(map[string]string)}
+	return &ElemBuilder{LocId: locId, Vars: make(map[string]interface{})}
 }
 
 func (b *ElemBuilder) TrackAnonControls(anonTrack bool) {
 	b.NoAnon = !anonTrack
 }
 
-func (b *ElemBuilder) SetVar(name string, val string) {
-	if val == "" {
+func (b *ElemBuilder) SetVar(name string, val interface{}) {
+	if val == nil {
 		delete(b.Vars, name)
 		return
 	}
 	b.Vars[name] = val
 }
 
-func (b *ElemBuilder) Print(text string, attrs ...string) *Control {
+func tempVarsFromArgs(args []BuilderArg) map[string]interface{} {
+	var rtn map[string]interface{}
+	for _, arg := range args {
+		if bvar, ok := arg.(BuilderVar); ok {
+			if rtn == nil {
+				rtn = make(map[string]interface{})
+			}
+			rtn[bvar.VarName] = bvar.VarVal
+		}
+	}
+	return rtn
+}
+
+func addArgAttrs(attrs map[string]string, args []BuilderArg) map[string]string {
+	for _, arg := range args {
+		if battr, ok := arg.(BuilderAttr); ok {
+			if attrs == nil {
+				attrs = make(map[string]string)
+			}
+			attrs[battr.AttrName] = battr.AttrVal
+		}
+	}
+	return attrs
+}
+
+func (b *ElemBuilder) Print(text string, args ...BuilderArg) *Control {
 	b.LineNo++
-	ctx := parser.MakeParseContext(text, b.LineNo, b.Vars)
+	tempVars := tempVarsFromArgs(args)
+	ctx := parser.MakeParseContext(text, b.LineNo, parser.Map2VarFn(b.Vars, tempVars))
 	edecl := ctx.ParseLine()
 	for _, err := range ctx.Errs {
 		b.Errs = append(b.Errs, err)
@@ -50,11 +106,17 @@ func (b *ElemBuilder) Print(text string, attrs ...string) *Control {
 	if edecl == nil {
 		return nil
 	}
+	if edecl.VarName != "" {
+		// vardecl
+		b.Vars[edecl.VarName] = edecl.VarValue
+		return nil
+	}
+	edecl.Attrs = addArgAttrs(edecl.Attrs, args)
 	if edecl.IsClose {
 		b.closeTag(edecl)
 		return nil
 	}
-	elem := DeclToElem(edecl, b.LocId)
+	elem := b.declToElem(edecl)
 	if elem == nil {
 		return nil
 	}
@@ -93,7 +155,7 @@ func (b *ElemBuilder) DoneElem() *Elem {
 	return b.Root
 }
 
-func DeclToElem(edecl *parser.ElemDecl, locId string) *Elem {
+func (b *ElemBuilder) declToElem(edecl *parser.ElemDecl) *Elem {
 	if edecl == nil {
 		return nil
 	}
@@ -115,10 +177,10 @@ func DeclToElem(edecl *parser.ElemDecl, locId string) *Elem {
 			rtn.ControlName = edecl.ControlName
 		}
 		if edecl.ControlId != "" {
-			rtn.ControlLoc = locId + "|" + edecl.ControlId
+			rtn.ControlLoc = b.LocId + "|" + edecl.ControlId
 		}
 		if rtn.ControlName == "" && rtn.ControlLoc == "" {
-			rtn.ControlLoc = locId + "|" + uuid.New().String()
+			rtn.ControlLoc = b.LocId + "|" + uuid.New().String()
 		}
 	}
 	if meta.SubElemType == SUBELEM_TEXT {
@@ -126,10 +188,10 @@ func DeclToElem(edecl *parser.ElemDecl, locId string) *Elem {
 	} else if edecl.IsSelfClose {
 		// subelems are only set for self closing tags
 		if meta.SubElemType == SUBELEM_ONE {
-			rtn.SubElem = DeclToElem(edecl.SubElem, locId)
+			rtn.SubElem = b.declToElem(edecl.SubElem)
 		} else if meta.SubElemType == SUBELEM_LIST {
 			if edecl.SubElem != nil {
-				rtn.List = []*Elem{DeclToElem(edecl.SubElem, locId)}
+				rtn.List = []*Elem{b.declToElem(edecl.SubElem)}
 			}
 		}
 	}

@@ -21,7 +21,8 @@ import (
 // varname := [A-Za-z][A-Za-z0-9_]*
 // itext := attrs? (text | varexpr | charexpr)*
 // text := all chars except '${' and '$('
-// varexpr := '${' varname '}'
+// varexpr := '${' varname (':' formatexpr)? '}'
+// formatexpr := '%' [^}]+
 // elem := openelem | closeelem
 // closeelem := '</' varname (':' varname)? ws '>'
 // openelem := '<' varname (':' varname)? ws (('*' uuid) | controlname_quoted | controlname)? ws '/'? '>' ws attrs ws itext?
@@ -47,6 +48,9 @@ type ElemDecl struct {
 	Attrs       map[string]string
 	Text        string
 	SubElem     *ElemDecl
+
+	VarName  string
+	VarValue string
 }
 
 type ParseErr struct {
@@ -55,21 +59,39 @@ type ParseErr struct {
 	Err    string
 }
 
+type VarLookupFn func(string) interface{}
+
+func MapVarFn(m map[string]interface{}) VarLookupFn {
+	return func(name string) interface{} {
+		return m[name]
+	}
+}
+
+func Map2VarFn(m1 map[string]interface{}, m2 map[string]interface{}) VarLookupFn {
+	return func(name string) interface{} {
+		v1, ok := m1[name]
+		if ok {
+			return v1
+		}
+		return m2[name]
+	}
+}
+
 type ParseContext struct {
 	Line   []byte
 	LineNo int
 	Pos    int
-	Vars   map[string]string
+	VarFn  VarLookupFn
 	Errs   []ParseErr
 	Warns  []ParseErr
 }
 
-func MakeParseContext(line string, lineno int, vars map[string]string) *ParseContext {
+func MakeParseContext(line string, lineno int, varFn VarLookupFn) *ParseContext {
 	return &ParseContext{
 		Line:   []byte(line),
 		LineNo: lineno,
 		Pos:    0,
-		Vars:   vars,
+		VarFn:  varFn,
 	}
 }
 
@@ -162,16 +184,18 @@ func (ctx *ParseContext) ParseLine() *ElemDecl {
 		ctx.comment()
 
 	case '$':
-		ctx.vardecl()
+		return ctx.vardecl()
 
 	case '[':
-		return ctx.itext()
+		decl, _ := ctx.itext()
+		return decl
 
 	case '<':
 		return ctx.elem()
 
 	default:
-		return ctx.itext()
+		decl, _ := ctx.itext()
+		return decl
 	}
 	return nil
 }
@@ -200,25 +224,25 @@ func (ctx *ParseContext) varname() string {
 	return string(ctx.Line[mark:ctx.Pos])
 }
 
-func (ctx *ParseContext) vardecl() {
+func (ctx *ParseContext) vardecl() *ElemDecl {
 	if !ctx.match('$') {
 		ctx.addErr("vardecl does not start with '$'")
-		return
+		return nil
 	}
 	name := ctx.varname()
 	if name == "" {
 		ctx.addErr("invalid varname in vardecl")
-		return
+		return nil
 	}
 	ctx.ws()
 	if !ctx.match('=') {
 		ctx.addErr("invalid varname, or no '=' in vardecl")
-		return
+		return nil
 	}
 	ctx.ws()
 	val := string(ctx.Line[ctx.Pos:])
 	ctx.Pos = len(ctx.Line)
-	ctx.Vars[name] = val
+	return &ElemDecl{VarName: name, VarValue: val}
 }
 
 func (ctx *ParseContext) attr_noquote() (string, bool) {
@@ -235,6 +259,11 @@ func (ctx *ParseContext) attr_noquote() (string, bool) {
 		ctx.advance()
 	}
 	return string(ctx.Line[mark:ctx.Pos]), true
+}
+
+func (ctx *ParseContext) varexpr() bool {
+	ctx.addErr("varexpr: var interpolation not supported")
+	return false
 }
 
 func (ctx *ParseContext) attr_doublequote() (string, bool) {
@@ -261,8 +290,10 @@ func (ctx *ParseContext) attr_doublequote() (string, bool) {
 			continue
 		}
 		if ctx.test2('$', '{') {
-			ctx.addErr("dq var interpolation not supported")
-			return "", false
+			ok := ctx.varexpr()
+			if !ok {
+				return "", false
+			}
 		}
 		ch := ctx.advance()
 		buf.WriteRune(ch)
@@ -381,13 +412,13 @@ func (ctx *ParseContext) attrs() ([]string, map[string]string, bool) {
 	return cns, rtn, true
 }
 
-func (ctx *ParseContext) itext() *ElemDecl {
+func (ctx *ParseContext) itext() (*ElemDecl, bool) {
 	rtn := &ElemDecl{ElemType: "text"}
 	if ctx.test('[') {
 		var ok bool
 		rtn.ClassNames, rtn.Attrs, ok = ctx.attrs()
 		if !ok {
-			return nil
+			return nil, false
 		}
 		ctx.ws()
 	}
@@ -397,18 +428,16 @@ func (ctx *ParseContext) itext() *ElemDecl {
 			break
 		}
 		if ctx.test2('$', '{') {
-			ctx.addErr("itext var interpolation not supported")
-			ctx.advance()
-			ctx.advance()
-			buf.WriteRune('$')
-			buf.WriteRune('{')
-			continue
+			ok := ctx.varexpr()
+			if !ok {
+				return nil, false
+			}
 		}
 		ch := ctx.advance()
 		buf.WriteRune(ch)
 	}
 	rtn.Text = buf.String()
-	return rtn
+	return rtn, true
 }
 
 func (ctx *ParseContext) elemtypeandsubtype() (string, string, bool) {
@@ -556,7 +585,10 @@ func (ctx *ParseContext) openelem() *ElemDecl {
 	if ctx.iseof() {
 		return rtn
 	}
-	subElem := ctx.itext()
+	subElem, ok := ctx.itext()
+	if !ok {
+		return nil
+	}
 	if subElem != nil {
 		ctx.ws()
 	}
