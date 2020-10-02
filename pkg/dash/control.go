@@ -170,10 +170,10 @@ func (c *Control) DynSetData(data ...interface{}) {
 func (c *Control) DynSetElem(elemtext []string) {
 }
 
-func (c *Control) OnAllRequests(fn func(req IPanelRequest) (bool, error)) {
+func (c *Control) OnAllRequests(fn func(req *PanelRequest) (bool, error)) {
 }
 
-func (c *Control) OnRequest(path string, fn func(req IPanelRequest) error) {
+func (c *Control) OnRequest(path string, fn func(req *PanelRequest) error) {
 }
 
 func (c *Control) CounterInc(val int) {

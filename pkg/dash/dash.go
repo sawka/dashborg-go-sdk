@@ -151,16 +151,41 @@ func (e *Elem) Walk(visitFn func(*Elem)) {
 	}
 }
 
-type IPanelRequest interface {
-	LookupContext(name string) IContextWriter
-	GetHandlerPath() string
-	GetData() interface{}
+type PanelRequest struct {
+	ZoneName    string
+	PanelName   string
+	FeClientId  string
+	ReqId       string
+	HandlerPath string
+	Data        interface{}
+	Depth       int
 }
 
-type IContextWriter interface {
-	// IElemBuilder
-	Flush()
-	Revert()
+func (req *PanelRequest) LookupContext(name string) *ContextWriter {
+	return nil
+}
+
+func (req *PanelRequest) GetHandlerPath() string {
+	return req.HandlerPath
+}
+
+func (req *PanelRequest) GetData() interface{} {
+	return req.Data
+}
+
+func (req *PanelRequest) TriggerRequest(handlerPath string, data interface{}) {
+}
+
+type ContextWriter struct {
+	*ElemBuilder
+	Req         *PanelRequest
+	ContextElem *Elem
+}
+
+func (w *ContextWriter) Flush() {
+}
+
+func (w *ContextWriter) Revert() {
 }
 
 type PanelWriter struct {
@@ -275,6 +300,9 @@ func (p *Panel) RefreshControlMappings() error {
 
 func (p *Panel) LookupControl(controlType string, controlName string) *Control {
 	c := p.ControlMappings[controlName]
+	if c == nil {
+		return &Control{ControlType: "invalid"}
+	}
 	if c.ControlType != controlType {
 		return &Control{ControlType: "invalid"}
 	}
@@ -286,33 +314,11 @@ func (p *Panel) LookupControl(controlType string, controlName string) *Control {
 	return rtn
 }
 
-type IZone interface {
-	LookupControl(controlType string, controlName string) Control
+func (p *Panel) OnRequest(handlerPath string, handlerFn func(*PanelRequest) error) {
 }
 
-type IControl interface {
-	OnClick(fn func() error)
-
-	ProgressSet(val int, status string)
-	ProgressDone()
-	ProgressError(err string)
-
-	LogText(fmt string, data ...interface{})
-	LogControl(text string, attrs ...string) Control
-
-	RowDataClear()
-
-	DynSetFStr(fmt string)
-	DynSetData(data ...interface{})
-	DynSetElem(elemtext []string)
-
-	OnAllRequests(fn func(req IPanelRequest) (bool, error))
-	OnRequest(path string, fn func(req IPanelRequest) error)
-
-	CounterInc(val int)
-
-	TableAddData(data ...interface{})
-	TableAddElems(elemtext []string)
+type IZone interface {
+	LookupControl(controlType string, controlName string) Control
 }
 
 func Ts() int64 {
