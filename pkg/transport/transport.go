@@ -32,6 +32,7 @@ type DefinePanelMessage struct {
 	Ts        int64    `json:"ts"`
 	ZoneName  string   `json:"zonename"`
 	PanelName string   `json:"panelname"`
+	TrackAnon bool     `json:"trackanon"`
 	ElemText  []string `json:"elemtext"`
 }
 

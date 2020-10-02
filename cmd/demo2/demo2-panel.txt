@@ -7,7 +7,7 @@
     <button "btn-create-account"/>[@handler=/acc/show-create-account] Create Account
     <button "btn-stop"/>[@marginleft=10px @hidden] Stop
     [@grow]
-    <button/>[@handler=/acc/regen-acclist] Regenerate Test Accounts
+    <button "btn-regen"/>[@handler=/acc/regen-acclist] Regenerate Test Accounts
   </div>
   <div>[@row @grow]
     <div>[@width=250px @bgcolor="#eee" @height=100% @borderright="1px solid black"]

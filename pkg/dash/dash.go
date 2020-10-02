@@ -223,6 +223,7 @@ func (p *PanelWriter) Flush() error {
 		Ts:        Ts(),
 		ZoneName:  Client.Config.ZoneName,
 		PanelName: p.PanelName,
+		TrackAnon: !p.ElemBuilder.NoAnon,
 		ElemText:  p.DoneText(),
 	}
 	Client.SendMessageWithCallback(m, func(rtn interface{}, err error) {
