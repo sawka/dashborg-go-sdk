@@ -261,9 +261,43 @@ func (ctx *ParseContext) attr_noquote() (string, bool) {
 	return string(ctx.Line[mark:ctx.Pos]), true
 }
 
-func (ctx *ParseContext) varexpr() bool {
-	ctx.addErr("varexpr: var interpolation not supported")
-	return false
+func (ctx *ParseContext) varexpr() (string, bool) {
+	if !ctx.match2('$', '{') {
+		ctx.addErr("bad varexpr, must start with \"${\"")
+		return "", false
+	}
+	formatSpec := "%v"
+	varName := ctx.varname()
+	if varName == "" {
+		return "", false
+	}
+	if ctx.match(':') {
+		if !ctx.match('%') {
+			ctx.addErr("bad varexpr, format string must start with '%'")
+			return "", false
+		}
+		var buf bytes.Buffer
+		buf.WriteByte('%')
+		for {
+			if ctx.iseof() {
+				ctx.addErr("unterminated varexpr")
+				return "", false
+			}
+			if ctx.test('}') {
+				break
+			}
+			ch := ctx.advance()
+			buf.WriteRune(ch)
+		}
+		formatSpec = buf.String()
+	}
+	if !ctx.match('}') {
+		ctx.addErr("bad varexpr, must end with '}'")
+		return "", false
+	}
+	varVal := ctx.VarFn(varName)
+	str := fmt.Sprintf(formatSpec, varVal)
+	return str, true
 }
 
 func (ctx *ParseContext) attr_doublequote() (string, bool) {
@@ -290,10 +324,12 @@ func (ctx *ParseContext) attr_doublequote() (string, bool) {
 			continue
 		}
 		if ctx.test2('$', '{') {
-			ok := ctx.varexpr()
+			varVal, ok := ctx.varexpr()
 			if !ok {
 				return "", false
 			}
+			buf.WriteString(varVal)
+			continue
 		}
 		ch := ctx.advance()
 		buf.WriteRune(ch)
@@ -428,10 +464,12 @@ func (ctx *ParseContext) itext() (*ElemDecl, bool) {
 			break
 		}
 		if ctx.test2('$', '{') {
-			ok := ctx.varexpr()
+			varVal, ok := ctx.varexpr()
 			if !ok {
 				return nil, false
 			}
+			buf.WriteString(varVal)
+			continue
 		}
 		ch := ctx.advance()
 		buf.WriteRune(ch)

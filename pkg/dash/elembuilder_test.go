@@ -4,6 +4,20 @@ import (
 	"testing"
 )
 
+func mustSubElem(e *Elem) *Elem {
+	if e == nil {
+		return nil
+	}
+	return e.SubElem
+}
+
+func mustList(e *Elem, pos int) *Elem {
+	if e == nil || len(e.List) <= pos {
+		return nil
+	}
+	return e.List[pos]
+}
+
 func TestSimple(t *testing.T) {
 	b := MakeElemBuilder("/panel/default/default")
 	b.Print("$x = y")
@@ -58,17 +72,24 @@ func TestSimple(t *testing.T) {
 	}
 
 	b = MakeElemBuilder("/panel/default/default")
-	p = b.Print("<link/> Account #${AccId:%s}", Var("AccId", "187"))
-	elem = b.DoneElem()
-	if elem == nil || len(elem.List) != 1 {
+	b.Print("<link/>[@test=\"hello ${name:%v}\"] Account #${AccId:%s}", Var("AccId", "187"), Var("name", "mike"))
+	wrapElem := b.DoneElem()
+	linkElem := mustList(wrapElem, 0)
+	if linkElem == nil || len(elem.List) != 1 {
 		t.Errorf("bad parse %v", b.Errs)
-	} else {
-		linkElem := elem.List[0]
-		if linkElem.ElemType != "link" {
-			t.Errorf("not link elem")
-		} else {
-			t.Errorf("here")
-		}
+	}
+	if linkElem != nil && linkElem.ElemType != "link" {
+		t.Errorf("not link elem")
+	}
+	linkText := mustSubElem(linkElem)
+	if linkText == nil {
+		t.Errorf("bad parse, no linktext")
+	}
+	if linkText != nil && linkText.Text != "Account #187" {
+		t.Errorf("bad var interpolation in text")
+	}
+	if linkElem != nil && linkElem.Attrs["test"] != "hello mike" {
+		t.Errorf("bad var interpoliation in attr")
 	}
 
 }
