@@ -268,6 +268,8 @@ func main() {
 	demo2Panel, _ := dash.LookupPanel("demo2")
 	stopButton := demo2Panel.LookupControl("button", "btn-stop")
 	stopButton.OnClick(func() error {
+		logger := demo2Panel.LookupControl("log", "log")
+		logger.LogText("Stop Button Clicked")
 		close(quitCh)
 		return nil
 	})

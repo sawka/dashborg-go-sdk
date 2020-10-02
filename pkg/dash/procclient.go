@@ -291,7 +291,7 @@ func (pc *ProcClient) retryConnectClient() error {
 		lastConnectTry = time.Now()
 		err := pc.connectClient()
 		if err != nil {
-			log.Printf("MFMT ProcClient Error Connecting client err:%v\n", err)
+			log.Printf("Dashborg ProcClient Error Connecting client err:%v\n", err)
 		}
 		if err != nil && state == retryDisconnectedTryOnce {
 			break
@@ -330,7 +330,7 @@ func (pc *ProcClient) connectClient() error {
 	if err != nil {
 		return err
 	}
-	log.Printf("MFMT Client Connected to %s\n", addr)
+	log.Printf("Dashborg Client Connected to %s\n", addr)
 	err = client.SetPushCtx(pc.ProcRunId, pc.handlePush)
 	if err != nil {
 		client.Close()

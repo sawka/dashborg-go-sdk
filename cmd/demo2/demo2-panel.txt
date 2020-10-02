@@ -5,7 +5,7 @@
   <div>[@marginbottom=10px]
     <button "btn-refresh"/>[@handler=/acc/refresh-accounts-revertdetail] Refresh Accounts
     <button "btn-create-account"/>[@handler=/acc/show-create-account] Create Account
-    <button "btn-stop"/>[@marginleft=10px @hidden] Stop
+    <button "btn-stop"/>[@marginleft=10px] Stop
     [@grow]
     <button "btn-regen"/>[@handler=/acc/regen-acclist] Regenerate Test Accounts
   </div>
