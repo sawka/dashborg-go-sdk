@@ -119,6 +119,7 @@ type CreateAccountFormData struct {
 func Setup() {
 	panel, _ := dash.LookupPanel("demo2")
 	logger := panel.LookupControl("log", "log")
+	logger.LogText("Starting Demo2")
 	panel.OnRequest("/acc/refresh-accounts-revertdetail", func(req *dash.PanelRequest) error {
 		req.LookupContext("ctx-accdetail").Revert()
 		req.TriggerRequest("/acc/refresh-accounts", nil)
@@ -202,6 +203,7 @@ func Setup() {
 		return nil
 	})
 	panel.OnRequest("/acc/regen-acclist", func(req *dash.PanelRequest) error {
+		logger.LogText("Regen Account List")
 		AccLock.Lock()
 		defer AccLock.Unlock()
 		AllAccs = make([]*AccType, 0)
@@ -254,7 +256,7 @@ func Setup() {
 }
 
 func main() {
-	cfg := &dash.Config{ProcName: "demo1", AnonAcc: true, Env: "dev"}
+	cfg := &dash.Config{ProcName: "demo2", AnonAcc: true, Env: "dev", Verbose: true}
 	cfg.UseAnonKeys()
 	defer dash.StartProcClient(cfg).WaitForClear()
 

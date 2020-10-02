@@ -125,3 +125,12 @@ type ProgressData struct {
 	Done        bool   `json:"done"`
 	Reset       bool   `json:"reset"`
 }
+
+type PanelRequestData struct {
+	FeClientId string      `json:"feclientid"`
+	ZoneName   string      `json:"zonename"`
+	PanelName  string      `json:"panelname"`
+	Handler    string      `json:"handler"`
+	Data       interface{} `json:"data"`
+	Depth      int         `json:"depth"`
+}

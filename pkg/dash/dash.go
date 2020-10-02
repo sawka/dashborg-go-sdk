@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,6 +19,8 @@ const (
 	SUBELEM_ONE  = "1"
 	SUBELEM_LIST = "*"
 )
+
+var handlerRe *regexp.Regexp = regexp.MustCompile("^(/[a-zA-Z0-9_-]+)/")
 
 type ControlTypeMeta struct {
 	IsValid         bool
@@ -162,7 +165,23 @@ type PanelRequest struct {
 }
 
 func (req *PanelRequest) LookupContext(name string) *ContextWriter {
-	return nil
+	rtn := &ContextWriter{}
+	p, _ := LookupPanel(req.PanelName) // TODO maybe PanelRequest should return context names?
+	ctx := p.LookupControl("context", name)
+	var ctxId string
+	if ctx.IsValid() {
+		cloc, err := dashutil.ParseControlLocator(ctx.ControlLoc)
+		if err != nil {
+			ctxId = cloc.ControlId
+		}
+	}
+	if ctxId == "" {
+		ctxId = uuid.New().String()
+	}
+	rtn.ElemBuilder = MakeElemBuilder(dashutil.MakeEphCtxLocId(req.FeClientId, ctxId, req.ReqId))
+	rtn.Req = req
+	rtn.ContextControl = ctx
+	return rtn
 }
 
 func (req *PanelRequest) GetHandlerPath() string {
@@ -178,8 +197,8 @@ func (req *PanelRequest) TriggerRequest(handlerPath string, data interface{}) {
 
 type ContextWriter struct {
 	*ElemBuilder
-	Req         *PanelRequest
-	ContextElem *Elem
+	Req            *PanelRequest
+	ContextControl *Control
 }
 
 func (w *ContextWriter) Flush() {
@@ -316,6 +335,23 @@ func (p *Panel) LookupControl(controlType string, controlName string) *Control {
 }
 
 func (p *Panel) OnRequest(handlerPath string, handlerFn func(*PanelRequest) error) {
+	handlerMatch := handlerRe.FindStringSubmatch(handlerPath)
+	if handlerMatch == nil {
+		log.Printf("Bad handlerPath:%s passed to OnRequest", handlerPath)
+		return
+	}
+	handlerControl := p.LookupControl("handler", handlerMatch[1])
+	fmt.Printf("OnRequest lookup handler:%s rtn:%v\n", handlerMatch[1], handlerControl)
+	handlerControl.OnAllRequests(func(req *PanelRequest) (bool, error) {
+		if req.GetHandlerPath() != handlerPath {
+			return false, nil
+		}
+		err := handlerFn(req)
+		if err != nil {
+			return true, err
+		}
+		return true, nil
+	})
 }
 
 type IZone interface {

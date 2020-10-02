@@ -3,6 +3,8 @@ package dash
 import (
 	"fmt"
 
+	"github.com/google/uuid"
+	"github.com/mitchellh/mapstructure"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 	"github.com/sawka/dashborg-go-sdk/pkg/transport"
 )
@@ -171,9 +173,31 @@ func (c *Control) DynSetElem(elemtext []string) {
 }
 
 func (c *Control) OnAllRequests(fn func(req *PanelRequest) (bool, error)) {
-}
-
-func (c *Control) OnRequest(path string, fn func(req *PanelRequest) error) {
+	runFn := func(v interface{}) (interface{}, error) {
+		var preqData transport.PanelRequestData
+		err := mapstructure.Decode(v, &preqData)
+		if err != nil {
+			return nil, fmt.Errorf("Cannot decode PanelRequestData err:%w", err)
+		}
+		req := &PanelRequest{
+			ZoneName:    Client.Config.ZoneName,
+			PanelName:   c.PanelName,
+			FeClientId:  preqData.FeClientId,
+			ReqId:       uuid.New().String(),
+			HandlerPath: preqData.Handler,
+			Data:        preqData.Data,
+			Depth:       preqData.Depth,
+		}
+		ok, err := fn(req)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return true, nil
+		}
+		return nil, nil
+	}
+	Client.RegisterPushFn(c.ControlLoc, runFn, false)
 }
 
 func (c *Control) CounterInc(val int) {
