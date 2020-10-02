@@ -59,6 +59,13 @@ type ParseErr struct {
 	Err    string
 }
 
+func (e *ParseErr) String() string {
+	if e.LineNo == 0 {
+		return fmt.Sprintf("ERROR pos:%d %s", e.Col, e.Err)
+	}
+	return fmt.Sprintf("ERROR line:%d pos:%d %s", e.LineNo, e.Col, e.Err)
+}
+
 type VarLookupFn func(string) interface{}
 
 func MapVarFn(m map[string]interface{}) VarLookupFn {

@@ -1,0 +1,23 @@
+<div>[@padding=10px @col @height=100%]
+  <context:modal "modal"/>
+  <handler "/acc"/>
+  [@h1] Demo 2
+  <div>[@marginbottom=10px]
+    <button "btn-refresh"/>[@handler=/acc/refresh-accounts-revertdetail] Refresh Accounts
+    <button "btn-create-account"/>[@handler=/acc/show-create-account] Create Account
+    <button "btn-stop"/>[@marginleft=10px @hidden] Stop
+    [@grow]
+    <button/>[@handler=/acc/regen-acclist] Regenerate Test Accounts
+  </div>
+  <div>[@row @grow]
+    <div>[@width=250px @bgcolor="#eee" @height=100% @borderright="1px solid black"]
+      <context "ctx-acclist"/>
+    </div>
+    <div>[@grow @bgcolor="#eee" @height=100%]
+      <context "ctx-accdetail"/>
+    </div>
+  </div>
+  <div>[@margintop=8px]
+    <log "log"/>[@logstyle @height=300px @width=100%]
+  </div>
+</div>
