@@ -192,6 +192,14 @@ func (b *ElemBuilder) declToElem(edecl *parser.ElemDecl) *Elem {
 		} else if meta.SubElemType == SUBELEM_LIST {
 			if edecl.SubElem != nil {
 				rtn.List = []*Elem{b.declToElem(edecl.SubElem)}
+			} else if len(edecl.List) > 0 {
+				rtn.List = make([]*Elem, 0, len(edecl.List))
+				for _, subDecl := range edecl.List {
+					e := b.declToElem(subDecl)
+					if e != nil {
+						rtn.List = append(rtn.List, e)
+					}
+				}
 			}
 		}
 	}
@@ -315,6 +323,9 @@ func (e *Elem) writeTextElem(buf *bytes.Buffer) {
 
 // pass negative indentSize for no indenting
 func (e *Elem) ElemTextEx(indentSize int, et []string) []string {
+	if e == nil {
+		return nil
+	}
 	var buf bytes.Buffer
 	for i := 0; i < indentSize; i++ {
 		buf.WriteByte(' ')

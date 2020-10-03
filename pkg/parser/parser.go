@@ -12,7 +12,7 @@ import (
 
 // Elem Grammar
 //
-// line := ws (comment | vardecl | itext | elem)?
+// line := ws (comment | vardecl | itext | elem | mtext)?
 // comment := '#' rest
 // ws := whitespace-char*
 // uuid := [a-f0-9][a-f0-9-]{35}
@@ -20,7 +20,8 @@ import (
 // vardecl := '$' varname ws '=' ws rest
 // varname := [A-Za-z][A-Za-z0-9_]*
 // itext := attrs? (text | varexpr | charexpr)*
-// text := all chars except '${' and '$('
+// text := all chars except '${' and '$(' and '||' ('||' is allowed for itext, but not mtext)
+// mtext := '*' attrs itext ('||' itext)*   (must start with "*[")
 // varexpr := '${' varname (':' formatexpr)? '}'
 // formatexpr := '%' [^}]+
 // elem := openelem | closeelem
@@ -48,6 +49,7 @@ type ElemDecl struct {
 	Attrs       map[string]string
 	Text        string
 	SubElem     *ElemDecl
+	List        []*ElemDecl
 
 	VarName  string
 	VarValue string
@@ -194,14 +196,23 @@ func (ctx *ParseContext) ParseLine() *ElemDecl {
 		return ctx.vardecl()
 
 	case '[':
-		decl, _ := ctx.itext()
+		decl, _ := ctx.itext(false)
 		return decl
 
 	case '<':
 		return ctx.elem()
 
+	case '*':
+		if ctx.peek2() == '[' {
+			decl, _ := ctx.mtext()
+			return decl
+		} else {
+			decl, _ := ctx.itext(false)
+			return decl
+		}
+
 	default:
-		decl, _ := ctx.itext()
+		decl, _ := ctx.itext(false)
 		return decl
 	}
 	return nil
@@ -280,7 +291,7 @@ func (ctx *ParseContext) varexpr() (string, bool) {
 	}
 	if ctx.match(':') {
 		if !ctx.match('%') {
-			ctx.addErr("bad varexpr, format string must start with '%'")
+			ctx.addErr("bad varexpr, format string must start with '%%'")
 			return "", false
 		}
 		var buf bytes.Buffer
@@ -455,7 +466,7 @@ func (ctx *ParseContext) attrs() ([]string, map[string]string, bool) {
 	return cns, rtn, true
 }
 
-func (ctx *ParseContext) itext() (*ElemDecl, bool) {
+func (ctx *ParseContext) itext(canMulti bool) (*ElemDecl, bool) {
 	rtn := &ElemDecl{ElemType: "text"}
 	if ctx.test('[') {
 		var ok bool
@@ -478,10 +489,44 @@ func (ctx *ParseContext) itext() (*ElemDecl, bool) {
 			buf.WriteString(varVal)
 			continue
 		}
+		if canMulti && ctx.test2('|', '|') {
+			break
+		}
 		ch := ctx.advance()
 		buf.WriteRune(ch)
 	}
 	rtn.Text = buf.String()
+	return rtn, true
+}
+
+func (ctx *ParseContext) mtext() (*ElemDecl, bool) {
+	if !ctx.match('*') {
+		ctx.addErr("multi-text must start with '*'")
+		return nil, false
+	}
+	rtn := &ElemDecl{ElemType: "div", IsSelfClose: true}
+	var ok bool
+	rtn.ClassNames, rtn.Attrs, ok = ctx.attrs()
+	ctx.ws()
+	if !ok {
+		return nil, false
+	}
+	for {
+		decl, ok := ctx.itext(true)
+		if !ok {
+			return nil, false
+		}
+		decl.Text = strings.TrimSpace(decl.Text)
+		rtn.List = append(rtn.List, decl)
+		if ctx.iseof() {
+			break
+		}
+		if !ctx.match2('|', '|') {
+			ctx.addErr("bad mtext decl, separate with '||'")
+			return nil, false
+		}
+		ctx.ws()
+	}
 	return rtn, true
 }
 
@@ -630,7 +675,7 @@ func (ctx *ParseContext) openelem() *ElemDecl {
 	if ctx.iseof() {
 		return rtn
 	}
-	subElem, ok := ctx.itext()
+	subElem, ok := ctx.itext(false)
 	if !ok {
 		return nil
 	}

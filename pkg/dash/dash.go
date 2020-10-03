@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
+	"github.com/sawka/dashborg-go-sdk/pkg/bufsrv"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 	"github.com/sawka/dashborg-go-sdk/pkg/transport"
 )
@@ -192,7 +193,38 @@ func (req *PanelRequest) GetData() interface{} {
 	return req.Data
 }
 
-func (req *PanelRequest) TriggerRequest(handlerPath string, data interface{}) {
+func (p *PanelRequest) TriggerRequest(handlerPath string, data interface{}) {
+	if p.Depth > 5 {
+		log.Printf("Dashborg Cannot trigger requests more than 5 levels deep\n")
+		return
+	}
+	req := &transport.PanelRequestData{
+		FeClientId: p.FeClientId,
+		ZoneName:   p.ZoneName,
+		PanelName:  p.PanelName,
+		Handler:    handlerPath,
+		Data:       data,
+		Depth:      p.Depth + 1,
+	}
+	handlerMatch := handlerRe.FindStringSubmatch(handlerPath)
+	if handlerMatch == nil {
+		log.Printf("Dashborg Bad handlerPath:%s passed to TriggerRequest\n", handlerPath)
+		return
+	}
+	panel, _ := LookupPanel(p.PanelName)
+	// TODO don't activate this control
+	handlerControl := panel.LookupControl("handler", handlerMatch[1])
+	if !handlerControl.IsValid() {
+		log.Printf("Dashborg, cannot find handler control for %s\n", handlerMatch[1])
+		return
+	}
+	go func() {
+		Client.handlePush(bufsrv.PushType{
+			PushCtx:     Client.GetProcRunId(),
+			PushRecvId:  handlerControl.ControlLoc,
+			PushPayload: req,
+		})
+	}()
 }
 
 type ContextWriter struct {
@@ -202,9 +234,44 @@ type ContextWriter struct {
 }
 
 func (w *ContextWriter) Flush() {
+	if !w.ContextControl.IsValid() {
+		log.Printf("Dashborg attempt to Flush() an invalid ContextControl\n")
+		return
+	}
+	elem := w.DoneElem()
+	elemText := elem.ElemTextEx(0, nil)
+	fmt.Printf("context writer flush %v\n", w.ContextControl)
+	fmt.Printf("%s\n", strings.Join(elemText, "\n"))
+	m := transport.WriteContextMessage{
+		MType:      "writecontext",
+		Ts:         Ts(),
+		ZoneName:   Client.Config.ZoneName,
+		PanelName:  w.ContextControl.PanelName,
+		ContextLoc: w.ContextControl.ControlLoc,
+		FeClientId: w.Req.FeClientId,
+		ReqId:      w.Req.ReqId,
+		ElemText:   elemText,
+	}
+	Client.SendMessage(m)
 }
 
 func (w *ContextWriter) Revert() {
+	if !w.ContextControl.IsValid() {
+		log.Printf("Dashborg attempt to Revert() an invalid ContextControl\n")
+		return
+	}
+	fmt.Printf("context writer revert %v\n", w.ContextControl)
+	m := transport.WriteContextMessage{
+		MType:      "writecontext",
+		Ts:         Ts(),
+		ZoneName:   Client.Config.ZoneName,
+		PanelName:  w.ContextControl.PanelName,
+		ContextLoc: w.ContextControl.ControlLoc,
+		FeClientId: w.Req.FeClientId,
+		ReqId:      w.Req.ReqId,
+		ElemText:   nil,
+	}
+	Client.SendMessage(m)
 }
 
 type PanelWriter struct {

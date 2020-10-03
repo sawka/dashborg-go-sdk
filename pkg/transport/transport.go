@@ -44,7 +44,7 @@ type LookupPanelMessage struct {
 	PanelName string `json:"panelname"`
 }
 
-// writeelem-eph
+// writecontext
 type WriteContextMessage struct {
 	MType      string   `json:"mtype"`
 	Ts         int64    `json:"ts"`

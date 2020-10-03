@@ -189,7 +189,7 @@ func (c *ProcClient) sendLoop() {
 		// deal with error conditions
 		startTs := time.Now()
 		resp := c.Client.DoRequest("msg", entry.Message)
-		log.Printf("Message %s elapsed:%dms\n", transport.GetMType(entry.Message), int(time.Since(startTs)/time.Millisecond))
+		LogInfo("Message %s elapsed:%dms\n", transport.GetMType(entry.Message), int(time.Since(startTs)/time.Millisecond))
 		if resp.ConnError != nil {
 			log.Printf("Dashborg ProcClient ConnError:%v\n", resp.ConnError)
 			retryEntry = &entry

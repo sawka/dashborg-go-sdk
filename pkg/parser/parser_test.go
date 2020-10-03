@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -35,8 +36,8 @@ func TestBasic(t *testing.T) {
 	}
 
 	pc = MakeParseContext("hello", 1, nil)
-	e := pc.itext()
-	if e == nil {
+	e, ok := pc.itext(false)
+	if e == nil || !ok {
 		reportErr(t, pc, "itext1 no elem returned")
 	}
 	if e != nil && e.ElemType != "text" {
@@ -47,7 +48,7 @@ func TestBasic(t *testing.T) {
 	}
 
 	pc = MakeParseContext("[]", 1, nil)
-	_, _, ok := pc.attrs()
+	_, _, ok = pc.attrs()
 	if !ok {
 		reportErr(t, pc, "attrs0 not ok")
 	}
@@ -92,8 +93,8 @@ func TestBasic(t *testing.T) {
 	}
 
 	pc = MakeParseContext("[@foo=bar]  hello", 1, nil)
-	e = pc.itext()
-	if e == nil {
+	e, ok = pc.itext(false)
+	if e == nil || !ok {
 		reportErr(t, pc, "itext2 no elem returned")
 	}
 	if e != nil && e.ElemType != "text" {
@@ -269,5 +270,21 @@ func TestBasic(t *testing.T) {
 	}
 	if e != nil && e.ControlName != "demo" {
 		reportErrElem(t, pc, e, "line9 did not parse controlname")
+	}
+
+	pc = MakeParseContext("*[@bold] [@width=100px]hello1 || hello2 || [@italic] hello3", 1, nil)
+	e = pc.ParseLine()
+	if e == nil {
+		reportErr(t, pc, "line10 no elem returned")
+	}
+	if e != nil && (e.SubElem != nil || len(e.List) != 3) {
+		reportErr(t, pc, fmt.Sprintf("line10 bad structure list-len:%d", len(e.List)))
+	}
+	if e != nil && len(e.List) == 3 && (e.List[0].ElemType != "text" || e.List[0].Text != "hello1") {
+		fmt.Printf("TEXT IS %s\n", e.List[0].Text)
+		reportErrElem(t, pc, e, "line10 first text elem text wrong")
+	}
+	if e != nil && len(e.List) == 3 && (e.List[2].ElemType != "text" || e.List[2].Attrs["italic"] != "1") {
+		reportErrElem(t, pc, e, "line10 third text elem text attrs wrong")
 	}
 }

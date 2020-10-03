@@ -63,23 +63,23 @@ func ShowAccDetail(accId string, req *dash.PanelRequest) {
 		logger.LogText("Account not found :/")
 		ctx.Print("<div>[@padding=5px @paddingleft=15px @col]")
 		ctx.Print("[@paddingtop=10px] Account ${accId:%s} not found.", dash.Var("accId", accId))
-		ctx.Print("<link>[@handler=/acc/clear-detail @block] Clear")
+		ctx.Print("<link/>[@handler=/acc/clear-detail @block] Clear")
 		ctx.Print("</div>")
 		return
 	}
 	ctx.Print("<div>[@padding=5px @paddingleft=15px @col]")
 	ctx.Print("[@h3] Account Detail")
-	ctx.Print("[@paddingtop=5px] [@bold @width=120px] Acc ID | ${accId:%s}", dash.Var("accId", acc.AccId))
-	ctx.Print("[@paddingtop=5px] [@bold @width=120px] Name | ${accName:%s}", dash.Var("accName", acc.AccName))
-	ctx.Print("[@paddingtop=5px] [@bold @width=120px] Paid Acc | ${isPaid:%v}", dash.Var("isPaid", acc.IsPaid))
-	ctx.Print("[@paddingtop=5px] [@bold @width=120px] Email | ${email:%s}", dash.Var("email", acc.Email))
+	ctx.Print("*[@paddingtop=5px] [@bold @width=120px] Acc ID || ${accId:%s}", dash.Var("accId", acc.AccId))
+	ctx.Print("*[@paddingtop=5px] [@bold @width=120px] Name || ${accName:%s}", dash.Var("accName", acc.AccName))
+	ctx.Print("*[@paddingtop=5px] [@bold @width=120px] Paid Acc || ${isPaid:%v}", dash.Var("isPaid", acc.IsPaid))
+	ctx.Print("*[@paddingtop=5px] [@bold @width=120px] Email || ${email:%s}", dash.Var("email", acc.Email))
 	ctx.Print("<div>[@row @paddingtop=15px]")
 	if acc.IsPaid {
-		ctx.Print("<button>[@handler=/acc/downgrade] Downgrade", dash.Attr("data", acc.AccId))
+		ctx.Print("<button/>[@handler=/acc/downgrade] Downgrade", dash.Attr("data", acc.AccId))
 	} else {
-		ctx.Print("<button>[@handler=/acc/upgrade] Upgrade To Paid", dash.Attr("data", acc.AccId))
+		ctx.Print("<button/>[@handler=/acc/upgrade] Upgrade To Paid", dash.Attr("data", acc.AccId))
 	}
-	ctx.Print("<button>[@handler=/acc/remove] Remove Account", dash.Attr("data", acc.AccId))
+	ctx.Print("<button/>[@handler=/acc/remove] Remove Account", dash.Attr("data", acc.AccId))
 	ctx.Print("</div>")
 	ctx.Print("</div>")
 }
@@ -89,21 +89,21 @@ func RenderCreateAccountModal(req *dash.PanelRequest, errs map[string]string) {
 	modal.Print("<div>[@modaltitle='Create Account' @col]")
 
 	modal.Print("<div>[@alignitems=center]")
-	modal.Print("<inputtext>[@formfield=name @form=create-account @inputlabel=Name]")
+	modal.Print("<input:text/>[@formfield=name @form=create-account @inputlabel=Name]")
 	if errs["name"] != "" {
 		modal.Print("[@uilabel @uipointing=left @uicolor=red @uibasic] ${nameerr:%s}", dash.Var("nameerr", errs["name"]))
 	}
 	modal.Print("</div>")
 
 	modal.Print("<div>[@alignitems=center @margintop=10px]")
-	modal.Print("<inputtext>[@formfield=email @form=create-account @inputlabel=Email]")
+	modal.Print("<input:text/>[@formfield=email @form=create-account @inputlabel=Email]")
 	if errs["email"] != "" {
 		modal.Print("[@uilabel @uipointing=left @uicolor=red @uibasic] ${emailerr:%s}", dash.Var("emailerr", errs["email"]))
 	}
 	modal.Print("</div>")
 
 	modal.Print("<div>[@jc=center @margintop=20px]")
-	modal.Print("<button>[@handler=/acc/create-account @dataform=create-account] Create Account")
+	modal.Print("<button/>[@handler=/acc/create-account @dataform=create-account] Create Account")
 	modal.Print("</div>")
 	modal.Print("</div>")
 	modal.Flush()
@@ -135,7 +135,7 @@ func Setup() {
 		accList.Print("<div>[@grow @overflowy=auto @col]")
 		for _, acc := range AllAccs {
 			accList.Print("<div>[@row @alignitems=center]")
-			accList.Print("<link>[@marginleft=8px @size=16px @handler=/acc/select-account] ${name:%s}", dash.Attr("data", acc.AccId), dash.Var("name", acc.AccName))
+			accList.Print("<link/>[@marginleft=8px @size=16px @handler=/acc/select-account] ${name:%s}", dash.Attr("data", acc.AccId), dash.Var("name", acc.AccName))
 			if acc.IsPaid {
 				accList.Print("[@uilabel @uicolor=blue @uisize=tiny @inline @marginleft=5px] Paid")
 			}

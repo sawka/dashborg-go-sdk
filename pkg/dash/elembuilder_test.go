@@ -92,4 +92,16 @@ func TestSimple(t *testing.T) {
 		t.Errorf("bad var interpoliation in attr")
 	}
 
+	b = MakeElemBuilder("/panel/default/default")
+	b.Print("*[@paddingtop=5px] [@bold @width=120px] Acc ID || ${accId:%s}", Var("accId", "187"))
+	elem = b.DoneElem()
+	if elem == nil || len(elem.List) != 2 {
+		t.Errorf("bad parse %v", b.Errs)
+	}
+	if elem != nil && len(elem.List) == 2 && (elem.List[1].Text != "187") {
+		t.Errorf("did not get correct text for 2nd list elem")
+	}
+	if elem != nil && len(elem.List) == 2 && (elem.Attrs["paddingtop"] != "5px" || elem.List[0].Attrs["width"] != "120px") {
+		t.Errorf("bad attribute parse for mdiv")
+	}
 }
