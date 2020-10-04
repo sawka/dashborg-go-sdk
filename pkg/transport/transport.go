@@ -134,3 +134,14 @@ type PanelRequestData struct {
 	Data       interface{} `json:"data"`
 	Depth      int         `json:"depth"`
 }
+
+type DynElemData struct {
+	FStr          string            `json:"fstr"`
+	Attrs         map[string]string `json:"attrs"`
+	Data          []interface{}     `json:"data"`
+	ElemText      []string          `json:"elemtext"`
+	ClearFStr     bool              `json:"clearfstr"`
+	ClearAttrs    bool              `json:"clearattrs"`
+	ClearData     bool              `json:"cleardata"`
+	ClearElemText bool              `json:"clearelemtext"`
+}

@@ -163,10 +163,44 @@ func (c *Control) RowDataClear() {
 	Client.SendMessage(m)
 }
 
-func (c *Control) DynSetFStr(fmt string) {
+func (c *Control) DynSetFStr(fstr string) {
+	if c.ControlType != "dyntext" || !c.IsValid() {
+		return
+	}
+	dynData := transport.DynElemData{}
+	if fstr == "" {
+		dynData.ClearFStr = true
+	} else {
+		dynData.FStr = fstr
+	}
+	m := transport.ControlUpdateMessage{
+		MType:      "controlupdate",
+		Cmd:        "setdata",
+		Ts:         Ts(),
+		ControlLoc: c.ControlLoc,
+		Data:       dynData,
+	}
+	Client.SendMessage(m)
 }
 
 func (c *Control) DynSetData(data ...interface{}) {
+	if c.ControlType != "dyntext" || !c.IsValid() {
+		return
+	}
+	dynData := transport.DynElemData{}
+	if len(data) == 0 {
+		dynData.ClearData = true
+	} else {
+		dynData.Data = data
+	}
+	m := transport.ControlUpdateMessage{
+		MType:      "controlupdate",
+		Cmd:        "setdata",
+		Ts:         Ts(),
+		ControlLoc: c.ControlLoc,
+		Data:       dynData,
+	}
+	Client.SendMessage(m)
 }
 
 func (c *Control) DynSetElem(elemtext []string) {

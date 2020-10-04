@@ -88,17 +88,17 @@ func RenderCreateAccountModal(req *dash.PanelRequest, errs map[string]string) {
 	modal := req.LookupContext("modal")
 	modal.Print("<div>[@modaltitle='Create Account' @col]")
 
-	modal.Print("<div>[@alignitems=center]")
-	modal.Print("<input:text/>[@formfield=name @form=create-account @inputlabel=Name]")
+	modal.Print("<div>[@alignitems=center @width=100% @col]")
+	modal.Print("<input:text/>[@noflex @formfield=name @form=create-account @inputlabel=Name @width=100%]")
 	if errs["name"] != "" {
-		modal.Print("[@uilabel @uipointing=left @uicolor=red @uibasic] ${nameerr:%s}", dash.Var("nameerr", errs["name"]))
+		modal.Print("[@uilabel @uipointing=above @uicolor=red @uibasic @alignself=flex-start] ${nameerr:%s}", dash.Var("nameerr", errs["name"]))
 	}
 	modal.Print("</div>")
 
-	modal.Print("<div>[@alignitems=center @margintop=10px]")
-	modal.Print("<input:text/>[@formfield=email @form=create-account @inputlabel=Email]")
+	modal.Print("<div>[@alignitems=center @margintop=10px @col]")
+	modal.Print("<input:text/>[@noflex @formfield=email @form=create-account @inputlabel=Email @width=100%]")
 	if errs["email"] != "" {
-		modal.Print("[@uilabel @uipointing=left @uicolor=red @uibasic] ${emailerr:%s}", dash.Var("emailerr", errs["email"]))
+		modal.Print("[@uilabel @uipointing=above @uicolor=red @uibasic @alignself=flex-start] ${emailerr:%s}", dash.Var("emailerr", errs["email"]))
 	}
 	modal.Print("</div>")
 
