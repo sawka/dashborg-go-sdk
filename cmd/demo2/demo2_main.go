@@ -67,8 +67,8 @@ func ShowAccDetail(accId string, req *dash.PanelRequest) {
 		ctx.Print("</div>")
 		return
 	}
-	ctx.Print("<div>[@padding=5px @paddingleft=15px @col]")
-	ctx.Print("[@h3] Account Detail")
+	ctx.Print("<div>[@padding=5px @paddingleft=15px @col @width=100%]")
+	ctx.Print("[@h3 @paddingbottom=5px] Account Detail")
 	ctx.Print("*[@paddingtop=5px] [@bold @width=120px] Acc ID || ${accId:%s}", dash.Var("accId", acc.AccId))
 	ctx.Print("*[@paddingtop=5px] [@bold @width=120px] Name || ${accName:%s}", dash.Var("accName", acc.AccName))
 	ctx.Print("*[@paddingtop=5px] [@bold @width=120px] Paid Acc || ${isPaid:%v}", dash.Var("isPaid", acc.IsPaid))

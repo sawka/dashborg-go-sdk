@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -22,6 +23,7 @@ type ElemBuilder struct {
 	LineNo       int
 	Errs         []parser.ParseErr
 	Warns        []parser.ParseErr
+	RawLines     []string
 }
 
 type BuilderAttr struct {
@@ -95,7 +97,28 @@ func addArgAttrs(attrs map[string]string, args []BuilderArg) map[string]string {
 	return attrs
 }
 
+func (b *ElemBuilder) ReportErrors(w io.Writer) {
+	if len(b.Errs) == 0 {
+		return
+	}
+	sort.Slice(b.Errs, func(i int, j int) bool {
+		return b.Errs[i].LineNo < b.Errs[j].LineNo
+	})
+	for _, err := range b.Errs {
+		var line string
+		if err.LineNo > 0 {
+			line = b.RawLines[err.LineNo-1]
+			if line[len(line)-1] == '\n' {
+				line = line[:len(line)-1]
+			}
+		}
+		fmt.Fprintf(w, "Line %3d | %s\n", err.LineNo, line)
+		fmt.Fprintf(w, "* ERROR col:%d %s\n", err.Col, err.Err)
+	}
+}
+
 func (b *ElemBuilder) Print(text string, args ...BuilderArg) *Control {
+	b.RawLines = append(b.RawLines, text)
 	b.LineNo++
 	tempVars := tempVarsFromArgs(args)
 	ctx := parser.MakeParseContext(text, b.LineNo, parser.Map2VarFn(b.Vars, tempVars))

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -239,9 +240,10 @@ func (w *ContextWriter) Flush() {
 		return
 	}
 	elem := w.DoneElem()
+	w.ReportErrors(os.Stderr)
 	elemText := elem.ElemTextEx(0, nil)
-	fmt.Printf("context writer flush %v\n", w.ContextControl)
-	fmt.Printf("%s\n", strings.Join(elemText, "\n"))
+	// fmt.Printf("context writer flush %v\n", w.ContextControl)
+	// fmt.Printf("%s\n", strings.Join(elemText, "\n"))
 	m := transport.WriteContextMessage{
 		MType:      "writecontext",
 		Ts:         Ts(),
@@ -312,6 +314,7 @@ func (p *PanelWriter) Flush() error {
 		TrackAnon: !p.ElemBuilder.NoAnon,
 		ElemText:  p.DoneText(),
 	}
+	p.ElemBuilder.ReportErrors(os.Stderr)
 	Client.SendMessageWithCallback(m, func(rtn interface{}, err error) {
 		fmt.Printf("DefinePanel err:%v rtn:%v\n", rtn, err)
 	})
