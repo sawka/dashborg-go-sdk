@@ -39,6 +39,7 @@ type DefinePanelMessage struct {
 	PanelName string   `json:"panelname"`
 	TrackAnon bool     `json:"trackanon"`
 	ElemText  []string `json:"elemtext"`
+	ElemHash  string   `json:"elemhash"`
 }
 
 // lookuppanel

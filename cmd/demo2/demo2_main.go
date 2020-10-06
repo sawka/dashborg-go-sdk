@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"regexp"
 	"strconv"
@@ -261,13 +262,16 @@ func main() {
 	defer dash.StartProcClient(cfg).WaitForClear()
 
 	rand.Seed(time.Now().Unix())
-
 	for i := 0; i < 5; i++ {
 		AllAccs = append(AllAccs, MakeRandomAcc())
 	}
 
+	demo2Panel, err := dash.DefinePanelFromFile("demo2", "cmd/demo2/demo2-panel.txt")
+	if err != nil {
+		log.Printf("ERROR Defining Panel: %v\n", err)
+		return
+	}
 	quitCh := make(chan bool)
-	demo2Panel, _ := dash.LookupPanel("demo2")
 	stopButton := demo2Panel.LookupControl("button", "btn-stop")
 	stopButton.OnClick(func() error {
 		logger := demo2Panel.LookupControl("log", "log")

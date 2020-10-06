@@ -315,7 +315,14 @@ func (e *Elem) writeAttrsStr(buf *bytes.Buffer) bool {
 		buf.WriteByte(' ')
 	}
 	attrIdx := 0
-	for name, val := range e.Attrs {
+	attrNames := make([]string, 0, len(e.Attrs))
+	for name, _ := range e.Attrs {
+		// need a stable order for elemhash
+		attrNames = append(attrNames, name)
+	}
+	sort.Strings(attrNames)
+	for _, name := range attrNames {
+		val := e.Attrs[name]
 		escVal := strings.ReplaceAll(val, "\\", "\\\\")
 		escVal = strings.ReplaceAll(val, "\"", "\\\"")
 		if attrIdx != 0 {

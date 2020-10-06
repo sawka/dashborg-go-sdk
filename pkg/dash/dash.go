@@ -1,6 +1,8 @@
 package dash
 
 import (
+	"bufio"
+	"crypto/md5"
 	"fmt"
 	"io"
 	"log"
@@ -234,6 +236,14 @@ type ContextWriter struct {
 	ContextControl *Control
 }
 
+func ComputeElemHash(elemText []string) string {
+	h := md5.New()
+	for _, text := range elemText {
+		io.WriteString(h, text)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
 func (w *ContextWriter) Flush() {
 	if !w.ContextControl.IsValid() {
 		log.Printf("Dashborg attempt to Flush() an invalid ContextControl\n")
@@ -305,20 +315,47 @@ func DefinePanel(panelName string) *PanelWriter {
 	return rtn
 }
 
-func (p *PanelWriter) Flush() error {
+func DefinePanelFromFile(panelName string, fileName string) (*Panel, error) {
+	rtnPanel := &Panel{PanelName: panelName}
+	fd, err := os.Open(fileName)
+	if err != nil {
+		return rtnPanel, err
+	}
+	defer fd.Close()
+	pw := DefinePanel(panelName)
+	scanner := bufio.NewScanner(fd)
+	for scanner.Scan() {
+		pw.Print(scanner.Text())
+	}
+	err = scanner.Err()
+	if err != nil {
+		log.Printf("Dashborg.DefinePanelFromFile error reading file:%s err:%v\n", fileName, err)
+		return rtnPanel, err
+	}
+	return pw.Flush()
+}
+
+func (p *PanelWriter) Flush() (*Panel, error) {
+	elemText := p.DoneText()
 	m := transport.DefinePanelMessage{
 		MType:     "definepanel",
 		Ts:        Ts(),
 		ZoneName:  Client.Config.ZoneName,
 		PanelName: p.PanelName,
 		TrackAnon: !p.ElemBuilder.NoAnon,
-		ElemText:  p.DoneText(),
+		ElemText:  elemText,
+		ElemHash:  ComputeElemHash(elemText),
 	}
+	fmt.Printf("elemhash: %v\n", m.ElemHash)
 	p.ElemBuilder.ReportErrors(os.Stderr)
-	Client.SendMessageWithCallback(m, func(rtn interface{}, err error) {
-		fmt.Printf("DefinePanel err:%v rtn:%v\n", rtn, err)
-	})
-	return nil
+	rtn, err := Client.SendMessageWait(m)
+	rtnPanel := &Panel{PanelName: p.PanelName}
+	fmt.Printf("DefinePanel err:%v rtn:%v\n", err, rtn)
+	if err != nil {
+		return rtnPanel, err
+	}
+	err = rtnPanel.setControlMappings(rtn)
+	return rtnPanel, err
 }
 
 func (p *PanelWriter) Dump(w io.Writer) {
@@ -363,6 +400,20 @@ func (p *Panel) PanelLink() string {
 	return panelLink(Client.Config.AccId, Client.Config.ZoneName, p.PanelName)
 }
 
+func (p *Panel) setControlMappings(rtn interface{}) error {
+	var mrtn transport.MappingsReturn
+	err := mapstructure.Decode(rtn, &mrtn)
+	if err != nil {
+		log.Printf("Dashborg.LookupPanel() bad return value from server err:%v\n", err)
+		return err
+	}
+	p.ControlMappings = make(map[string]*Control)
+	for _, m := range mrtn.Mappings {
+		p.ControlMappings[m.ControlName] = &Control{PanelName: p.PanelName, ControlType: m.ControlType, ControlLoc: m.ControlLoc}
+	}
+	return nil
+}
+
 func (p *Panel) RefreshControlMappings() error {
 	lpm := transport.LookupPanelMessage{
 		MType:     "lookuppanel",
@@ -375,17 +426,8 @@ func (p *Panel) RefreshControlMappings() error {
 		log.Printf("Dashborg.LookupPanel() error looking up panel err:%v\n", err)
 		return err
 	}
-	var mrtn transport.MappingsReturn
-	err = mapstructure.Decode(rtn, &mrtn)
-	if err != nil {
-		log.Printf("Dashborg.LookupPanel() bad return value from server err:%v\n", err)
-		return err
-	}
-	p.ControlMappings = make(map[string]*Control)
-	for _, m := range mrtn.Mappings {
-		p.ControlMappings[m.ControlName] = &Control{PanelName: p.PanelName, ControlType: m.ControlType, ControlLoc: m.ControlLoc}
-	}
-	return nil
+	err = p.setControlMappings(rtn)
+	return err
 }
 
 func (p *Panel) LookupControl(controlType string, controlName string) *Control {
