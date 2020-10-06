@@ -61,19 +61,19 @@ func ShowAccDetail(accId string, req *dash.PanelRequest) {
 	defer ctx.Flush()
 	if acc == nil {
 		logger.LogText("Account not found :/")
-		ctx.Print("<div>[@padding=5px @paddingleft=15px @col]")
+		ctx.Print("<div>[col @padding=5px @paddingleft=15px]")
 		ctx.Print("[@paddingtop=10px] Account ${accId:%s} not found.", dash.Var("accId", accId))
 		ctx.Print("<link/>[@handler=/acc/clear-detail @block] Clear")
 		ctx.Print("</div>")
 		return
 	}
-	ctx.Print("<div>[@padding=5px @paddingleft=15px @col @width=100%]")
-	ctx.Print("[@h3 @paddingbottom=5px] Account Detail")
-	ctx.Print("*[@paddingtop=5px] [@bold @width=120px] Acc ID || ${accId:%s}", dash.Var("accId", acc.AccId))
-	ctx.Print("*[@paddingtop=5px] [@bold @width=120px] Name || ${accName:%s}", dash.Var("accName", acc.AccName))
-	ctx.Print("*[@paddingtop=5px] [@bold @width=120px] Paid Acc || ${isPaid:%v}", dash.Var("isPaid", acc.IsPaid))
-	ctx.Print("*[@paddingtop=5px] [@bold @width=120px] Email || ${email:%s}", dash.Var("email", acc.Email))
-	ctx.Print("<div>[@row @paddingtop=15px]")
+	ctx.Print("<div>[col @padding=10px]")
+	ctx.Print("[@h3] Account Detail")
+	ctx.Print("*[row] [s2 @bold] Acc ID || ${accId:%s}", dash.Var("accId", acc.AccId))
+	ctx.Print("*[row] [s2 @bold] Name || ${accName:%s}", dash.Var("accName", acc.AccName))
+	ctx.Print("*[row] [s2 @bold] Paid Acc || ${isPaid:%v}", dash.Var("isPaid", acc.IsPaid))
+	ctx.Print("*[row] [s2 @bold] Email || ${email:%s}", dash.Var("email", acc.Email))
+	ctx.Print("<div>[row]")
 	if acc.IsPaid {
 		ctx.Print("<button/>[@handler=/acc/downgrade] Downgrade", dash.Attr("data", acc.AccId))
 	} else {
@@ -130,11 +130,11 @@ func Setup() {
 		defer AccLock.Unlock()
 		logger.LogText("Refresh Accounts")
 		accList := req.LookupContext("ctx-acclist")
-		accList.Print("<div>[@padding=5px @col]")
+		accList.Print("<div>[col @padding=10px]")
 		accList.Print("[@h3] Accounts")
-		accList.Print("<div>[@grow @overflowy=auto @col]")
+		accList.Print("<div>[col @grow @overflowy=auto]")
 		for _, acc := range AllAccs {
-			accList.Print("<div>[@row @alignitems=center]")
+			accList.Print("<div>[row @alignitems=center]")
 			accList.Print("<link/>[@marginleft=8px @size=16px @handler=/acc/select-account] ${name:%s}", dash.Attr("data", acc.AccId), dash.Var("name", acc.AccName))
 			if acc.IsPaid {
 				accList.Print("[@uilabel @uicolor=blue @uisize=tiny @inline @marginleft=5px] Paid")

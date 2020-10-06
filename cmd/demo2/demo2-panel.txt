@@ -1,23 +1,22 @@
-<div>[@padding=10px @col @height=100%]
+<div>[col @padding=10px]
   <context:modal "modal"/>
   <handler "/acc"/>
   [@h1] Demo 2
-  <div>[@marginbottom=10px]
-    <button "btn-refresh"/>[@handler=/acc/refresh-accounts-revertdetail] Refresh Accounts
-    <button "btn-create-account"/>[@handler=/acc/show-create-account] Create Account
-    <button "btn-stop"/>[@marginleft=10px] Stop
+  <div>[row]
+    <button "btn-refresh"/>[s2:subfill @handler=/acc/refresh-accounts-revertdetail] Refresh Accounts
+    <button "btn-create-account"/>[s2:subfill @handler=/acc/show-create-account] Create Account
+    <button "btn-stop"/>[s2:subfill] Stop
     [@grow]
-    <button "btn-regen"/>[@handler=/acc/regen-acclist] Regenerate Test Accounts
+    <button "btn-regen"/>[s3:subcenter @handler=/acc/regen-acclist] Regenerate Test Accounts
   </div>
-  <div>[@row @grow]
-    <div>[@width=250px @bgcolor="#eee" @height=100% @borderright="1px solid black"]
+  <div>[row @grow]
+    <div>[col:s3 @bgcolor="#eee"]
       <context "ctx-acclist"/>
     </div>
-    <div>[@grow @bgcolor="#eee" @height=100%]
+    [@width=10px]
+    <div>[col @grow @bgcolor="#eee"]
       <context "ctx-accdetail"/>
     </div>
   </div>
-  <div>[@margintop=8px]
-    <log "log"/>[@logstyle @height=300px @width=100%]
-  </div>
+  <log "log"/>[@logstyle @height=300px @width=100%]
 </div>

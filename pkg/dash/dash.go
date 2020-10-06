@@ -62,7 +62,7 @@ func init() {
 	CMeta["counter"] = makeCTM("inline embed control hasdata")
 	CMeta["input"] = makeCTM("inline embed")
 	CMeta["inputselect"] = makeCTM("inline embed control rowdata")
-	CMeta["table"] = makeCTM("embed control rowdata subctl sub-*")
+	CMeta["table"] = makeCTM("embed subctl sub-*")
 	CMeta["datatable"] = makeCTM("embed control rowdata sub-*")
 	CMeta["th"] = makeCTM("sub-*")
 	CMeta["tdformat"] = makeCTM("sub-*")
