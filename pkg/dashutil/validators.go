@@ -16,6 +16,7 @@ var (
 	PROCNAME_RE    = regexp.MustCompile("^[a-zA-Z0-9_.]+$")
 	UUID_RE        = regexp.MustCompile("^[a-fA-F0-9-]{36}$")
 	HANDLER_RE     = regexp.MustCompile("^/[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$")
+	BASE64_RE      = regexp.MustCompile("^[a-zA-Z0-9/+=]+$")
 )
 
 func IsZoneNameValid(zoneName string) bool {
@@ -58,4 +59,11 @@ func IsHandlerPathValid(handler string) bool {
 		return false
 	}
 	return HANDLER_RE.MatchString(handler)
+}
+
+func IsPublicKeyValid(publicKey string) bool {
+	if len(publicKey) < 20 || len(publicKey) > 1000 {
+		return false
+	}
+	return BASE64_RE.MatchString(publicKey)
 }

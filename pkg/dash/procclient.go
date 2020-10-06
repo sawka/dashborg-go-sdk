@@ -85,7 +85,7 @@ func StartProcClient(config *Config) *ProcClient {
 	Client = newProcClient()
 	Client.Config = config
 	log.Printf("Dashborg Initialized Client ProcName:%s ProcRunId:%s\n", Client.Config.ProcName, Client.ProcRunId)
-	// log.Printf("Dashborg Link %s\n", PanelLink(c.AccId, c.ZoneName, "default"))
+	log.Printf("Dashborg Zone Link %s\n", panelLink(config.AccId, config.ZoneName, "default"))
 	Client.goConnectClient()
 	Client.KeepAliveTicker = time.NewTicker(5 * time.Second)
 	go func() {
