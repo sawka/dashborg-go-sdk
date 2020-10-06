@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/sawka/mfmt/pkg/di"
-	"github.com/sawka/mfmt/pkg/keygen"
+	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
+	"github.com/sawka/dashborg-go-sdk/pkg/keygen"
 )
 
 const (
@@ -134,7 +134,7 @@ func readAccIdFromCert(certFileName string) (string, error) {
 		return "", fmt.Errorf("Error parsing certificate from file:%s err:%w", certFileName, err)
 	}
 	cn := cert.Subject.CommonName
-	if cn == "" || !di.IsUUIDValid(cn) {
+	if cn == "" || !dashutil.IsUUIDValid(cn) {
 		return "", fmt.Errorf("Invalid CN in certificate.  CN should be set to MFMT Account ID (UUID formatted, 36 chars) CN:%s", cn)
 	}
 	return cn, nil
