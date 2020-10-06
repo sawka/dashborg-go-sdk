@@ -41,11 +41,12 @@ type ProcClient struct {
 	Queue   chan queueEntry
 	PushMap map[string][]pushFnWrap
 
-	Wg            sync.WaitGroup
-	Done          bool // WaitForClear, no more messages can be queued
-	QueueClear    bool // the last message has been sent
-	Connected     bool // connection is open to BufSrv
-	ConnectGiveUp bool // we've given up on trying to reconnect the client
+	Wg              sync.WaitGroup
+	Done            bool // WaitForClear, no more messages can be queued
+	QueueClear      bool // the last message has been sent
+	Connected       bool // connection is open to BufSrv
+	ConnectGiveUp   bool // we've given up on trying to reconnect the client
+	KeepAliveTicker *time.Ticker
 
 	ActiveControls map[string]map[string]bool
 }
@@ -86,6 +87,13 @@ func StartProcClient(config *Config) *ProcClient {
 	log.Printf("Dashborg Initialized Client ProcName:%s ProcRunId:%s\n", Client.Config.ProcName, Client.ProcRunId)
 	// log.Printf("Dashborg Link %s\n", PanelLink(c.AccId, c.ZoneName, "default"))
 	Client.goConnectClient()
+	Client.KeepAliveTicker = time.NewTicker(5 * time.Second)
+	go func() {
+		for {
+			<-Client.KeepAliveTicker.C
+			Client.SendKeepAlive()
+		}
+	}()
 	return Client
 }
 
@@ -96,18 +104,32 @@ func (pc *ProcClient) WaitForClear() {
 	pc.CVar.Broadcast()
 	pc.CVar.L.Unlock()
 
-	dm2 := transport.DoneMessage{
+	dm := transport.DoneMessage{
 		MType: "done",
 		Ts:    Ts(),
 	}
-	Client.SendMessageWithCallback(dm2, func(v interface{}, err error) {
+	Client.SendMessageWithCallback(dm, func(v interface{}, err error) {
 		close(pc.Queue)
 		pc.CVar.L.Lock()
 		pc.QueueClear = true
 		pc.CVar.Broadcast()
 		pc.CVar.L.Unlock()
 	})
+	Client.KeepAliveTicker.Stop()
 	pc.Wg.Wait()
+}
+
+func (c *ProcClient) SendKeepAlive() {
+	var isConnected bool
+	var queueLen int
+	c.CVar.L.Lock()
+	isConnected = c.Connected
+	queueLen = len(c.Queue)
+	c.CVar.L.Unlock()
+	if isConnected && queueLen == 0 {
+		kam := transport.KeepAliveMessage{MType: "keepalive"}
+		Client.SendMessage(kam)
+	}
 }
 
 func (c *ProcClient) GetProcRunId() string {
@@ -351,6 +373,11 @@ func (pc *ProcClient) connectClient() error {
 
 func (c *ProcClient) handlePush(p bufsrv.PushType) (interface{}, error) {
 	LogInfo("handle push %#v\n", p)
+	if p.PushRecvId == "" {
+		// keepalive request
+		return true, nil
+	}
+
 	c.CVar.L.Lock()
 	pfns := c.PushMap[p.PushRecvId]
 	pfnsCopy := make([]pushFnWrap, len(pfns))

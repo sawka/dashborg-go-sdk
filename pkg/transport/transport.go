@@ -26,6 +26,11 @@ type DoneMessage struct {
 	Ts    int64  `json:"ts"`
 }
 
+// keepalive
+type KeepAliveMessage struct {
+	MType string `json:"mtype"`
+}
+
 // definepanel
 type DefinePanelMessage struct {
 	MType     string   `json:"mtype"`

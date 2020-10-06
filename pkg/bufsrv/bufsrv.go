@@ -134,7 +134,7 @@ func (r ResponseType) Err() error {
 
 type PushType struct {
 	PushCtx     string
-	PushRecvId  string
+	PushRecvId  string // empty for KeepAlive
 	PushPayload interface{}
 }
 
