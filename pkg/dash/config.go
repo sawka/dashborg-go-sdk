@@ -35,7 +35,7 @@ func defaultString(opts ...string) string {
 	return ""
 }
 
-func (c *Config) SetDefaults() {
+func (c *Config) setDefaults() {
 	c.AccId = defaultString(c.AccId, os.Getenv("DASHBORG_ACCID"))
 	c.ZoneName = defaultString(c.ZoneName, os.Getenv("DASHBORG_ZONE"), DEFAULT_ZONENAME)
 	c.Env = defaultString(c.Env, os.Getenv("DASHBORG_ENV"), "prod")
@@ -61,7 +61,6 @@ func (c *Config) SetDefaults() {
 		cmdName = cmdRegexp.ReplaceAllString(os.Args[0], "")
 	}
 	c.ProcName = defaultString(c.ProcName, os.Getenv("DASHBORG_PROCNAME"), cmdName, DEFAULT_PROCNAME)
-	c.ProcINum = 0
 	c.KeyFileName = defaultString(c.KeyFileName, os.Getenv("DASHBORG_KEYFILE"), TLS_KEY_FILENAME)
 	c.CertFileName = defaultString(c.CertFileName, os.Getenv("DASHBORG_CERTFILE"), TLS_CERT_FILENAME)
 	if os.Getenv("DASHBORG_VERBOSE") != "" {
@@ -86,29 +85,25 @@ func (c *Config) SetDefaults() {
 	}
 }
 
-func (c *Config) UseAnonKeys() {
-	c.UseKeys(TLS_KEY_FILENAME, TLS_CERT_FILENAME, true)
-}
-
-func (c *Config) UseKeys(keyFileName string, certFileName string, autoCreate bool) {
-	c.KeyFileName = keyFileName
-	c.CertFileName = certFileName
-	if autoCreate {
+func (c *Config) loadKeys() {
+	if c.AutoKeygen {
 		err := c.maybeMakeKeys()
 		if err != nil {
 			panic(err)
 		}
-		c.AutoKeygen = true
 	}
 	if _, errKey := os.Stat(c.KeyFileName); os.IsNotExist(errKey) {
-		panic(fmt.Sprintf("MFMT key file does not exist file:%s", c.KeyFileName))
+		panic(fmt.Sprintf("Dashborg key file does not exist file:%s", c.KeyFileName))
 	}
 	if _, errCert := os.Stat(c.CertFileName); os.IsNotExist(errCert) {
-		panic(fmt.Sprintf("MFMT certificate file does not exist file:%s", c.CertFileName))
+		panic(fmt.Sprintf("Dashborg certificate file does not exist file:%s", c.CertFileName))
 	}
-	accId, err := readAccIdFromCert(certFileName)
+	accId, err := readAccIdFromCert(c.CertFileName)
 	if err != nil {
 		panic(err)
+	}
+	if c.AccId != "" && accId != c.AccId {
+		panic(fmt.Sprintf("Dashborg AccId read from certificate:%s does not match AccId in config:%s", accId, c.AccId))
 	}
 	c.AccId = accId
 }
@@ -130,7 +125,7 @@ func (c *Config) maybeMakeKeys() error {
 	if err != nil {
 		return fmt.Errorf("Cannot create keypair err:%v", err)
 	}
-	log.Printf("MFMT Created new self-signed keypair key:%s cert:%s for new accountid:%s\n", c.KeyFileName, c.CertFileName, accId)
+	log.Printf("Dashborg Created new self-signed keypair key:%s cert:%s for new accountid:%s\n", c.KeyFileName, c.CertFileName, accId)
 	return nil
 }
 
@@ -149,7 +144,7 @@ func readAccIdFromCert(certFileName string) (string, error) {
 	}
 	cn := cert.Subject.CommonName
 	if cn == "" || !dashutil.IsUUIDValid(cn) {
-		return "", fmt.Errorf("Invalid CN in certificate.  CN should be set to MFMT Account ID (UUID formatted, 36 chars) CN:%s", cn)
+		return "", fmt.Errorf("Invalid CN in certificate.  CN should be set to Dashborg Account ID (UUID formatted, 36 chars) CN:%s", cn)
 	}
 	return cn, nil
 }

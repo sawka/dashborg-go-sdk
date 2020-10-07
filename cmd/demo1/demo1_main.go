@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -53,23 +54,19 @@ func DefinePanelHW() {
 
 func DefinePanel() {
 	panel := dash.DefinePanel("demo1")
-	panel.Print("<div>[rootdiv @col @padding=10px @height=100%]")
 	panel.Print("[@h1] Demo Dashboard")
-	panel.Print("<div>[@margintop=10px @marginbottom=10px]")
-	panel.Print("  <button b-1/>[@primary] Run Process #1")
-	panel.Print("  <button b-stop/>[@marginleft=15px] Stop")
+	panel.Print("<div>[row]")
+	panel.Print("  <button b-1/> Run Process #1")
+	panel.Print("  <button b-stop/> Stop")
 	panel.Print("</div>")
-	panel.Print("<log demo-log2/>[@logstyle @grow]")
-	// panel.Print("<progress/>")
-	panel.Print("</div>")
+	panel.Print("<log demo-log2/>[logstyle]")
 	panel.Flush()
 	panel.Dump(os.Stdout)
-	fmt.Printf("Panel Link %s\n", panel.PanelLink())
+	log.Printf("Panel Link %s\n", panel.PanelLink())
 }
 
 func main() {
-	cfg := &dash.Config{ProcName: "demo1", AnonAcc: true, Env: "dev"}
-	cfg.UseAnonKeys()
+	cfg := &dash.Config{ProcName: "demo1", AnonAcc: true, AutoKeygen: true}
 	defer dash.StartProcClient(cfg).WaitForClear()
 
 	DefinePanel()

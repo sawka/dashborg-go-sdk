@@ -77,7 +77,8 @@ func newProcClient() *ProcClient {
 }
 
 func StartProcClient(config *Config) *ProcClient {
-	config.SetDefaults()
+	config.setDefaults()
+	config.loadKeys()
 	if config.AccId == "" {
 		panic("dashborg.StartProcClient() cannot start, no AccId specified.  Call UseAnonKeys() or UseKeys() and ensure certificate file is properly formated.")
 	}

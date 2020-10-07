@@ -99,28 +99,44 @@ func makeCTM(text string) *ControlTypeMeta {
 }
 
 type Config struct {
-	AccId    string // DASHBORG_ACCID
-	AnonAcc  bool
-	ZoneName string // DASHBORG_ZONE
-	Env      string // DASHBORG_ENV default is "prod".  can be set to "dev"
+	// DASHBORG_ACCID, set to force an AccountId (must match certificate).  If not set, AccountId is set from certificate file.
+	AccId string
 
-	BufSrvHost string // DASHBORG_PROCHOST
-	BufSrvPort int    // DASHBORG_PROCPORT
+	// Set to true for unregistered accounts
+	AnonAcc bool
 
-	ProcName  string // DASHBORG_PROCNAME
+	// DASHBORG_ZONE defaults to "default"
+	ZoneName string
+
+	// Process Name Attributes.  Only ProcName is required
+	ProcName  string // DASHBORG_PROCNAME (set from executable filename if not set)
 	ProcIName string
 	ProcTags  map[string]string
-	ProcINum  int
 
-	KeyFileName     string // DASHBORG_KEYFILE
-	CertFileName    string // DASHBORG_CERTFILE
-	AutoKeygen      bool
-	Verbose         bool // DASHBORG_VERBOSE
+	KeyFileName  string // DASHBORG_KEYFILE private key file
+	CertFileName string // DASHBORG_CERTFILE certificate file, CN must be set to your Dashborg Account Id.
+
+	// Create a self-signed key/cert if they do not exist.  This will also create a random Account Id.
+	// Should only be used with AnonAcc is true, and AccId is not set
+	AutoKeygen bool
+
+	// The minimum amount of time to wait for all events to complete processing before shutting down after calling WaitForClear()
+	// Defaults to 1 second.
 	MinClearTimeout time.Duration
 
-	// DASHBORG_PANELCACHEMS (in milliseconds) to override, default is 1 minute.  if environment variable is set to "0" or if
-	//   the Config structure is set to <= 1ms, the cache will be disabled.
+	// DASHBORG_PANELCACHEMS, sets how long LookupPanel calls are cached
+	// The environment variable sets the time in milliseconds.
+	// In order to disable the cache (not recommended), set the environment variable to "0" or
+	//   set the value in the Config structure to <= 1ms.
 	PanelCacheTime time.Duration
+
+	// DASHBORG_VERBOSE, set to true for extra debugging information
+	Verbose bool
+
+	// These are for internal testing, should not normally be set by clients.
+	Env        string // DASHBORG_ENV
+	BufSrvHost string // DASHBORG_PROCHOST
+	BufSrvPort int    // DASHBORG_PROCPORT
 }
 
 type Elem struct {
@@ -353,7 +369,6 @@ func (p *PanelWriter) Flush() (*Panel, error) {
 	p.ElemBuilder.ReportErrors(os.Stderr)
 	rtn, err := Client.SendMessageWait(m)
 	rtnPanel := &Panel{PanelName: p.PanelName}
-	fmt.Printf("DefinePanel err:%v rtn:%v\n", err, rtn)
 	if err != nil {
 		return rtnPanel, err
 	}
