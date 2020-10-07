@@ -117,6 +117,10 @@ type Config struct {
 	AutoKeygen      bool
 	Verbose         bool // DASHBORG_VERBOSE
 	MinClearTimeout time.Duration
+
+	// DASHBORG_PANELCACHEMS (in milliseconds) to override, default is 1 minute.  if environment variable is set to "0" or if
+	//   the Config structure is set to <= 1ms, the cache will be disabled.
+	PanelCacheTime time.Duration
 }
 
 type Elem struct {
@@ -346,7 +350,6 @@ func (p *PanelWriter) Flush() (*Panel, error) {
 		ElemText:  elemText,
 		ElemHash:  ComputeElemHash(elemText),
 	}
-	fmt.Printf("elemhash: %v\n", m.ElemHash)
 	p.ElemBuilder.ReportErrors(os.Stderr)
 	rtn, err := Client.SendMessageWait(m)
 	rtnPanel := &Panel{PanelName: p.PanelName}
@@ -355,6 +358,9 @@ func (p *PanelWriter) Flush() (*Panel, error) {
 		return rtnPanel, err
 	}
 	err = rtnPanel.setControlMappings(rtn)
+	if err == nil {
+		setMappingsInCache(p.PanelName, rtnPanel.ControlMappings)
+	}
 	return rtnPanel, err
 }
 
@@ -381,6 +387,11 @@ type Panel struct {
 
 func LookupPanel(panelName string) (*Panel, error) {
 	p := &Panel{PanelName: panelName}
+	mappings, ok := getMappingsFromCache(panelName, Client.Config.PanelCacheTime)
+	if ok {
+		p.ControlMappings = mappings
+		return p, nil
+	}
 	err := p.RefreshControlMappings()
 	return p, err
 }
@@ -414,6 +425,7 @@ func (p *Panel) setControlMappings(rtn interface{}) error {
 	return nil
 }
 
+// force a refresh, bypasses cache
 func (p *Panel) RefreshControlMappings() error {
 	lpm := transport.LookupPanelMessage{
 		MType:     "lookuppanel",
@@ -427,6 +439,9 @@ func (p *Panel) RefreshControlMappings() error {
 		return err
 	}
 	err = p.setControlMappings(rtn)
+	if err == nil {
+		setMappingsInCache(p.PanelName, p.ControlMappings)
+	}
 	return err
 }
 
