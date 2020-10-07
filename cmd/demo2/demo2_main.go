@@ -257,8 +257,7 @@ func Setup() {
 }
 
 func main() {
-	cfg := &dash.Config{ProcName: "demo2", AnonAcc: true, Env: "dev", Verbose: true}
-	cfg.UseAnonKeys()
+	cfg := &dash.Config{ProcName: "demo2", AnonAcc: true, AutoKeygen: true}
 	defer dash.StartProcClient(cfg).WaitForClear()
 
 	rand.Seed(time.Now().Unix())

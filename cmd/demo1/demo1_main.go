@@ -59,7 +59,7 @@ func DefinePanel() {
 	panel.Print("  <button b-1/> Run Process #1")
 	panel.Print("  <button b-stop/> Stop")
 	panel.Print("</div>")
-	panel.Print("<log demo-log2/>[logstyle]")
+	panel.Print("<log demo-log2/>[logstyle @grow]")
 	panel.Flush()
 	panel.Dump(os.Stdout)
 	log.Printf("Panel Link %s\n", panel.PanelLink())

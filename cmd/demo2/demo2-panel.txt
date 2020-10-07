@@ -18,5 +18,5 @@
       <context "ctx-accdetail"/>
     </div>
   </div>
-  <log "log"/>[@logstyle @height=300px @width=100%]
+  <log "log"/>[logstyle @height=300px]
 </div>
