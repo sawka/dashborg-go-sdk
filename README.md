@@ -1,6 +1,6 @@
 # Dashborg Go SDK
 
-Dashborg was built to make connecting your code to the web as simple as writing to the console, reading/writing files, and reading command line arguments.
+Dashborg was built to make connecting your code to the web as simple as writing to the console, reading/writing files, and reading command line arguments.  http://dashborg.net
 
 ## Documentation
 
@@ -72,4 +72,15 @@ Line #3: Here is the link to your new dashboard!  Copy and paste the link into y
 That's it, you've created a new unregistered Dashborg account, and defined your first Dashborg panel.
 
 
+## Dashborg Demos
 
+There are two demo programs in this repository.  You can run them from the root module directory (demo2 references a file by relative path of "cmd/demo2/demo2-panel.txt").  They will create a demo1 and demo2 panel in your account.  To navigate to the demo pages, you can follow the panel links output by the demo programs.
+
+```
+go run cmd/demo1/demo1_main.go
+go run cmd/demo2/demo2_main.go
+```
+
+Demo1 shows how to setup a simple panel with a button and log.  The button triggers some backend code and drives a progess control.
+
+Demo2 shows how to setup a simple webapp that manages a set of fake customer accounts.  It uses handlers, requests, and ephemeral contexts.  When you enter the demo2 panel, click on "refresh" to show the initial account list.
