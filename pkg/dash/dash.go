@@ -100,6 +100,9 @@ func makeCTM(text string) *ControlTypeMeta {
 
 type Config struct {
 	// DASHBORG_ACCID, set to force an AccountId (must match certificate).  If not set, AccountId is set from certificate file.
+	// If AccId is given and AutoKeygen is true, and key/cert files are not found, Dashborg will create a new self-signed
+	//     keypair using the AccId given.
+	// If AccId is given, and the certificate does not match, this will cause a panic.
 	AccId string
 
 	// Set to true for unregistered accounts

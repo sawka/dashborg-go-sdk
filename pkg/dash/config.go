@@ -87,7 +87,7 @@ func (c *Config) setDefaults() {
 
 func (c *Config) loadKeys() {
 	if c.AutoKeygen {
-		err := c.maybeMakeKeys()
+		err := c.maybeMakeKeys(c.AccId)
 		if err != nil {
 			panic(err)
 		}
@@ -108,7 +108,7 @@ func (c *Config) loadKeys() {
 	c.AccId = accId
 }
 
-func (c *Config) maybeMakeKeys() error {
+func (c *Config) maybeMakeKeys(accId string) error {
 	if c.KeyFileName == "" || c.CertFileName == "" {
 		return fmt.Errorf("Empty/Invalid Key or Cert filenames")
 	}
@@ -120,7 +120,9 @@ func (c *Config) maybeMakeKeys() error {
 	if errKey == nil || errCert == nil {
 		return fmt.Errorf("Cannot make key:%s cert:%s, one or both files already exist", c.KeyFileName, c.CertFileName)
 	}
-	accId := uuid.New().String()
+	if accId == "" {
+		accId = uuid.New().String()
+	}
 	err := keygen.CreateKeyPair(c.KeyFileName, c.CertFileName, accId)
 	if err != nil {
 		return fmt.Errorf("Cannot create keypair err:%v", err)
