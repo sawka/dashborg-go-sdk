@@ -4,7 +4,8 @@ Dashborg was built to make connecting your code to the web as simple as writing 
 
 ## Documentation
 
-* GoDoc: https://pkg.go.dev/github.com/sawka/dashborg-go-sdk
+* GoDoc (godoc.org): https://godoc.org/github.com/sawka/dashborg-go-sdk/pkg/dash
+* GoDoc (pkg.go.dev): https://pkg.go.dev/github.com/sawka/dashborg-go-sdk/pkg/dash
 * Docs: https://docs.dashborg.net/docs/getting-started/
 
 ## Getting Started
