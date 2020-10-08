@@ -124,8 +124,13 @@ func main() {
 	fileName := flag.Arg(0)
 	log.Printf("Watching %s for %s/%s\n", fileName, *zoneName, *panelName)
 
-	cfg := &dash.Config{ProcName: "watch", ZoneName: *zoneName, AnonAcc: true, Env: "dev"}
-	cfg.UseKeys(*keyName, *crtName, true)
+	cfg := &dash.Config{
+		ProcName:     "watch",
+		ZoneName:     *zoneName,
+		KeyFileName:  *keyName,
+		CertFileName: *crtName,
+		AnonAcc:      true,
+	}
 	defer dash.StartProcClient(cfg).WaitForClear()
 	WatchPanel(fileName, *zoneName, *panelName)
 }
