@@ -1,3 +1,4 @@
+//
 package dash
 
 import (
@@ -53,7 +54,7 @@ func init() {
 	CMeta["div"] = makeCTM("embed sub-*")
 	CMeta["link"] = makeCTM("inline embed sub-1")
 	CMeta["youtube"] = makeCTM("embed")
-	CMeta["dyntext"] = makeCTM("inline embed control hasdata sub-T")
+	CMeta["dyntext"] = makeCTM("inline embed control hasdata sub-1")
 	CMeta["dynelem"] = makeCTM("embed control hasdata sub-1")
 	CMeta["image"] = makeCTM("inline embed")
 	CMeta["log"] = makeCTM("rowdata control hasdata active subctl")
@@ -71,7 +72,16 @@ func init() {
 
 	CMeta["context"].AllowedSubTypes = map[string]bool{"context": true, "modal": true}
 	CMeta["progress"].AllowedSubTypes = map[string]bool{"bar": true, "spinner": true}
-	CMeta["input"].AllowedSubTypes = map[string]bool{"text": true, "hidden": true, "checkbox": true, "switch": true, "date": true, "time": true, "datetime": true}
+	CMeta["input"].AllowedSubTypes = map[string]bool{
+		"text":     true,
+		"password": true,
+		"hidden":   true,
+		"checkbox": true,
+		"toggle":   true,
+		"date":     true,
+		"time":     true,
+		"datetime": true,
+	}
 	CMeta["inputselect"].AllowedSubTypes = map[string]bool{"select": true, "combo": true, "search": true}
 }
 

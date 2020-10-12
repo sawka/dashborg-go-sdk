@@ -12,6 +12,8 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/parser"
 )
 
+// TODO check for input fields with same "formfield" name (warning)
+
 type ElemBuilder struct {
 	LocId        string
 	Vars         map[string]interface{}
