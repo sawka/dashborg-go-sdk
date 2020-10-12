@@ -54,8 +54,7 @@ func init() {
 	CMeta["div"] = makeCTM("embed sub-*")
 	CMeta["link"] = makeCTM("inline embed sub-1")
 	CMeta["youtube"] = makeCTM("embed")
-	CMeta["dyntext"] = makeCTM("inline embed control hasdata sub-1")
-	CMeta["dynelem"] = makeCTM("embed control hasdata sub-1")
+	CMeta["dyn"] = makeCTM("inline embed control hasdata sub-1")
 	CMeta["image"] = makeCTM("inline embed")
 	CMeta["log"] = makeCTM("rowdata control hasdata active subctl")
 	CMeta["button"] = makeCTM("inline embed control active sub-1")
@@ -71,6 +70,7 @@ func init() {
 	CMeta["tdformat"] = makeCTM("sub-*")
 
 	CMeta["context"].AllowedSubTypes = map[string]bool{"context": true, "modal": true}
+	CMeta["dyn"].AllowedSubTypes = map[string]bool{"text": true}
 	CMeta["progress"].AllowedSubTypes = map[string]bool{"bar": true, "spinner": true}
 	CMeta["input"].AllowedSubTypes = map[string]bool{
 		"text":     true,
@@ -275,6 +275,9 @@ func ComputeElemHash(elemText []string) string {
 		io.WriteString(h, text)
 	}
 	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func (w *ContextWriter) SendFile(mimeType string, fd io.Reader) {
 }
 
 func (w *ContextWriter) Flush() {

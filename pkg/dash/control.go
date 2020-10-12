@@ -164,7 +164,7 @@ func (c *Control) RowDataClear() {
 }
 
 func (c *Control) DynSetFStr(fstr string) {
-	if c.ControlType != "dyntext" || !c.IsValid() {
+	if c.ControlType != "dyn" || !c.IsValid() {
 		return
 	}
 	dynData := transport.DynElemData{}
@@ -184,7 +184,7 @@ func (c *Control) DynSetFStr(fstr string) {
 }
 
 func (c *Control) DynSetData(data ...interface{}) {
-	if c.ControlType != "dyntext" || !c.IsValid() {
+	if c.ControlType != "dyn" || !c.IsValid() {
 		return
 	}
 	dynData := transport.DynElemData{}
