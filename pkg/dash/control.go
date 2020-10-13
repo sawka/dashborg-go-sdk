@@ -2,6 +2,7 @@ package dash
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
@@ -203,7 +204,11 @@ func (c *Control) DynSetData(data ...interface{}) {
 	Client.SendMessage(m)
 }
 
-func (c *Control) DynSetElem(elemtext []string) {
+func (c *Control) ElemBuilder() *EmbedControlWriter {
+	if (c.ControlType != "dyn" && c.ControlType != "table" && c.ControlType != "log") || !c.IsValid() {
+		log.Printf("Invalid Control for creating an ElemBuilder.  Must be a valid dyn, table, or log control.")
+	}
+	return makeEmbedControlWriter(c)
 }
 
 func (c *Control) OnAllRequests(fn func(req *PanelRequest) (bool, error)) {

@@ -263,6 +263,33 @@ func (p *PanelRequest) TriggerRequest(handlerPath string, data interface{}) {
 	}()
 }
 
+type EmbedControlWriter struct {
+	*ElemBuilder
+	Control *Control
+	Ts      int64
+}
+
+func makeEmbedControlWriter(c *Control) *EmbedControlWriter {
+	rtn := &EmbedControlWriter{}
+	cloc, err := dashutil.ParseControlLocator(c.ControlLoc)
+	var locId string
+	if err == nil {
+		locId = dashutil.MakeEphScLocId(cloc.ControlId)
+	}
+	rtn.ElemBuilder = MakeElemBuilder(locId)
+	rtn.Control = c
+	rtn.Ts = Ts()
+	return rtn
+}
+
+func (w *EmbedControlWriter) Flush() {
+	c := w.Control
+	if c == nil || (c.ControlType != "dyn" && c.ControlType != "table" && c.ControlType != "log") || !c.IsValid() {
+		log.Printf("Invalid Control for creating an ElemBuilder, cannot Flush().  Must be a valid dyn, table, or log control.")
+		return
+	}
+}
+
 type ContextWriter struct {
 	*ElemBuilder
 	Req            *PanelRequest
