@@ -120,48 +120,48 @@ func (pc *ProcClient) WaitForClear() {
 	pc.Wg.Wait()
 }
 
-func (c *ProcClient) SendKeepAlive() {
+func (pc *ProcClient) SendKeepAlive() {
 	var isConnected bool
 	var queueLen int
-	c.CVar.L.Lock()
-	isConnected = c.Connected
-	queueLen = len(c.Queue)
-	c.CVar.L.Unlock()
+	pc.CVar.L.Lock()
+	isConnected = pc.Connected
+	queueLen = len(pc.Queue)
+	pc.CVar.L.Unlock()
 	if isConnected && queueLen == 0 {
 		kam := transport.KeepAliveMessage{MType: "keepalive"}
 		Client.SendMessage(kam)
 	}
 }
 
-func (c *ProcClient) GetProcRunId() string {
-	return c.ProcRunId
+func (pc *ProcClient) GetProcRunId() string {
+	return pc.ProcRunId
 }
 
-func (c *ProcClient) SendMessage(m interface{}) error {
-	return c.SendMessageWithCallback(m, nil)
+func (pc *ProcClient) SendMessage(m interface{}) error {
+	return pc.SendMessageWithCallback(m, nil)
 }
 
-func (c *ProcClient) SendMessageWithCallback(m interface{}, callback func(interface{}, error)) error {
+func (pc *ProcClient) SendMessageWithCallback(m interface{}, callback func(interface{}, error)) error {
 	isDoneMsg := transport.GetMType(m) == "done"
-	c.CVar.L.Lock()
-	defer c.CVar.L.Unlock()
-	if !isDoneMsg && c.Done {
+	pc.CVar.L.Lock()
+	defer pc.CVar.L.Unlock()
+	if !isDoneMsg && pc.Done {
 		return errors.New("ProcClient done, dropping message")
 	}
 	qe := queueEntry{Message: m, RtnCallback: callback}
 	select {
-	case c.Queue <- qe:
+	case pc.Queue <- qe:
 	default:
 		return fmt.Errorf("ProcClient queue full, dropping message")
 	}
 	return nil
 }
 
-func (c *ProcClient) SendMessageWait(m interface{}) (interface{}, error) {
+func (pc *ProcClient) SendMessageWait(m interface{}) (interface{}, error) {
 	var outerRtn interface{}
 	var outerErr error
 	ch := make(chan bool)
-	sendErr := c.SendMessageWithCallback(m, func(rtn interface{}, err error) {
+	sendErr := pc.SendMessageWithCallback(m, func(rtn interface{}, err error) {
 		outerRtn = rtn
 		outerErr = err
 		close(ch)
@@ -212,7 +212,7 @@ func (c *ProcClient) sendLoop() {
 		// deal with error conditions
 		startTs := time.Now()
 		resp := c.Client.DoRequest("msg", entry.Message)
-		LogInfo("Message %s elapsed:%dms\n", transport.GetMType(entry.Message), int(time.Since(startTs)/time.Millisecond))
+		logInfo("Message %s elapsed:%dms\n", transport.GetMType(entry.Message), int(time.Since(startTs)/time.Millisecond))
 		if resp.ConnError != nil {
 			log.Printf("Dashborg ProcClient ConnError:%v\n", resp.ConnError)
 			retryEntry = &entry
@@ -221,7 +221,7 @@ func (c *ProcClient) sendLoop() {
 			c.Connected = false
 			c.CVar.Broadcast()
 			c.CVar.L.Unlock()
-			LogInfo("Dashborg ProcClient Disconnected, will retry last message\n")
+			logInfo("Dashborg ProcClient Disconnected, will retry last message\n")
 			continue
 		} else {
 			err := resp.Err()
@@ -324,7 +324,7 @@ func (pc *ProcClient) retryConnectClient() error {
 	pc.ConnectGiveUp = true
 	pc.CVar.Broadcast()
 	pc.CVar.L.Unlock()
-	LogInfo("ProcClient RetryConnectClient done\n")
+	logInfo("ProcClient RetryConnectClient done\n")
 	return nil
 }
 
@@ -348,7 +348,7 @@ func (pc *ProcClient) connectClient() error {
 			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
-	LogInfo("Connecting to addr:%s\n", addr)
+	logInfo("Connecting to addr:%s\n", addr)
 	client, err := bufsrv.MakeClient(addr, tlsConfig)
 	if err != nil {
 		return err
@@ -373,7 +373,7 @@ func (pc *ProcClient) connectClient() error {
 }
 
 func (c *ProcClient) handlePush(p bufsrv.PushType) (interface{}, error) {
-	LogInfo("handle push %#v\n", p)
+	logInfo("handle push %#v\n", p)
 	if p.PushRecvId == "" {
 		// keepalive request
 		return true, nil

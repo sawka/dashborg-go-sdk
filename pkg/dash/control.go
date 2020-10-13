@@ -2,7 +2,9 @@ package dash
 
 import (
 	"fmt"
+	"io"
 	"log"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
@@ -246,4 +248,11 @@ func (c *Control) TableAddData(data ...interface{}) {
 }
 
 func (c *Control) TableAddElems(elemtext []string) {
+}
+
+func (c *Control) UploadBlob(mimeType string, w io.WriterAt) error {
+	if c.ControlType != "image" || !strings.HasPrefix(mimeType, "image/") || !c.IsValid() {
+		return fmt.Errorf("UploadBlob is only supported on valid image controls, with image/* mime-types")
+	}
+	return nil
 }

@@ -55,7 +55,7 @@ func init() {
 	CMeta["link"] = makeCTM("inline embed sub-1")
 	CMeta["youtube"] = makeCTM("embed")
 	CMeta["dyn"] = makeCTM("inline embed control hasdata sub-1")
-	CMeta["image"] = makeCTM("inline embed")
+	CMeta["image"] = makeCTM("inline embed control")
 	CMeta["log"] = makeCTM("rowdata control hasdata active subctl")
 	CMeta["button"] = makeCTM("inline embed control active sub-1")
 	CMeta["context"] = makeCTM("control sub-* eph")
@@ -229,25 +229,25 @@ func (req *PanelRequest) GetData() interface{} {
 	return req.Data
 }
 
-func (p *PanelRequest) TriggerRequest(handlerPath string, data interface{}) {
-	if p.Depth > 5 {
+func (req *PanelRequest) TriggerRequest(handlerPath string, data interface{}) {
+	if req.Depth > 5 {
 		log.Printf("Dashborg Cannot trigger requests more than 5 levels deep\n")
 		return
 	}
-	req := &transport.PanelRequestData{
-		FeClientId: p.FeClientId,
-		ZoneName:   p.ZoneName,
-		PanelName:  p.PanelName,
+	reqData := &transport.PanelRequestData{
+		FeClientId: req.FeClientId,
+		ZoneName:   req.ZoneName,
+		PanelName:  req.PanelName,
 		Handler:    handlerPath,
 		Data:       data,
-		Depth:      p.Depth + 1,
+		Depth:      req.Depth + 1,
 	}
 	handlerMatch := handlerRe.FindStringSubmatch(handlerPath)
 	if handlerMatch == nil {
 		log.Printf("Dashborg Bad handlerPath:%s passed to TriggerRequest\n", handlerPath)
 		return
 	}
-	panel, _ := LookupPanel(p.PanelName)
+	panel, _ := LookupPanel(req.PanelName)
 	// TODO don't activate this control
 	handlerControl := panel.LookupControl("handler", handlerMatch[1])
 	if !handlerControl.IsValid() {
@@ -258,7 +258,7 @@ func (p *PanelRequest) TriggerRequest(handlerPath string, data interface{}) {
 		Client.handlePush(bufsrv.PushType{
 			PushCtx:     Client.GetProcRunId(),
 			PushRecvId:  handlerControl.ControlLoc,
-			PushPayload: req,
+			PushPayload: reqData,
 		})
 	}()
 }
@@ -296,7 +296,7 @@ type ContextWriter struct {
 	ContextControl *Control
 }
 
-func ComputeElemHash(elemText []string) string {
+func computeElemHash(elemText []string) string {
 	h := md5.New()
 	for _, text := range elemText {
 		io.WriteString(h, text)
@@ -407,7 +407,7 @@ func (p *PanelWriter) Flush() (*Panel, error) {
 		PanelName: p.PanelName,
 		TrackAnon: !p.ElemBuilder.NoAnon,
 		ElemText:  elemText,
-		ElemHash:  ComputeElemHash(elemText),
+		ElemHash:  computeElemHash(elemText),
 	}
 	p.ElemBuilder.ReportErrors(os.Stderr)
 	rtn, err := Client.SendMessageWait(m)
@@ -539,15 +539,11 @@ func (p *Panel) OnRequest(handlerPath string, handlerFn func(*PanelRequest) erro
 	})
 }
 
-type IZone interface {
-	LookupControl(controlType string, controlName string) Control
-}
-
 func Ts() int64 {
 	return time.Now().UnixNano() / 1000000
 }
 
-func LogInfo(fmt string, data ...interface{}) {
+func logInfo(fmt string, data ...interface{}) {
 	if Client.Config.Verbose {
 		log.Printf(fmt, data...)
 	}
