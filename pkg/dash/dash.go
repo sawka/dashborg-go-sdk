@@ -61,7 +61,7 @@ func init() {
 	CMeta["context"] = makeCTM("control sub-* eph")
 	CMeta["progress"] = makeCTM("inline embed control active hasdata")
 	CMeta["handler"] = makeCTM("control active")
-	CMeta["input"] = makeCTM("inline embed")
+	CMeta["input"] = makeCTM("inline embed control")
 	CMeta["inputselect"] = makeCTM("inline embed control rowdata")
 	CMeta["table"] = makeCTM("embed subctl sub-*")
 	CMeta["datatable"] = makeCTM("embed control rowdata sub-*")
@@ -546,4 +546,45 @@ func logInfo(fmt string, data ...interface{}) {
 	if Client.Config.Verbose {
 		log.Printf(fmt, data...)
 	}
+}
+
+// returns (blobHash, err)
+func UploadBlob(mimeType string, r io.ReaderAt) (string, error) {
+	hashVal, size, err := sha256FromReader(r)
+	if err != nil {
+		return "", err
+	}
+	if size > MAX_BLOB_SIZE {
+		return "", fmt.Errorf("Maximum Blob size exceeded max:%d size:%d\n", MAX_BLOB_SIZE, size)
+	}
+	checkBlobMsg := transport.CheckBlobMessage{
+		MType:    "checkblob",
+		BlobHash: hashVal,
+	}
+	checkRtn, err := Client.SendMessageWait(checkBlobMsg)
+	if err != nil {
+		return "", fmt.Errorf("Error from CheckBlobMessage err:%w", err)
+	}
+	if checkBool, ok := checkRtn.(bool); ok && checkBool {
+		return hashVal, nil
+	}
+	// format = SHA-265 + len(mimeType) + mimeType + data
+	buf := make([]byte, 64+1+len(mimeType)+int(size))
+	copy(buf[0:], []byte(hashVal))   // 64
+	buf[64] = byte(len(mimeType))    // 1
+	copy(buf[65:], []byte(mimeType)) // len(mimeType)
+	n, err := r.ReadAt(buf[65+len(mimeType):], 0)
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+	if int64(n) != size {
+		// this shouldn't happen
+		return "", fmt.Errorf("Could not read blob data fully (partial read, invalid ReaderAt)")
+	}
+	rawMsg := transport.RawMessage{
+		MType: "raw:blob",
+		Data:  buf,
+	}
+	Client.SendMessage(rawMsg)
+	return hashVal, nil
 }

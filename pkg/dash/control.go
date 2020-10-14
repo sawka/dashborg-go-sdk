@@ -65,11 +65,19 @@ func (c *Control) OnClick(fn func() error) {
 	Client.RegisterPushFn(c.ControlLoc, runFn, false)
 }
 
-// func (c *Control) OnChange(fn func(v string) error) {
-// 	if c.ControlType != "input" || !c.IsValid() {
-// 		return
-// 	}
-// }
+func (c *Control) OnCheckboxChange(fn func(b bool) error) {
+	if c.ControlType != "input" || !c.IsValid() {
+		return
+	}
+	runFn := func(v interface{}) (interface{}, error) {
+		err := fn(v.(bool))
+		if err != nil {
+			return nil, err
+		}
+		return true, nil
+	}
+	Client.RegisterPushFn(c.ControlLoc, runFn, false)
+}
 
 func (c *Control) Release() {
 	if c.ClientId != "" {
@@ -263,43 +271,9 @@ func (c *Control) UploadBlob(mimeType string, r io.ReaderAt) error {
 	if c.ControlType != "image" || !strings.HasPrefix(mimeType, "image/") || !c.IsValid() {
 		return fmt.Errorf("UploadBlob is only supported on valid image controls, with image/* mime-types")
 	}
-	hashVal, size, err := sha256FromReader(r)
+	hashVal, err := UploadBlob(mimeType, r)
 	if err != nil {
 		return err
-	}
-	if size > MAX_BLOB_SIZE {
-		return fmt.Errorf("Maximum Blob size exceeded max:%d size:%d\n", MAX_BLOB_SIZE, size)
-	}
-	checkBlobMsg := transport.CheckBlobMessage{
-		MType:    "checkblob",
-		BlobHash: hashVal,
-	}
-	checkRtn, err := Client.SendMessageWait(checkBlobMsg)
-	if err != nil {
-		return fmt.Errorf("Error from CheckBlobMessage err:%w", err)
-	}
-	if checkBool, ok := checkRtn.(bool); ok && checkBool {
-		logInfo("CheckBlob returned true, not uploading\n")
-	} else {
-		logInfo("CheckBlob returned false, uploading raw blob size:%d\n", size)
-		// format = SHA-265 + len(mimeType) + mimeType + data
-		buf := make([]byte, 64+1+len(mimeType)+int(size))
-		copy(buf[0:], []byte(hashVal))   // 64
-		buf[64] = byte(len(mimeType))    // 1
-		copy(buf[65:], []byte(mimeType)) // len(mimeType)
-		n, err := r.ReadAt(buf[65+len(mimeType):], 0)
-		if err != nil && err != io.EOF {
-			return err
-		}
-		if int64(n) != size {
-			// this shouldn't happen
-			return fmt.Errorf("Could not read blob data fully (partial read, invalid ReaderAt)")
-		}
-		rawMsg := transport.RawMessage{
-			MType: "raw:blob",
-			Data:  buf,
-		}
-		Client.SendMessage(rawMsg)
 	}
 	updateMsg := transport.ControlUpdateMessage{
 		MType:      "controlupdate",
