@@ -72,6 +72,12 @@ type ResetTsData struct {
 	ResetTs int64 `json:"resetts"`
 }
 
+// checkblob
+type CheckBlobMessage struct {
+	MType    string `json:"mtype"`
+	BlobHash string `json:"blobhash"`
+}
+
 // controlupdate
 type ControlUpdateMessage struct {
 	MType      string      `json:"mtype"`
