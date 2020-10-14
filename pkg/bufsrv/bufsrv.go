@@ -64,6 +64,7 @@ var RandSource rand.Source = rand.NewSource(time.Now().UnixNano())
 func init() {
 	AllowedEncs = make(map[string]bool)
 	AllowedEncs["json"] = true
+	AllowedEncs["raw"] = true
 }
 
 type PacketHeader struct {
@@ -284,12 +285,21 @@ func readPacket(conn net.Conn, rtn interface{}) (*PacketHeader, error) {
 	if err != nil {
 		return nil, err
 	}
-	if ph.Enc != "json" {
+	if ph.Enc == "json" {
+		err = json.Unmarshal(bodyBuf, rtn)
+		if err != nil {
+			return nil, err
+		}
+	} else if ph.Enc == "raw" {
+		if iptr, ok := rtn.(*interface{}); ok {
+			*iptr = bodyBuf
+		} else if bufPtr, ok := rtn.(*[]byte); ok {
+			*bufPtr = bodyBuf
+		} else {
+			return nil, fmt.Errorf("raw packets can only be decoded into *interface{} and *[]byte")
+		}
+	} else {
 		return nil, fmt.Errorf("Invalid enc (was '%s')", ph.Enc)
-	}
-	err = json.Unmarshal(bodyBuf, rtn)
-	if err != nil {
-		return nil, err
 	}
 	return &ph, nil
 }
@@ -543,16 +553,24 @@ func marshalJsonNoEnc(val interface{}) ([]byte, error) {
 	return jsonBuf.Bytes(), nil
 }
 
-func (c *Client) writePacket(module string, dir string, val interface{}) (string, error) {
+func (c *Client) writePacket(module string, dir string, encoding string, val interface{}) (string, error) {
 	if c.Closed {
 		return "", fmt.Errorf("Client closed, cannot request")
 	}
 	idnum := atomic.AddInt64(&c.IdNum, 1)
-	barr, err := marshalJsonNoEnc(val)
-	if err != nil {
-		return "", err
+	var barr []byte
+	var err error
+	if encoding == "json" {
+		barr, err = marshalJsonNoEnc(val)
+		if err != nil {
+			return "", err
+		}
+	} else if encoding == "raw" {
+		barr = val.([]byte)
+	} else {
+		panic("invalid encoding passed to writePacket")
 	}
-	ph := PacketHeader{Version: 1, Dir: dir, Id: strconv.FormatInt(idnum, 10), Module: module, Enc: "json", BodyLen: len(barr)}
+	ph := PacketHeader{Version: 1, Dir: dir, Id: strconv.FormatInt(idnum, 10), Module: module, Enc: encoding, BodyLen: len(barr)}
 	if !ph.IsValid() {
 		return "", fmt.Errorf("Invalid PacketHeader created")
 	}
@@ -644,7 +662,7 @@ func (c *Client) SetPushCtx(pushCtx string, pfn PushFnType) error {
 	c.Lock.Lock()
 	c.PushCtx = pushCtx
 	c.PushFn = pfn
-	_, err := c.writePacket("push", DIR_PUSHREG, c.PushCtx)
+	_, err := c.writePacket("push", DIR_PUSHREG, "json", c.PushCtx)
 	c.Lock.Unlock()
 	if err != nil {
 		c.Err = err
@@ -656,7 +674,11 @@ func (c *Client) SetPushCtx(pushCtx string, pfn PushFnType) error {
 
 func (c *Client) DoRequest(module string, val interface{}) ResponseType {
 	c.Lock.Lock()
-	reqId, err := c.writePacket(module, DIR_CALL, val)
+	encoding := "json"
+	if strings.HasPrefix(module, "raw:") {
+		encoding = "raw"
+	}
+	reqId, err := c.writePacket(module, DIR_CALL, encoding, val)
 	if err != nil {
 		c.Lock.Unlock()
 		return ResponseType{ConnError: err}

@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -211,8 +212,16 @@ func (c *ProcClient) sendLoop() {
 
 		// deal with error conditions
 		startTs := time.Now()
-		resp := c.Client.DoRequest("msg", entry.Message)
-		logInfo("Message %s elapsed:%dms\n", transport.GetMType(entry.Message), int(time.Since(startTs)/time.Millisecond))
+		mtype := transport.GetMType(entry.Message)
+		var resp bufsrv.ResponseType
+		if strings.HasPrefix(mtype, "raw:") {
+			rawMsg := entry.Message.(transport.RawMessage)
+			resp = c.Client.DoRequest(mtype, rawMsg.Data)
+			fmt.Printf("send rawmessage %s %d\n", mtype, len(rawMsg.Data))
+		} else {
+			resp = c.Client.DoRequest("msg", entry.Message)
+		}
+		logInfo("Message %s elapsed:%dms\n", mtype, int(time.Since(startTs)/time.Millisecond))
 		if resp.ConnError != nil {
 			log.Printf("Dashborg ProcClient ConnError:%v\n", resp.ConnError)
 			retryEntry = &entry

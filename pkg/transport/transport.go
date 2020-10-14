@@ -20,6 +20,12 @@ type ProcMessage struct {
 	Pk256 string `json:"-"` // used on server side
 }
 
+// raw message will not be marshaled into json
+type RawMessage struct {
+	MType string `json:"mtype"`
+	Data  []byte `json:"data"`
+}
+
 // done
 type DoneMessage struct {
 	MType string `json:"mtype"`

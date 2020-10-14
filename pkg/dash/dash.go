@@ -61,7 +61,6 @@ func init() {
 	CMeta["context"] = makeCTM("control sub-* eph")
 	CMeta["progress"] = makeCTM("inline embed control active hasdata")
 	CMeta["handler"] = makeCTM("control active")
-	CMeta["counter"] = makeCTM("inline embed control hasdata")
 	CMeta["input"] = makeCTM("inline embed")
 	CMeta["inputselect"] = makeCTM("inline embed control rowdata")
 	CMeta["table"] = makeCTM("embed subctl sub-*")

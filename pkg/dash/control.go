@@ -1,6 +1,7 @@
 package dash
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"log"
@@ -11,6 +12,8 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 	"github.com/sawka/dashborg-go-sdk/pkg/transport"
 )
+
+const MAX_BLOB_SIZE = 10 * 1024 * 1024
 
 type Control struct {
 	ClientId    string `json:"clientid"`
@@ -250,9 +253,59 @@ func (c *Control) TableAddData(data ...interface{}) {
 func (c *Control) TableAddElems(elemtext []string) {
 }
 
-func (c *Control) UploadBlob(mimeType string, w io.WriterAt) error {
+func (c *Control) UploadBlob(mimeType string, r io.ReaderAt) error {
 	if c.ControlType != "image" || !strings.HasPrefix(mimeType, "image/") || !c.IsValid() {
 		return fmt.Errorf("UploadBlob is only supported on valid image controls, with image/* mime-types")
 	}
+	hashVal, size, err := sha256FromReader(r)
+	if err != nil {
+		return err
+	}
+	if size > MAX_BLOB_SIZE {
+		return fmt.Errorf("Maximum Blob size exceeded max:%d size:%d\n", MAX_BLOB_SIZE, size)
+	}
+	// format = SHA-265 + len(mimeType) + mimeType + data
+	buf := make([]byte, 64+1+len(mimeType)+int(size))
+	copy(buf[0:], []byte(hashVal))   // 64
+	buf[64] = byte(len(mimeType))    // 1
+	copy(buf[65:], []byte(mimeType)) // len(mimeType)
+	n, err := r.ReadAt(buf[65+len(mimeType):], 0)
+	if err != nil && err != io.EOF {
+		return err
+	}
+	if int64(n) != size {
+		// this shouldn't happen
+		return fmt.Errorf("Could not read blob data fully (partial read, invalid ReaderAt)")
+	}
+	rawMsg := transport.RawMessage{
+		MType: "raw:blob",
+		Data:  buf,
+	}
+	Client.SendMessage(rawMsg)
 	return nil
+}
+
+func sha256FromReader(r io.ReaderAt) (string, int64, error) {
+	hash := sha256.New()
+	var pos int64
+	var bufArr [64 * 1024]byte
+	buf := bufArr[:]
+	for {
+		n, err := r.ReadAt(buf, pos)
+		if n > 0 {
+			_, err = hash.Write(buf[:n])
+			if err != nil {
+				return "", 0, err
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", 0, err
+		}
+		pos += int64(n)
+	}
+	hashVal := hash.Sum(nil)
+	return fmt.Sprintf("%x", hashVal), pos, nil
 }

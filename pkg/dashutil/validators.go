@@ -10,13 +10,15 @@ const (
 )
 
 var (
-	ZONENAME_RE    = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
-	CONTROLNAME_RE = regexp.MustCompile("^[a-zA-Z0-9_.:#/-]+$")
-	PANELNAME_RE   = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
-	PROCNAME_RE    = regexp.MustCompile("^[a-zA-Z0-9_.]+$")
-	UUID_RE        = regexp.MustCompile("^[a-fA-F0-9-]{36}$")
-	HANDLER_RE     = regexp.MustCompile("^/[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$")
-	BASE64_RE      = regexp.MustCompile("^[a-zA-Z0-9/+=]+$")
+	ZONENAME_RE       = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
+	CONTROLNAME_RE    = regexp.MustCompile("^[a-zA-Z0-9_.:#/-]+$")
+	PANELNAME_RE      = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
+	PROCNAME_RE       = regexp.MustCompile("^[a-zA-Z0-9_.]+$")
+	UUID_RE           = regexp.MustCompile("^[a-fA-F0-9-]{36}$")
+	HANDLER_RE        = regexp.MustCompile("^/[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$")
+	BASE64_RE         = regexp.MustCompile("^[a-zA-Z0-9/+=]+$")
+	HEX_RE            = regexp.MustCompile("^[a-f0-9]+$")
+	IMAGE_MIMETYPE_RE = regexp.MustCompile("^image/[a-z0-9-]+")
 )
 
 func IsZoneNameValid(zoneName string) bool {
@@ -66,4 +68,18 @@ func IsPublicKeyValid(publicKey string) bool {
 		return false
 	}
 	return BASE64_RE.MatchString(publicKey)
+}
+
+func IsSha256HashValid(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	return HEX_RE.MatchString(s)
+}
+
+func IsImageMimeTypeValid(s string) bool {
+	if len(s) == 0 || len(s) > 50 {
+		return false
+	}
+	return IMAGE_MIMETYPE_RE.MatchString(s)
 }
