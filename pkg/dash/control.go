@@ -23,7 +23,7 @@ type Control struct {
 }
 
 func (c *Control) IsValid() bool {
-	return c.ControlLoc != "" && c.ControlType != "" && c.ControlType != "invalid"
+	return c.ControlLoc != "" && c.ControlLoc != dashutil.INVALID_CLOC && c.ControlType != "" && c.ControlType != "invalid"
 }
 
 func (c *Control) GetMeta() *ControlTypeMeta {
@@ -76,6 +76,21 @@ func (c *Control) OnCheckboxChange(fn func(b bool) error) {
 		}
 		return true, nil
 	}
+	Client.RegisterPushFn(c.ControlLoc, runFn, false)
+}
+
+func (c *Control) OnSelectChange(fn func(v string) error) {
+	if c.ControlType != "inputselect" || !c.IsValid() {
+		return
+	}
+	runFn := func(v interface{}) (interface{}, error) {
+		err := fn(v.(string))
+		if err != nil {
+			return nil, err
+		}
+		return true, nil
+	}
+	fmt.Printf("register pushfn %s\n", c.ControlLoc)
 	Client.RegisterPushFn(c.ControlLoc, runFn, false)
 }
 
@@ -267,22 +282,30 @@ func (c *Control) TableAddData(data ...interface{}) {
 func (c *Control) TableAddElems(elemtext []string) {
 }
 
-func (c *Control) UploadBlob(mimeType string, r io.ReaderAt) error {
-	if c.ControlType != "image" || !strings.HasPrefix(mimeType, "image/") || !c.IsValid() {
-		return fmt.Errorf("UploadBlob is only supported on valid image controls, with image/* mime-types")
-	}
-	hashVal, err := UploadBlob(mimeType, r)
-	if err != nil {
-		return err
+func (c *Control) SetImageBlobHash(blobHash string) {
+	if c.ControlType != "image" || !c.IsValid() {
+		log.Printf("SetImageBlobHash is only supported on valid image controls\n")
+		return
 	}
 	updateMsg := transport.ControlUpdateMessage{
 		MType:      "controlupdate",
 		Ts:         Ts(),
 		ControlLoc: c.ControlLoc,
 		Cmd:        "setblob",
-		Data:       hashVal,
+		Data:       blobHash,
 	}
 	Client.SendMessage(updateMsg)
+}
+
+func (c *Control) UploadBlob(mimeType string, r io.ReaderAt) error {
+	if c.ControlType != "image" || !strings.HasPrefix(mimeType, "image/") || !c.IsValid() {
+		return fmt.Errorf("UploadBlob is only supported on valid image controls, with image/* mime-types")
+	}
+	blobHash, err := UploadBlob(mimeType, r)
+	if err != nil {
+		return err
+	}
+	c.SetImageBlobHash(blobHash)
 	return nil
 }
 

@@ -62,7 +62,8 @@ func init() {
 	CMeta["progress"] = makeCTM("inline embed control active hasdata")
 	CMeta["handler"] = makeCTM("control active")
 	CMeta["input"] = makeCTM("inline embed control")
-	CMeta["inputselect"] = makeCTM("inline embed control rowdata")
+	CMeta["inputselect"] = makeCTM("inline embed control rowdata sub-*")
+	CMeta["option"] = makeCTM("embed sub-T")
 	CMeta["table"] = makeCTM("embed subctl sub-*")
 	CMeta["datatable"] = makeCTM("embed control rowdata sub-*")
 	CMeta["th"] = makeCTM("sub-*")
@@ -195,9 +196,9 @@ type PanelRequest struct {
 	PanelName   string
 	FeClientId  string
 	ReqId       string
-	HandlerPath string
 	Data        interface{}
 	Depth       int
+	HandlerPath string
 }
 
 func (req *PanelRequest) LookupContext(name string) *ContextWriter {
@@ -215,7 +216,8 @@ func (req *PanelRequest) LookupContext(name string) *ContextWriter {
 		ctxId = uuid.New().String()
 	}
 	rtn.ElemBuilder = MakeElemBuilder(dashutil.MakeEphCtxLocId(req.FeClientId, ctxId, req.ReqId))
-	rtn.Req = req
+	rtn.FeClientId = req.FeClientId
+	rtn.ReqId = req.ReqId
 	rtn.ContextControl = ctx
 	return rtn
 }
@@ -291,7 +293,8 @@ func (w *EmbedControlWriter) Flush() {
 
 type ContextWriter struct {
 	*ElemBuilder
-	Req            *PanelRequest
+	FeClientId     string
+	ReqId          string
 	ContextControl *Control
 }
 
@@ -322,8 +325,8 @@ func (w *ContextWriter) Flush() {
 		ZoneName:   Client.Config.ZoneName,
 		PanelName:  w.ContextControl.PanelName,
 		ContextLoc: w.ContextControl.ControlLoc,
-		FeClientId: w.Req.FeClientId,
-		ReqId:      w.Req.ReqId,
+		FeClientId: w.FeClientId,
+		ReqId:      w.ReqId,
 		ElemText:   elemText,
 	}
 	Client.SendMessage(m)
@@ -341,8 +344,8 @@ func (w *ContextWriter) Revert() {
 		ZoneName:   Client.Config.ZoneName,
 		PanelName:  w.ContextControl.PanelName,
 		ContextLoc: w.ContextControl.ControlLoc,
-		FeClientId: w.Req.FeClientId,
-		ReqId:      w.Req.ReqId,
+		FeClientId: w.FeClientId,
+		ReqId:      w.ReqId,
 		ElemText:   nil,
 	}
 	Client.SendMessage(m)
@@ -374,6 +377,7 @@ func ParseElemText(elemText []string, locId string, allowImplicitRoot bool) *Ele
 func DefinePanel(panelName string) *PanelWriter {
 	rtn := &PanelWriter{PanelName: panelName}
 	rtn.ElemBuilder = MakeElemBuilder(dashutil.MakeZPLocId(Client.Config.ZoneName, panelName))
+	rtn.ElemBuilder.SetRootDivClass("rootdiv")
 	return rtn
 }
 

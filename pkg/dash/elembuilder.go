@@ -26,6 +26,7 @@ type ElemBuilder struct {
 	Errs         []parser.ParseErr
 	Warns        []parser.ParseErr
 	RawLines     []string
+	RootDivClass string
 }
 
 type BuilderAttr struct {
@@ -64,6 +65,10 @@ func MakeElemBuilder(locId string) *ElemBuilder {
 
 func (b *ElemBuilder) TrackAnonControls(anonTrack bool) {
 	b.NoAnon = !anonTrack
+}
+
+func (b *ElemBuilder) SetRootDivClass(cn string) {
+	b.RootDivClass = cn
 }
 
 func (b *ElemBuilder) SetVar(name string, val interface{}) {
@@ -151,7 +156,10 @@ func (b *ElemBuilder) Print(text string, args ...BuilderArg) *Control {
 		return nil
 	}
 	if b.Root == nil {
-		b.Root = &Elem{ElemType: "div", ClassNames: []string{"rootdiv"}}
+		b.Root = &Elem{ElemType: "div"}
+		if b.RootDivClass != "" {
+			b.Root.ClassNames = []string{b.RootDivClass}
+		}
 		b.Stack = []*Elem{b.Root}
 		b.ImplicitRoot = true
 	}
@@ -161,7 +169,10 @@ func (b *ElemBuilder) Print(text string, args ...BuilderArg) *Control {
 		}
 		// swap to ImplicitRoot
 		oldRoot := b.Root
-		b.Root = &Elem{ElemType: "div", ClassNames: []string{"rootdiv"}}
+		b.Root = &Elem{ElemType: "div"}
+		if b.RootDivClass != "" {
+			b.Root.ClassNames = []string{b.RootDivClass}
+		}
 		b.Stack = []*Elem{b.Root}
 		b.Root.List = []*Elem{oldRoot}
 		b.ImplicitRoot = true
@@ -210,6 +221,9 @@ func (b *ElemBuilder) declToElem(edecl *parser.ElemDecl) *Elem {
 	}
 	if meta.SubElemType == SUBELEM_TEXT {
 		rtn.Text = edecl.Text
+		if edecl.Text == "" && edecl.SubElem != nil && edecl.SubElem.ElemType == "text" {
+			rtn.Text = edecl.SubElem.Text
+		}
 	} else if edecl.IsSelfClose {
 		// subelems are only set for self closing tags
 		if meta.SubElemType == SUBELEM_ONE {
