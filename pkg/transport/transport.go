@@ -128,6 +128,7 @@ type LogEntry struct {
 	Text      string      `json:"text,omitempty"`
 	ElemText  []string    `json:"elemtext,omitempty"`
 	Data      interface{} `json:"data,omitempty"`
+	Elem      interface{} `json:"elem"` // for FE communication
 }
 
 type ProgressData struct {

@@ -56,7 +56,7 @@ func init() {
 	CMeta["youtube"] = makeCTM("embed")
 	CMeta["dyn"] = makeCTM("inline embed control hasdata sub-1")
 	CMeta["image"] = makeCTM("inline embed control hasdata")
-	CMeta["log"] = makeCTM("rowdata control active subctl")
+	CMeta["log"] = makeCTM("rowdata control hasdata active subctl")
 	CMeta["button"] = makeCTM("inline embed control active sub-1")
 	CMeta["context"] = makeCTM("control sub-* eph")
 	CMeta["progress"] = makeCTM("inline embed control active hasdata")
@@ -64,8 +64,7 @@ func init() {
 	CMeta["input"] = makeCTM("inline embed control")
 	CMeta["inputselect"] = makeCTM("inline embed control rowdata sub-*")
 	CMeta["option"] = makeCTM("embed sub-T")
-	CMeta["table"] = makeCTM("embed subctl sub-*")
-	CMeta["datatable"] = makeCTM("embed control rowdata sub-*")
+	CMeta["table"] = makeCTM("embed control hasdata rowdata subctl sub-*")
 	CMeta["th"] = makeCTM("sub-*")
 	CMeta["tdformat"] = makeCTM("sub-*")
 
@@ -288,6 +287,27 @@ func (w *EmbedControlWriter) Flush() {
 	if c == nil || (c.ControlType != "dyn" && c.ControlType != "table" && c.ControlType != "log") || !c.IsValid() {
 		log.Printf("Invalid Control for creating an ElemBuilder, cannot Flush().  Must be a valid dyn, table, or log control.")
 		return
+	}
+	if c.ControlType == "log" || c.ControlType == "table" {
+		elem := w.DoneElem()
+		w.ReportErrors(os.Stderr)
+		elemText := elem.ElemTextEx(0, nil)
+		ts := Ts()
+		entry := transport.LogEntry{
+			Ts:        ts,
+			ProcRunId: Client.GetProcRunId(),
+			ElemText:  elemText,
+		}
+		m := transport.ControlAppendMessage{
+			MType:      "controlappend",
+			Ts:         ts,
+			PanelName:  c.PanelName,
+			ControlLoc: c.ControlLoc,
+			Data:       entry,
+		}
+		Client.SendMessage(m)
+	} else if c.ControlType == "dyn" {
+		log.Printf("dyn elembuilder not yet supported\n")
 	}
 }
 

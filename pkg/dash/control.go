@@ -282,6 +282,16 @@ func (c *Control) TableAddData(data ...interface{}) {
 func (c *Control) TableAddElems(elemtext []string) {
 }
 
+func (c *Control) AddRow(rowStr string, args ...BuilderArg) {
+	if c.ControlType != "table" || !c.IsValid() {
+		log.Printf("Invalid table control to call TableAddRow")
+		return
+	}
+	b := c.ElemBuilder()
+	b.Print(rowStr, args...)
+	b.Flush()
+}
+
 func (c *Control) SetImageBlobHash(blobHash string) {
 	if c.ControlType != "image" || !c.IsValid() {
 		log.Printf("SetImageBlobHash is only supported on valid image controls\n")
