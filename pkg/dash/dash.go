@@ -565,7 +565,7 @@ func (p *Panel) OnRequest(handlerPath string, handlerFn func(*PanelRequest) erro
 	}
 	handlerControl := p.LookupControl("handler", handlerMatch[1])
 	fmt.Printf("OnRequest lookup handler:%s rtn:%v\n", handlerMatch[1], handlerControl)
-	handlerControl.OnAllRequests(func(req *PanelRequest) (bool, error) {
+	handlerControl.HandlerOnAllRequests(func(req *PanelRequest) (bool, error) {
 		if req.GetHandlerPath() != handlerPath {
 			return false, nil
 		}

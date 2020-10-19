@@ -147,7 +147,7 @@ func (c *Control) LogText(fmtStr string, data ...interface{}) {
 	Client.SendMessage(m)
 }
 
-func (c *Control) LogControl(text string, attrs ...string) *Control {
+func (c *Control) LogControl(text string, args ...BuilderArg) *Control {
 	if c.ControlType != "log" || !c.IsValid() {
 		return nil
 	}
@@ -245,7 +245,7 @@ func (c *Control) ElemBuilder() *EmbedControlWriter {
 	return makeEmbedControlWriter(c)
 }
 
-func (c *Control) OnAllRequests(fn func(req *PanelRequest) (bool, error)) {
+func (c *Control) HandlerOnAllRequests(fn func(req *PanelRequest) (bool, error)) {
 	runFn := func(v interface{}) (interface{}, error) {
 		var preqData transport.PanelRequestData
 		err := mapstructure.Decode(v, &preqData)
@@ -273,16 +273,7 @@ func (c *Control) OnAllRequests(fn func(req *PanelRequest) (bool, error)) {
 	Client.RegisterPushFn(c.ControlLoc, runFn, false)
 }
 
-func (c *Control) CounterInc(val int) {
-}
-
-func (c *Control) TableAddData(data ...interface{}) {
-}
-
-func (c *Control) TableAddElems(elemtext []string) {
-}
-
-func (c *Control) AddRow(rowStr string, args ...BuilderArg) {
+func (c *Control) TableAddRow(rowStr string, args ...BuilderArg) {
 	if c.ControlType != "table" || !c.IsValid() {
 		log.Printf("Invalid table control to call TableAddRow")
 		return
@@ -292,7 +283,7 @@ func (c *Control) AddRow(rowStr string, args ...BuilderArg) {
 	b.Flush()
 }
 
-func (c *Control) SetImageBlobHash(blobHash string) {
+func (c *Control) ImageSetBlobHash(blobHash string) {
 	if c.ControlType != "image" || !c.IsValid() {
 		log.Printf("SetImageBlobHash is only supported on valid image controls\n")
 		return
@@ -307,7 +298,7 @@ func (c *Control) SetImageBlobHash(blobHash string) {
 	Client.SendMessage(updateMsg)
 }
 
-func (c *Control) UploadBlob(mimeType string, r io.ReaderAt) error {
+func (c *Control) ImageUploadBlob(mimeType string, r io.ReaderAt) error {
 	if c.ControlType != "image" || !strings.HasPrefix(mimeType, "image/") || !c.IsValid() {
 		return fmt.Errorf("UploadBlob is only supported on valid image controls, with image/* mime-types")
 	}
@@ -315,7 +306,7 @@ func (c *Control) UploadBlob(mimeType string, r io.ReaderAt) error {
 	if err != nil {
 		return err
 	}
-	c.SetImageBlobHash(blobHash)
+	c.ImageSetBlobHash(blobHash)
 	return nil
 }
 
