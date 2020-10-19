@@ -151,33 +151,11 @@ func (c *Control) LogControl(text string, args ...BuilderArg) *Control {
 	if c.ControlType != "log" || !c.IsValid() {
 		return nil
 	}
-
-	cloc := dashutil.MustParseControlLocator(c.ControlLoc)
-	elem := ParseElemText([]string{text}, dashutil.MakeEphScLocId(cloc.ControlId), false)
-	if elem == nil {
-		return nil
-	}
-	if !elem.GetMeta().CanEmbed {
-		return nil
-	}
-	ts := Ts()
-	entry := transport.LogEntry{
-		Ts:        ts,
-		ProcRunId: Client.GetProcRunId(),
-		ElemText:  elem.ElemTextEx(0, nil),
-	}
-	m := transport.ControlAppendMessage{
-		MType:      "controlappend",
-		Ts:         ts,
-		PanelName:  c.PanelName,
-		ControlLoc: c.ControlLoc,
-		Data:       entry,
-	}
-	Client.SendMessage(m)
-	if elem.ControlLoc != "" {
-		return &Control{PanelName: c.PanelName, ControlType: elem.ElemType, ControlLoc: elem.ControlLoc}
-	}
-	return nil
+	b := c.ElemBuilder()
+	b.NoImplicitRoot = true
+	rtn := b.Print(text, args...)
+	b.Flush()
+	return rtn
 }
 
 func (c *Control) RowDataClear() {

@@ -265,8 +265,9 @@ func (req *PanelRequest) TriggerRequest(handlerPath string, data interface{}) {
 
 type EmbedControlWriter struct {
 	*ElemBuilder
-	Control *Control
-	Ts      int64
+	Control        *Control
+	Ts             int64
+	NoImplicitRoot bool
 }
 
 func makeEmbedControlWriter(c *Control) *EmbedControlWriter {
@@ -290,6 +291,12 @@ func (w *EmbedControlWriter) Flush() {
 	}
 	if c.ControlType == "log" || c.ControlType == "table" {
 		elem := w.DoneElem()
+		if w.NoImplicitRoot && w.ElemBuilder.ImplicitRoot {
+			if len(elem.List) == 0 {
+				return
+			}
+			elem = elem.List[0]
+		}
 		w.ReportErrors(os.Stderr)
 		elemText := elem.ElemTextEx(0, nil)
 		ts := Ts()
