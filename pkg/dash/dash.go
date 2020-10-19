@@ -214,7 +214,7 @@ func (req *PanelRequest) LookupContext(name string) *ContextWriter {
 	if ctxId == "" {
 		ctxId = uuid.New().String()
 	}
-	rtn.ElemBuilder = MakeElemBuilder(dashutil.MakeEphCtxLocId(req.FeClientId, ctxId, req.ReqId))
+	rtn.ElemBuilder = MakeElemBuilder(dashutil.MakeEphCtxLocId(req.FeClientId, ctxId, req.ReqId), 0)
 	rtn.FeClientId = req.FeClientId
 	rtn.ReqId = req.ReqId
 	rtn.ContextControl = ctx
@@ -275,11 +275,11 @@ func makeEmbedControlWriter(c *Control) *EmbedControlWriter {
 	cloc, err := dashutil.ParseControlLocator(c.ControlLoc)
 	var locId string
 	if err == nil {
-		locId = dashutil.MakeEphScLocId(cloc.ControlId)
+		locId = dashutil.MakeScLocId(cloc.IsEph(), cloc.ControlId)
 	}
-	rtn.ElemBuilder = MakeElemBuilder(locId)
-	rtn.Control = c
 	rtn.Ts = Ts()
+	rtn.ElemBuilder = MakeElemBuilder(locId, rtn.Ts)
+	rtn.Control = c
 	return rtn
 }
 
@@ -297,17 +297,18 @@ func (w *EmbedControlWriter) Flush() {
 			}
 			elem = elem.List[0]
 		}
+		fmt.Printf("EmbedControlWriter %s\n", c.ControlType)
+		elem.Dump(os.Stdout)
 		w.ReportErrors(os.Stderr)
 		elemText := elem.ElemTextEx(0, nil)
-		ts := Ts()
 		entry := transport.LogEntry{
-			Ts:        ts,
+			Ts:        w.Ts,
 			ProcRunId: Client.GetProcRunId(),
 			ElemText:  elemText,
 		}
 		m := transport.ControlAppendMessage{
 			MType:      "controlappend",
-			Ts:         ts,
+			Ts:         w.Ts,
 			PanelName:  c.PanelName,
 			ControlLoc: c.ControlLoc,
 			Data:       entry,
@@ -398,11 +399,11 @@ type PanelWriter struct {
 	PanelName string
 }
 
-func ParseElemText(elemText []string, locId string, allowImplicitRoot bool) *Elem {
+func ParseElemText(elemText []string, locId string, controlTs int64, allowImplicitRoot bool) *Elem {
 	if len(elemText) == 0 {
 		return nil
 	}
-	b := MakeElemBuilder(locId)
+	b := MakeElemBuilder(locId, controlTs)
 	for _, text := range elemText {
 		b.Print(text)
 	}
@@ -418,7 +419,7 @@ func ParseElemText(elemText []string, locId string, allowImplicitRoot bool) *Ele
 
 func DefinePanel(panelName string) *PanelWriter {
 	rtn := &PanelWriter{PanelName: panelName}
-	rtn.ElemBuilder = MakeElemBuilder(dashutil.MakeZPLocId(Client.Config.ZoneName, panelName))
+	rtn.ElemBuilder = MakeElemBuilder(dashutil.MakeZPLocId(Client.Config.ZoneName, panelName), 0)
 	rtn.ElemBuilder.SetRootDivClass("rootdiv")
 	return rtn
 }

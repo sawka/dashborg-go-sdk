@@ -16,17 +16,31 @@ type ControlLocator struct {
 
 const INVALID_CLOC = "INVALID"
 
-var LocIdRe = regexp.MustCompile("^((/eph-ctx/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-f0-9-]{36})|(/panel/[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)|(/eph-sc/[a-f0-9-]{36}))$")
+const (
+	panelLocId  = "/panel/[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+"
+	scLocId     = "/sc/[a-f0-9-]{36}"
+	ephCtxLocId = "/eph-ctx/[a-f0-9-]{36}/[a-f0-9-]{36}/[a-f0-9-]{36}"
+	ephScLocId  = "/eph-sc/[a-f0-9-]{36}"
+)
+
+var LocIdRe = regexp.MustCompile("^((" + panelLocId + ")|(" + scLocId + ")|(" + ephCtxLocId + ")|(" + ephScLocId + "))$")
 
 func (cl ControlLocator) String() string {
 	if cl.ControlId == "" || cl.LocId == "" || cl.LocId == INVALID_CLOC {
 		return INVALID_CLOC
+	}
+	if cl.ControlTs != 0 {
+		return cl.LocId + "|" + cl.ControlId + "|" + strconv.FormatInt(cl.ControlTs, 10)
 	}
 	return cl.LocId + "|" + cl.ControlId
 }
 
 func (cl ControlLocator) IsValid() bool {
 	return cl.LocId != INVALID_CLOC && cl.LocId != ""
+}
+
+func (cl ControlLocator) IsEph() bool {
+	return strings.HasPrefix(cl.LocId, "/eph")
 }
 
 func InvalidCloc() ControlLocator {
@@ -45,6 +59,12 @@ func MakeControlLocTs(locId string, controlId string, controlTs int64) ControlLo
 	rtn, err := MakeControlLocErr(locId, controlId)
 	if err != nil {
 		panic(err)
+	}
+	if controlTs == 0 {
+		panic("Invalid ControlTs, cannot be 0")
+	}
+	if !strings.HasPrefix(rtn.LocId, "/sc/") && !strings.HasPrefix(rtn.LocId, "/eph-sc/") {
+		panic("Can only add ControlTs to /sc/ and /eph-sc/ Control Locators")
 	}
 	rtn.ControlTs = controlTs
 	return rtn
@@ -83,11 +103,15 @@ func MakeEphCtxLocId(feClientId string, ctxId string, reqId string) string {
 	return "/eph-ctx/" + feClientId + "/" + ctxId + "/" + reqId
 }
 
-func MakeEphScLocId(parentControlId string) string {
+func MakeScLocId(isEph bool, parentControlId string) string {
 	if !IsUUIDValid(parentControlId) {
 		panic("Invalid ParentControlId passed to MakeEphScLocId")
 	}
-	return "/eph-sc/" + parentControlId
+	if isEph {
+		return "/eph-sc/" + parentControlId
+	} else {
+		return "/sc/" + parentControlId
+	}
 }
 
 func MakeEphCtxControlLoc(feClientId string, ctxId string, reqId string, controlId string) ControlLocator {
@@ -98,11 +122,11 @@ func MakeEphCtxControlLoc(feClientId string, ctxId string, reqId string, control
 	return MakeControlLoc(locId, controlId)
 }
 
-func MakeEphScControlLoc(parentControlId string, controlId string) ControlLocator {
+func MakeScControlLoc(isEph bool, parentControlId string, controlId string) ControlLocator {
 	if !IsUUIDValid(controlId) {
 		panic("Invalid ControlId passed to MakeEphCtxControlLoc")
 	}
-	locId := MakeEphScLocId(parentControlId)
+	locId := MakeScLocId(isEph, parentControlId)
 	return MakeControlLoc(locId, controlId)
 }
 
@@ -135,6 +159,9 @@ func ParseControlLocator(s string) (ControlLocator, error) {
 			return ControlLocator{}, err
 		}
 		cloc.ControlTs = ts
+	}
+	if (strings.HasPrefix(cloc.LocId, "/sc/") || strings.HasPrefix(cloc.LocId, "/eph-sc/")) && cloc.ControlTs == 0 {
+		return ControlLocator{}, fmt.Errorf("sc controllocators must have a ControlTs")
 	}
 	return cloc, err
 }

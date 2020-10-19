@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -16,6 +17,7 @@ import (
 
 type ElemBuilder struct {
 	LocId        string
+	ControlTs    int64
 	Vars         map[string]interface{}
 	Root         *Elem
 	ImplicitRoot bool
@@ -59,8 +61,8 @@ func Var(name string, val interface{}) BuilderVar {
 	return BuilderVar{VarName: name, VarVal: val}
 }
 
-func MakeElemBuilder(locId string) *ElemBuilder {
-	return &ElemBuilder{LocId: locId, Vars: make(map[string]interface{})}
+func MakeElemBuilder(locId string, controlTs int64) *ElemBuilder {
+	return &ElemBuilder{LocId: locId, Vars: make(map[string]interface{}), ControlTs: controlTs}
 }
 
 func (b *ElemBuilder) TrackAnonControls(anonTrack bool) {
@@ -213,10 +215,18 @@ func (b *ElemBuilder) declToElem(edecl *parser.ElemDecl) *Elem {
 			rtn.ControlName = edecl.ControlName
 		}
 		if edecl.ControlId != "" {
-			rtn.ControlLoc = b.LocId + "|" + edecl.ControlId
+			if b.ControlTs != 0 {
+				rtn.ControlLoc = b.LocId + "|" + edecl.ControlId + "|" + strconv.FormatInt(b.ControlTs, 10)
+			} else {
+				rtn.ControlLoc = b.LocId + "|" + edecl.ControlId
+			}
 		}
 		if rtn.ControlName == "" && rtn.ControlLoc == "" {
-			rtn.ControlLoc = b.LocId + "|" + uuid.New().String()
+			if b.ControlTs != 0 {
+				rtn.ControlLoc = b.LocId + "|" + uuid.New().String() + "|" + strconv.FormatInt(b.ControlTs, 10)
+			} else {
+				rtn.ControlLoc = b.LocId + "|" + uuid.New().String()
+			}
 		}
 	}
 	if meta.SubElemType == SUBELEM_TEXT {

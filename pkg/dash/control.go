@@ -26,6 +26,14 @@ func (c *Control) IsValid() bool {
 	return c.ControlLoc != "" && c.ControlLoc != dashutil.INVALID_CLOC && c.ControlType != "" && c.ControlType != "invalid"
 }
 
+func (c *Control) GetControlId() string {
+	cloc, err := dashutil.ParseControlLocator(c.ControlLoc)
+	if err != nil {
+		return ""
+	}
+	return cloc.ControlId
+}
+
 func (c *Control) GetMeta() *ControlTypeMeta {
 	if c == nil {
 		return &ControlTypeMeta{}
@@ -62,7 +70,7 @@ func (c *Control) OnClick(fn func() error) {
 		}
 		return true, nil
 	}
-	Client.RegisterPushFn(c.ControlLoc, runFn, false)
+	Client.RegisterPushFn(c.GetControlId(), runFn, false)
 }
 
 func (c *Control) OnCheckboxChange(fn func(b bool) error) {
@@ -76,7 +84,7 @@ func (c *Control) OnCheckboxChange(fn func(b bool) error) {
 		}
 		return true, nil
 	}
-	Client.RegisterPushFn(c.ControlLoc, runFn, false)
+	Client.RegisterPushFn(c.GetControlId(), runFn, false)
 }
 
 func (c *Control) OnSelectChange(fn func(v string) error) {
@@ -91,7 +99,7 @@ func (c *Control) OnSelectChange(fn func(v string) error) {
 		return true, nil
 	}
 	fmt.Printf("register pushfn %s\n", c.ControlLoc)
-	Client.RegisterPushFn(c.ControlLoc, runFn, false)
+	Client.RegisterPushFn(c.GetControlId(), runFn, false)
 }
 
 func (c *Control) Release() {
@@ -248,7 +256,7 @@ func (c *Control) HandlerOnAllRequests(fn func(req *PanelRequest) (bool, error))
 		}
 		return nil, nil
 	}
-	Client.RegisterPushFn(c.ControlLoc, runFn, false)
+	Client.RegisterPushFn(c.GetControlId(), runFn, false)
 }
 
 func (c *Control) TableAddRow(rowStr string, args ...BuilderArg) {
