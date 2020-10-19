@@ -24,9 +24,7 @@ import (
 // version is padded with "0" chars
 // module, id are padded with spaces (trimmed-left when passed to other functions)
 // bodylen is padded with "0" chars
-
-// TODO SetDeadline
-// TODO Push - hold push events for a while for reconnects.  deal with failed pushes.  send push feedback.
+// TODO Push - hold push events for a while for reconnects.  maybe add pushtype to trace push origin
 
 const DEADLINE = 30 * time.Second
 
@@ -104,7 +102,7 @@ type ServerSession struct {
 	PushCtx   string
 }
 
-type PushFnType func(PushType) (interface{}, error)
+type PushFnType func(PushType)
 
 type Client struct {
 	Lock         *sync.Mutex
@@ -134,9 +132,10 @@ func (r ResponseType) Err() error {
 }
 
 type PushType struct {
-	PushCtx     string
-	PushRecvId  string // empty for KeepAlive
-	PushPayload interface{}
+	PushCtx      string      `json:"pushctx"`
+	PushSourceId string      `json:"pushsourceid"` // feclientid
+	PushRecvId   string      `json:"pushrecvid"`   // empty for KeepAlive
+	PushPayload  interface{} `json:"pushpayload"`
 }
 
 type UnifiedResponseType struct {
@@ -242,14 +241,14 @@ func (s *Server) AddHandler(module string, h Handler) {
 	s.Handlers[module] = h
 }
 
-func (s *Server) DoPush(pushCtx string, pushRecvId string, payload interface{}) (interface{}, error) {
+func (s *Server) DoPush(pushCtx string, pushSourceId string, pushRecvId string, payload interface{}) (interface{}, error) {
 	s.Lock.Lock()
 	ss := s.PushCtxMap[pushCtx]
 	s.Lock.Unlock()
 	if ss == nil {
 		return nil, fmt.Errorf("No server session registered for pushctx[%s]", pushCtx)
 	}
-	pp := PushType{PushCtx: pushCtx, PushRecvId: pushRecvId, PushPayload: payload}
+	pp := PushType{PushCtx: pushCtx, PushSourceId: pushSourceId, PushRecvId: pushRecvId, PushPayload: payload}
 	barr, err := marshalJsonNoEnc(pp)
 	if err != nil {
 		return nil, fmt.Errorf("Error marshaling push payload: %v", err)
@@ -260,7 +259,6 @@ func (s *Server) DoPush(pushCtx string, pushRecvId string, payload interface{}) 
 		return nil, fmt.Errorf("Invalid Packet Header")
 	}
 	ss.SendQueue <- FullPacket{Header: header, Body: barr}
-	// TODO wait for push response
 	return nil, nil
 }
 
@@ -361,7 +359,6 @@ func (ss *ServerSession) RunReadLoop() error {
 		}
 		var resp ResponseType
 		if ph.Dir == DIR_RTN {
-			// TODO push return
 			continue
 		} else if ph.Dir == DIR_PUSH {
 			// invalid, cannot send push to server
@@ -600,8 +597,6 @@ func (c *Client) HandlePush(p PushType) {
 		return
 	}
 	pfn(p)
-	// prtn, err := pfn(p)
-	// TODO send response back to server
 }
 
 // TODO fix race if someone wants to add to OpenRequets after terminate happens

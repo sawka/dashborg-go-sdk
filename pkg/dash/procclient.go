@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/mitchellh/mapstructure"
 	"github.com/sawka/dashborg-go-sdk/pkg/bufsrv"
 	"github.com/sawka/dashborg-go-sdk/pkg/transport"
 )
@@ -221,7 +223,9 @@ func (c *ProcClient) sendLoop() {
 		} else {
 			resp = c.Client.DoRequest("msg", entry.Message)
 		}
-		logInfo("Message %s elapsed:%dms\n", mtype, int(time.Since(startTs)/time.Millisecond))
+		if mtype != "keepalive" {
+			logInfo("Message %s elapsed:%dms\n", mtype, int(time.Since(startTs)/time.Millisecond))
+		}
 		if resp.ConnError != nil {
 			log.Printf("Dashborg ProcClient ConnError:%v\n", resp.ConnError)
 			retryEntry = &entry
@@ -381,31 +385,68 @@ func (pc *ProcClient) connectClient() error {
 	return nil
 }
 
-func (c *ProcClient) handlePush(p bufsrv.PushType) (interface{}, error) {
-	logInfo("handle push %#v\n", p)
-	if p.PushRecvId == "" {
-		// keepalive request
-		return true, nil
+func (c *ProcClient) handlePush(p bufsrv.PushType) {
+	defer func() {
+		r := recover()
+		if r != nil {
+			stackTrace := string(debug.Stack())
+			log.Printf("PANIC running proc PushFn err:%v\n", r)
+			log.Printf("%s\n", stackTrace)
+			errMsg := transport.PushErrorMessage{
+				MType:      "pusherror",
+				FeClientId: p.PushSourceId,
+				Message:    fmt.Sprintf("%v", r),
+				StackTrace: stackTrace,
+			}
+			c.SendMessage(errMsg)
+		}
+	}()
+	err := c.handlePushInternal(p)
+	if err != nil {
+		errMsg := transport.PushErrorMessage{
+			MType:      "pusherror",
+			FeClientId: p.PushSourceId,
+			Message:    fmt.Sprintf("%v", err),
+		}
+		c.SendMessage(errMsg)
 	}
+}
 
+func (c *ProcClient) handlePushInternal(p bufsrv.PushType) error {
+	if p.PushRecvId == "" || p.PushRecvId == "#keepalive" {
+		// keepalive request
+		return nil
+	}
+	if p.PushRecvId == "#message" {
+		var pm transport.PushMessage
+		err := mapstructure.Decode(p.PushPayload, &pm)
+		if err != nil {
+			return fmt.Errorf("Invalid PushMessage sent to #message err:%w", err)
+		}
+		log.Printf("Dashborg Message: %s\n", pm.Message)
+		return nil
+	}
+	logInfo("handle push %#v\n", p)
 	c.CVar.L.Lock()
 	pfns := c.PushMap[p.PushRecvId]
 	pfnsCopy := make([]pushFnWrap, len(pfns))
 	copy(pfnsCopy, pfns)
 	c.CVar.L.Unlock()
 	if len(pfnsCopy) == 0 {
-		return nil, fmt.Errorf("No receiver registered for PushRecvId[%s]", p.PushRecvId)
+		logInfo("No receiver registered for PushRecvId[%s]", p.PushRecvId)
+		return nil
 	}
 	for _, pfn := range pfnsCopy {
 		rtn, err := pfn.Fn(p.PushPayload)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if rtn != nil {
-			return rtn, err
+			return nil
 		}
+		// if (false, nil), continue
 	}
-	return nil, nil
+	return nil
 }
 
 func sendProcMessage(client *bufsrv.Client) error {

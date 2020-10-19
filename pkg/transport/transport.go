@@ -184,3 +184,15 @@ type DynElemData struct {
 	ClearData     bool              `json:"cleardata"`
 	ClearElemText bool              `json:"clearelemtext"`
 }
+
+type PushMessage struct {
+	Message string `json:"message"`
+}
+
+// pusherror
+type PushErrorMessage struct {
+	MType      string `json:"mtype"`
+	Message    string `json:"message"`
+	StackTrace string `json:"stacktrace"`
+	FeClientId string `json:"feclientid"`
+}
