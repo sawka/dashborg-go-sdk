@@ -454,6 +454,13 @@ func (s *Server) handleConnection(conn net.Conn) {
 		close(ss.SendQueue)
 	}()
 	go ss.RunSendLoop()
+	keepAliveTicker := time.NewTicker(10 * time.Second)
+	defer keepAliveTicker.Stop()
+	go func() {
+		for range keepAliveTicker.C {
+			s.DoPush(ss.PushCtx, "", "#keepalive", nil)
+		}
+	}()
 	connErr = ss.RunReadLoop()
 	s.InfoLog("Closing connection %v\n", conn)
 }

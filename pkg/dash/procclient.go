@@ -93,8 +93,7 @@ func StartProcClient(config *Config) *ProcClient {
 	Client.goConnectClient()
 	Client.KeepAliveTicker = time.NewTicker(5 * time.Second)
 	go func() {
-		for {
-			<-Client.KeepAliveTicker.C
+		for range Client.KeepAliveTicker.C {
 			Client.SendKeepAlive()
 		}
 	}()
