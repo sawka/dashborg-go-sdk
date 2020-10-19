@@ -326,7 +326,22 @@ func computeElemHash(elemText []string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func (w *ContextWriter) SendFile(mimeType string, fd io.Reader) {
+func (req *PanelRequest) SendFile(fileName string, mimeType string, fd io.ReaderAt) error {
+	hash, err := UploadBlob(mimeType, fd)
+	if err != nil {
+		return err
+	}
+	sfm := transport.SendFileMessage{
+		MType:      "sendfile",
+		MimeType:   mimeType,
+		BlobHash:   hash,
+		FileName:   fileName,
+		PanelName:  req.PanelName,
+		FeClientId: req.FeClientId,
+		ReqId:      req.ReqId,
+	}
+	Client.SendMessage(sfm)
+	return nil
 }
 
 func (w *ContextWriter) Flush() {
@@ -574,6 +589,9 @@ func logInfo(fmt string, data ...interface{}) {
 
 // returns (blobHash, err)
 func UploadBlob(mimeType string, r io.ReaderAt) (string, error) {
+	if !dashutil.IsMimeTypeValid(mimeType) {
+		return "", fmt.Errorf("Invalid mime-type passed to UploadBlob mime-type:%s", mimeType)
+	}
 	hashVal, size, err := sha256FromReader(r)
 	if err != nil {
 		return "", err

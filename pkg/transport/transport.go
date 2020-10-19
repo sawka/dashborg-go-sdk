@@ -21,6 +21,15 @@ type ProcMessage struct {
 }
 
 // raw message will not be marshaled into json
+// raw:blob =>
+//   64-bytes | SHA-256
+//   1-byte   | len(mimeType)
+//   n-bytes  | mimeType
+//   rest     | blob value
+// raw:sendfile =>
+//   1-byte   | len(mimeType)
+//   n-bytes  | mimeType
+//   rest     | blob value
 type RawMessage struct {
 	MType string `json:"mtype"`
 	Data  []byte `json:"data"`
@@ -76,6 +85,17 @@ type ResetTsData struct {
 type CheckBlobMessage struct {
 	MType    string `json:"mtype"`
 	BlobHash string `json:"blobhash"`
+}
+
+// sendfile
+type SendFileMessage struct {
+	MType      string `json:"mtype"`
+	FileName   string `json:"filename"`
+	MimeType   string `json:"mimetype"`
+	BlobHash   string `json:"blobhash"`
+	PanelName  string `json:"panelname"`
+	FeClientId string `json:"feclientid"`
+	ReqId      string `json:"reqid"`
 }
 
 // controlupdate

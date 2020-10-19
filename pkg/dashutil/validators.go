@@ -7,6 +7,7 @@ const (
 	CONTROLNAME_MAX = 30
 	PANELNAME_MAX   = 20
 	PROCNAME_MAX    = 20
+	FILENAME_MAX    = 80
 )
 
 var (
@@ -18,7 +19,9 @@ var (
 	HANDLER_RE        = regexp.MustCompile("^/[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$")
 	BASE64_RE         = regexp.MustCompile("^[a-zA-Z0-9/+=]+$")
 	HEX_RE            = regexp.MustCompile("^[a-f0-9]+$")
-	IMAGE_MIMETYPE_RE = regexp.MustCompile("^image/[a-z0-9-]+")
+	IMAGE_MIMETYPE_RE = regexp.MustCompile("^image/[a-z0-9.-]+$")
+	MIMETYPE_RE       = regexp.MustCompile("^[a-z0-9.-]+/[a-z0-9.-]+$")
+	SIMPLEFILENAME_RE = regexp.MustCompile("^[a-zA-Z0-9._-]+$")
 )
 
 func IsZoneNameValid(zoneName string) bool {
@@ -33,6 +36,13 @@ func IsPanelNameValid(panelName string) bool {
 		return false
 	}
 	return PANELNAME_RE.MatchString(panelName)
+}
+
+func IsSimpleFileNameValid(fileName string) bool {
+	if len(fileName) > FILENAME_MAX {
+		return false
+	}
+	return SIMPLEFILENAME_RE.MatchString(fileName)
 }
 
 func IsControlNameValid(controlName string) bool {
@@ -77,8 +87,15 @@ func IsSha256HashValid(s string) bool {
 	return HEX_RE.MatchString(s)
 }
 
+func IsMimeTypeValid(s string) bool {
+	if len(s) == 0 || len(s) > 60 {
+		return false
+	}
+	return MIMETYPE_RE.MatchString(s)
+}
+
 func IsImageMimeTypeValid(s string) bool {
-	if len(s) == 0 || len(s) > 50 {
+	if len(s) == 0 || len(s) > 60 {
 		return false
 	}
 	return IMAGE_MIMETYPE_RE.MatchString(s)
