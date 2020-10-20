@@ -103,6 +103,7 @@ type ControlUpdateMessage struct {
 	MType      string      `json:"mtype"`
 	Ts         int64       `json:"ts"`
 	ControlLoc string      `json:"controlloc"`
+	PanelName  string      `json:"panelname"`
 	Cmd        string      `json:"cmd"`
 	Data       interface{} `json:"data"`
 }
@@ -177,8 +178,10 @@ type PanelRequestData struct {
 type DynElemData struct {
 	FStr          string            `json:"fstr"`
 	Attrs         map[string]string `json:"attrs"`
+	Ts            int64             `json:"ts"`
 	Data          []interface{}     `json:"data"`
 	ElemText      []string          `json:"elemtext"`
+	ProcRunId     string            `json:"procrunid"`
 	ClearFStr     bool              `json:"clearfstr"`
 	ClearAttrs    bool              `json:"clearattrs"`
 	ClearData     bool              `json:"cleardata"`

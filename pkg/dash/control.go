@@ -53,6 +53,7 @@ func (c *Control) GenericUpdate(cmd string, data interface{}) {
 		MType:      "controlupdate",
 		Ts:         Ts(),
 		ControlLoc: c.ControlLoc,
+		PanelName:  c.PanelName,
 		Cmd:        cmd,
 		Data:       data,
 	}
@@ -179,6 +180,7 @@ func (c *Control) RowDataClear() {
 		Cmd:        "clearrowdata",
 		Ts:         ts,
 		ControlLoc: c.ControlLoc,
+		PanelName:  c.PanelName,
 		Data:       rdata,
 	}
 	Client.SendMessage(m)
@@ -199,6 +201,7 @@ func (c *Control) DynSetFStr(fstr string) {
 		Cmd:        "setdata",
 		Ts:         Ts(),
 		ControlLoc: c.ControlLoc,
+		PanelName:  c.PanelName,
 		Data:       dynData,
 	}
 	Client.SendMessage(m)
@@ -219,6 +222,7 @@ func (c *Control) DynSetData(data ...interface{}) {
 		Cmd:        "setdata",
 		Ts:         Ts(),
 		ControlLoc: c.ControlLoc,
+		PanelName:  c.PanelName,
 		Data:       dynData,
 	}
 	Client.SendMessage(m)
@@ -278,6 +282,7 @@ func (c *Control) ImageSetBlobHash(blobHash string) {
 		MType:      "controlupdate",
 		Ts:         Ts(),
 		ControlLoc: c.ControlLoc,
+		PanelName:  c.PanelName,
 		Cmd:        "setblob",
 		Data:       blobHash,
 	}

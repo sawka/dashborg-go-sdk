@@ -16,6 +16,7 @@ import (
 // TODO check for input fields with same "formfield" name (warning)
 
 type ElemBuilder struct {
+	PanelName    string
 	LocId        string
 	ControlTs    int64
 	Vars         map[string]interface{}
@@ -61,8 +62,13 @@ func Var(name string, val interface{}) BuilderVar {
 	return BuilderVar{VarName: name, VarVal: val}
 }
 
-func MakeElemBuilder(locId string, controlTs int64) *ElemBuilder {
-	return &ElemBuilder{LocId: locId, Vars: make(map[string]interface{}), ControlTs: controlTs}
+func MakeElemBuilder(panelName string, locId string, controlTs int64) *ElemBuilder {
+	return &ElemBuilder{
+		PanelName: panelName,
+		LocId:     locId,
+		Vars:      make(map[string]interface{}),
+		ControlTs: controlTs,
+	}
 }
 
 func (b *ElemBuilder) TrackAnonControls(anonTrack bool) {
@@ -181,7 +187,7 @@ func (b *ElemBuilder) Print(text string, args ...BuilderArg) *Control {
 	}
 	b.append(elem, edecl.IsSelfClose)
 	if elem.ControlLoc != "" {
-		return &Control{ControlType: elem.ElemType, ControlLoc: elem.ControlLoc}
+		return &Control{ControlType: elem.ElemType, ControlLoc: elem.ControlLoc, PanelName: b.PanelName}
 	}
 	return nil
 }

@@ -214,7 +214,7 @@ func (req *PanelRequest) LookupContext(name string) *ContextWriter {
 	if ctxId == "" {
 		ctxId = uuid.New().String()
 	}
-	rtn.ElemBuilder = MakeElemBuilder(dashutil.MakeEphCtxLocId(req.FeClientId, ctxId, req.ReqId), 0)
+	rtn.ElemBuilder = MakeElemBuilder(req.PanelName, dashutil.MakeEphCtxLocId(req.FeClientId, ctxId, req.ReqId), 0)
 	rtn.FeClientId = req.FeClientId
 	rtn.ReqId = req.ReqId
 	rtn.ContextControl = ctx
@@ -278,7 +278,7 @@ func makeEmbedControlWriter(c *Control) *EmbedControlWriter {
 		locId = dashutil.MakeScLocId(cloc.IsEph(), cloc.ControlId)
 	}
 	rtn.Ts = Ts()
-	rtn.ElemBuilder = MakeElemBuilder(locId, rtn.Ts)
+	rtn.ElemBuilder = MakeElemBuilder(c.PanelName, locId, rtn.Ts)
 	rtn.Control = c
 	return rtn
 }
@@ -289,18 +289,22 @@ func (w *EmbedControlWriter) Flush() {
 		log.Printf("Invalid Control for creating an ElemBuilder, cannot Flush().  Must be a valid dyn, table, or log control.")
 		return
 	}
-	if c.ControlType == "log" || c.ControlType == "table" {
-		elem := w.DoneElem()
-		if w.NoImplicitRoot && w.ElemBuilder.ImplicitRoot {
-			if len(elem.List) == 0 {
-				return
-			}
+	elem := w.DoneElem()
+	if c.ControlType == "dyn" {
+		if w.ElemBuilder.ImplicitRoot && len(elem.List) == 1 {
 			elem = elem.List[0]
 		}
-		fmt.Printf("EmbedControlWriter %s\n", c.ControlType)
-		elem.Dump(os.Stdout)
-		w.ReportErrors(os.Stderr)
-		elemText := elem.ElemTextEx(0, nil)
+	} else if w.NoImplicitRoot && w.ElemBuilder.ImplicitRoot {
+		if len(elem.List) == 0 {
+			return
+		}
+		elem = elem.List[0]
+	}
+	fmt.Printf("EmbedControlWriter %s\n", c.ControlType)
+	elem.Dump(os.Stdout)
+	w.ReportErrors(os.Stderr)
+	elemText := elem.ElemTextEx(0, nil)
+	if c.ControlType == "log" || c.ControlType == "table" {
 		entry := transport.LogEntry{
 			Ts:        w.Ts,
 			ProcRunId: Client.GetProcRunId(),
@@ -315,7 +319,21 @@ func (w *EmbedControlWriter) Flush() {
 		}
 		Client.SendMessage(m)
 	} else if c.ControlType == "dyn" {
-		log.Printf("dyn elembuilder not yet supported\n")
+		dynData := transport.DynElemData{
+			Ts:        w.Ts,
+			ProcRunId: Client.GetProcRunId(),
+			ElemText:  elemText,
+		}
+		m := transport.ControlUpdateMessage{
+			MType:      "controlupdate",
+			Cmd:        "setdata",
+			Ts:         w.Ts,
+			ControlLoc: c.ControlLoc,
+			PanelName:  c.PanelName,
+			Data:       dynData,
+		}
+		fmt.Printf("sending dyn message panel:%s %#v\n", c.PanelName, c)
+		Client.SendMessage(m)
 	}
 }
 
@@ -399,27 +417,33 @@ type PanelWriter struct {
 	PanelName string
 }
 
-func ParseElemText(elemText []string, locId string, controlTs int64, allowImplicitRoot bool) *Elem {
+func ParseElemText(panelName string, elemText []string, locId string, controlTs int64, anonProcRunId string) *Elem {
+	// never allow implicit root when parsing (already done on proc side)
 	if len(elemText) == 0 {
 		return nil
 	}
-	b := MakeElemBuilder(locId, controlTs)
+	b := MakeElemBuilder(panelName, locId, controlTs)
 	for _, text := range elemText {
 		b.Print(text)
 	}
 	elem := b.DoneElem()
-	if !allowImplicitRoot && b.ImplicitRoot {
-		if len(elem.List) == 0 {
-			return nil
-		}
-		return elem.List[0]
+	if b.ImplicitRoot && len(elem.List) == 1 {
+		elem = elem.List[0]
+	}
+	if elem != nil && anonProcRunId != "" {
+		elem.Walk(func(e *Elem) {
+			meta := e.GetMeta()
+			if meta.HasControl && e.ControlName == "" && e.ControlLoc != "" {
+				e.AnonProcRunId = anonProcRunId
+			}
+		})
 	}
 	return elem
 }
 
 func DefinePanel(panelName string) *PanelWriter {
 	rtn := &PanelWriter{PanelName: panelName}
-	rtn.ElemBuilder = MakeElemBuilder(dashutil.MakeZPLocId(Client.Config.ZoneName, panelName), 0)
+	rtn.ElemBuilder = MakeElemBuilder(panelName, dashutil.MakeZPLocId(Client.Config.ZoneName, panelName), 0)
 	rtn.ElemBuilder.SetRootDivClass("rootdiv")
 	return rtn
 }
