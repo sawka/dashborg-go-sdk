@@ -167,12 +167,25 @@ type ProgressData struct {
 }
 
 type PanelRequestData struct {
-	FeClientId string      `json:"feclientid"`
-	ZoneName   string      `json:"zonename"`
-	PanelName  string      `json:"panelname"`
-	Handler    string      `json:"handler"`
-	Data       interface{} `json:"data"`
-	Depth      int         `json:"depth"`
+	FeClientId  string      `json:"feclientid"`
+	ZoneName    string      `json:"zonename"`
+	PanelName   string      `json:"panelname"`
+	HandlerPath string      `json:"handlerpath"`
+	Data        interface{} `json:"data"`
+	Depth       int         `json:"depth"`
+}
+
+type TableRequestData struct {
+	ControlLoc  string      `json:"controlloc"`
+	FeClientId  string      `json:"feclientid"`
+	ZoneName    string      `json:"zonename"`
+	PanelName   string      `json:"panelname"`
+	HandlerPath string      `json:"handler"`
+	Data        interface{} `json:"data"`
+	Depth       int         `json:"depth"`
+	PageSize    int         `json:"pagesize"`
+	PageNum     int         `json:"pagenum"`
+	PagingData  interface{} `json:"pagingdata"`
 }
 
 type DynElemData struct {

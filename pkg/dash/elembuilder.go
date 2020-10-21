@@ -16,20 +16,21 @@ import (
 // TODO check for input fields with same "formfield" name (warning)
 
 type ElemBuilder struct {
-	PanelName    string
-	LocId        string
-	ControlTs    int64
-	Vars         map[string]interface{}
-	Root         *Elem
-	ImplicitRoot bool
-	Stack        []*Elem
-	LastAppended *Elem
-	NoAnon       bool
-	LineNo       int
-	Errs         []parser.ParseErr
-	Warns        []parser.ParseErr
-	RawLines     []string
-	RootDivClass string
+	PanelName        string
+	LocId            string
+	ControlTs        int64
+	Vars             map[string]interface{}
+	Root             *Elem
+	ImplicitRoot     bool
+	Stack            []*Elem
+	LastAppended     *Elem
+	NoAnon           bool
+	AllowBareControl bool
+	LineNo           int
+	Errs             []parser.ParseErr
+	Warns            []parser.ParseErr
+	RawLines         []string
+	RootDivClass     string
 }
 
 type BuilderAttr struct {
@@ -73,6 +74,10 @@ func MakeElemBuilder(panelName string, locId string, controlTs int64) *ElemBuild
 
 func (b *ElemBuilder) TrackAnonControls(anonTrack bool) {
 	b.NoAnon = !anonTrack
+}
+
+func (b *ElemBuilder) SetAllowBareControl(allow bool) {
+	b.AllowBareControl = allow
 }
 
 func (b *ElemBuilder) SetRootDivClass(cn string) {
@@ -196,6 +201,9 @@ func (b *ElemBuilder) DoneElem() *Elem {
 	if (b.ImplicitRoot && len(b.Stack) > 1) || (!b.ImplicitRoot && len(b.Stack) > 0) {
 		b.addWarn("some tags were left unclosed")
 	}
+	if b.AllowBareControl && b.ImplicitRoot && b.Root != nil && len(b.Root.List) == 1 {
+		return b.Root.List[0]
+	}
 	return b.Root
 }
 
@@ -220,7 +228,9 @@ func (b *ElemBuilder) declToElem(edecl *parser.ElemDecl) *Elem {
 		if edecl.ControlName != "" {
 			rtn.ControlName = edecl.ControlName
 		}
-		if edecl.ControlId != "" {
+		if b.LocId == "" {
+			rtn.ControlLoc = dashutil.INVALID_CLOC
+		} else if edecl.ControlId != "" {
 			if b.ControlTs != 0 {
 				rtn.ControlLoc = b.LocId + "|" + edecl.ControlId + "|" + strconv.FormatInt(b.ControlTs, 10)
 			} else {

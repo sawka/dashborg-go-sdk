@@ -161,7 +161,7 @@ func (c *Control) LogControl(text string, args ...BuilderArg) *Control {
 		return nil
 	}
 	b := c.ElemBuilder()
-	b.NoImplicitRoot = true
+	b.SetAllowBareControl(true)
 	rtn := b.Print(text, args...)
 	b.Flush()
 	return rtn
@@ -235,7 +235,45 @@ func (c *Control) ElemBuilder() *EmbedControlWriter {
 	return makeEmbedControlWriter(c)
 }
 
+func (c *Control) OnDataTableRequest(handlerFn func(*DataTableRequest) (data []map[string]interface{}, pinfo *PagingInfo, err error)) {
+	if c.ControlType != "datatable" || !c.IsValid() {
+		log.Printf("Invalid datatable control for OnDataTableRequest")
+		return
+	}
+	runFn := func(v interface{}) (interface{}, error) {
+		var treqData transport.TableRequestData
+		err := mapstructure.Decode(v, &treqData)
+		if err != nil {
+			return nil, fmt.Errorf("Cannot decode TableRequestData err:%w", err)
+		}
+		req := &DataTableRequest{
+			ZoneName:    Client.Config.ZoneName,
+			PanelName:   c.PanelName,
+			FeClientId:  treqData.FeClientId,
+			ReqId:       uuid.New().String(),
+			HandlerPath: treqData.HandlerPath,
+			Data:        treqData.Data,
+			Depth:       treqData.Depth,
+			PageSize:    treqData.PageSize,
+			PageNum:     treqData.PageNum,
+			PagingData:  treqData.PagingData,
+		}
+		data, pinfo, err := handlerFn(req)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Printf("TableRequest pinfo:%v data:%v\n", pinfo, data)
+		// Client.SendMessage(m)
+		return nil, nil
+	}
+	Client.RegisterPushFn(c.GetControlId(), runFn, false)
+}
+
 func (c *Control) HandlerOnAllRequests(fn func(req *PanelRequest) (bool, error)) {
+	if c.ControlType != "handler" || !c.IsValid() {
+		log.Printf("Invalid handler control for HandlerOnAllRequests")
+		return
+	}
 	runFn := func(v interface{}) (interface{}, error) {
 		var preqData transport.PanelRequestData
 		err := mapstructure.Decode(v, &preqData)
@@ -247,7 +285,7 @@ func (c *Control) HandlerOnAllRequests(fn func(req *PanelRequest) (bool, error))
 			PanelName:   c.PanelName,
 			FeClientId:  preqData.FeClientId,
 			ReqId:       uuid.New().String(),
-			HandlerPath: preqData.Handler,
+			HandlerPath: preqData.HandlerPath,
 			Data:        preqData.Data,
 			Depth:       preqData.Depth,
 		}

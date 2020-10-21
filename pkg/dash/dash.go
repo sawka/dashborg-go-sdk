@@ -190,6 +190,32 @@ func (e *Elem) Walk(visitFn func(*Elem)) {
 	}
 }
 
+type SortSpecType struct {
+	Field string
+	Asc   bool
+}
+
+type DataTableRequest struct {
+	ControlLoc  string
+	ZoneName    string
+	PanelName   string
+	FeClientId  string
+	ReqId       string
+	Data        interface{}
+	Depth       int
+	HandlerPath string
+	SortSpec    []SortSpecType
+	PageSize    int
+	PageNum     int
+	PagingData  interface{}
+}
+
+type PagingInfo struct {
+	DataComplete bool
+	TotalSize    int
+	PagingData   interface{}
+}
+
 type PanelRequest struct {
 	ZoneName    string
 	PanelName   string
@@ -205,46 +231,33 @@ func (req *PanelRequest) LookupContext(name string) *ContextWriter {
 	p, _ := LookupPanel(req.PanelName) // TODO maybe PanelRequest should return context names?
 	ctx := p.LookupControl("context", name)
 	var ctxId string
+	var locId string
 	if ctx.IsValid() {
 		cloc, err := dashutil.ParseControlLocator(ctx.ControlLoc)
 		if err != nil {
 			ctxId = cloc.ControlId
 		}
+		locId = dashutil.MakeEphCtxLocId(req.FeClientId, ctxId, req.ReqId)
+	} else {
+		// invalid locId produces invalid controls
+		log.Printf("Invalid context in PanelRequest.LookupContext")
+		locId = ""
 	}
-	if ctxId == "" {
-		ctxId = uuid.New().String()
-	}
-	rtn.ElemBuilder = MakeElemBuilder(req.PanelName, dashutil.MakeEphCtxLocId(req.FeClientId, ctxId, req.ReqId), 0)
+	rtn.ElemBuilder = MakeElemBuilder(req.PanelName, locId, 0)
 	rtn.FeClientId = req.FeClientId
 	rtn.ReqId = req.ReqId
 	rtn.ContextControl = ctx
 	return rtn
 }
 
-func (req *PanelRequest) GetHandlerPath() string {
-	return req.HandlerPath
-}
-
-func (req *PanelRequest) GetData() interface{} {
-	return req.Data
-}
-
-func (req *PanelRequest) TriggerRequest(handlerPath string, data interface{}) {
+func triggerRequest(req *transport.PanelRequestData) {
 	if req.Depth > 5 {
 		log.Printf("Dashborg Cannot trigger requests more than 5 levels deep\n")
 		return
 	}
-	reqData := &transport.PanelRequestData{
-		FeClientId: req.FeClientId,
-		ZoneName:   req.ZoneName,
-		PanelName:  req.PanelName,
-		Handler:    handlerPath,
-		Data:       data,
-		Depth:      req.Depth + 1,
-	}
-	handlerMatch := handlerRe.FindStringSubmatch(handlerPath)
+	handlerMatch := handlerRe.FindStringSubmatch(req.HandlerPath)
 	if handlerMatch == nil {
-		log.Printf("Dashborg Bad handlerPath:%s passed to TriggerRequest\n", handlerPath)
+		log.Printf("Dashborg Bad handlerPath:%s passed to TriggerRequest\n", req.HandlerPath)
 		return
 	}
 	panel, _ := LookupPanel(req.PanelName)
@@ -258,16 +271,53 @@ func (req *PanelRequest) TriggerRequest(handlerPath string, data interface{}) {
 		Client.handlePush(bufsrv.PushType{
 			PushCtx:     Client.GetProcRunId(),
 			PushRecvId:  handlerControl.ControlLoc,
-			PushPayload: reqData,
+			PushPayload: req,
 		})
 	}()
 }
 
+func (req *DataTableRequest) TriggerRequest(handlerPath string, data interface{}) {
+	reqData := &transport.PanelRequestData{
+		FeClientId:  req.FeClientId,
+		ZoneName:    req.ZoneName,
+		PanelName:   req.PanelName,
+		HandlerPath: handlerPath,
+		Data:        data,
+		Depth:       req.Depth + 1,
+	}
+	triggerRequest(reqData)
+}
+
+func (req *DataTableRequest) ElemBuilder() *ElemBuilder {
+	cloc, err := dashutil.ParseControlLocator(req.ControlLoc)
+	var rtn *ElemBuilder
+	if err != nil {
+		log.Printf("Invalid DataTableRequest.ControlLoc cloc:%s\n", req.ControlLoc)
+		rtn = MakeElemBuilder(req.PanelName, "", 0) // invalid locId produces invalid controls
+	} else {
+		locId := dashutil.MakeEphCtxLocId(req.FeClientId, cloc.ControlId, req.ReqId)
+		rtn = MakeElemBuilder(req.PanelName, locId, 0)
+	}
+	rtn.SetAllowBareControl(true)
+	return rtn
+}
+
+func (req *PanelRequest) TriggerRequest(handlerPath string, data interface{}) {
+	reqData := &transport.PanelRequestData{
+		FeClientId:  req.FeClientId,
+		ZoneName:    req.ZoneName,
+		PanelName:   req.PanelName,
+		HandlerPath: handlerPath,
+		Data:        data,
+		Depth:       req.Depth + 1,
+	}
+	triggerRequest(reqData)
+}
+
 type EmbedControlWriter struct {
 	*ElemBuilder
-	Control        *Control
-	Ts             int64
-	NoImplicitRoot bool
+	Control *Control
+	Ts      int64
 }
 
 func makeEmbedControlWriter(c *Control) *EmbedControlWriter {
@@ -290,16 +340,6 @@ func (w *EmbedControlWriter) Flush() {
 		return
 	}
 	elem := w.DoneElem()
-	if c.ControlType == "dyn" {
-		if w.ElemBuilder.ImplicitRoot && len(elem.List) == 1 {
-			elem = elem.List[0]
-		}
-	} else if w.NoImplicitRoot && w.ElemBuilder.ImplicitRoot {
-		if len(elem.List) == 0 {
-			return
-		}
-		elem = elem.List[0]
-	}
 	fmt.Printf("EmbedControlWriter %s\n", c.ControlType)
 	elem.Dump(os.Stdout)
 	w.ReportErrors(os.Stderr)
@@ -423,13 +463,11 @@ func ParseElemText(panelName string, elemText []string, locId string, controlTs 
 		return nil
 	}
 	b := MakeElemBuilder(panelName, locId, controlTs)
+	b.SetAllowBareControl(true)
 	for _, text := range elemText {
 		b.Print(text)
 	}
 	elem := b.DoneElem()
-	if b.ImplicitRoot && len(elem.List) == 1 {
-		elem = elem.List[0]
-	}
 	if elem != nil && anonProcRunId != "" {
 		elem.Walk(func(e *Elem) {
 			meta := e.GetMeta()
@@ -529,9 +567,9 @@ func panelLink(accId string, zoneName string, panelName string) string {
 		panelName = "default"
 	}
 	if Client.Config.BufSrvHost == "localhost" {
-		return fmt.Sprintf("http://console-dashborg.localdev:8080#acc:%s,zone:%s,panel:%s", accId, zoneName, panelName)
+		return fmt.Sprintf("http://console-dashborg.localdev:8080/acc/%s/%s/%s", accId, zoneName, panelName)
 	} else {
-		return fmt.Sprintf("https://console.dashborg.net/#acc:%s,zone:%s,panel:%s", accId, zoneName, panelName)
+		return fmt.Sprintf("https://console.dashborg.net/acc/%s/%s/%s", accId, zoneName, panelName)
 	}
 }
 
@@ -596,9 +634,8 @@ func (p *Panel) OnRequest(handlerPath string, handlerFn func(*PanelRequest) erro
 		return
 	}
 	handlerControl := p.LookupControl("handler", handlerMatch[1])
-	fmt.Printf("OnRequest lookup handler:%s rtn:%v\n", handlerMatch[1], handlerControl)
 	handlerControl.HandlerOnAllRequests(func(req *PanelRequest) (bool, error) {
-		if req.GetHandlerPath() != handlerPath {
+		if req.HandlerPath != handlerPath {
 			return false, nil
 		}
 		err := handlerFn(req)
