@@ -536,6 +536,9 @@ func (pc *ProcClient) UntrackActive(controlType string, controlLoc string, clien
 	pc.CVar.L.Lock()
 	defer pc.CVar.L.Unlock()
 	amap := pc.ActiveControls[controlLoc]
+	if len(amap) == 0 {
+		return
+	}
 	delete(amap, clientId)
 	if len(amap) == 0 {
 		delete(pc.ActiveControls, controlLoc)

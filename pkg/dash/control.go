@@ -20,6 +20,7 @@ type Control struct {
 	PanelName   string `json:"panelname"`
 	ControlType string `json:"controltype"` // elemtype
 	ControlLoc  string `json:"controlloc"`
+	PushFnId    string `json:"-"`
 }
 
 func (c *Control) IsValid() bool {
@@ -60,6 +61,18 @@ func (c *Control) GenericUpdate(cmd string, data interface{}) {
 	Client.SendMessage(m)
 }
 
+func (c *Control) registerPushFn(fn func(v interface{}) (interface{}, error), prepend bool) {
+	c.unregisterPushFn()
+	c.PushFnId = Client.RegisterPushFn(c.GetControlId(), fn, false)
+}
+
+func (c *Control) unregisterPushFn() {
+	if c.PushFnId != "" {
+		Client.UnregisterPushFn(c.GetControlId(), c.PushFnId)
+		c.PushFnId = ""
+	}
+}
+
 func (c *Control) OnClick(fn func() error) {
 	if c.ControlType != "button" || !c.IsValid() {
 		return
@@ -71,7 +84,7 @@ func (c *Control) OnClick(fn func() error) {
 		}
 		return true, nil
 	}
-	Client.RegisterPushFn(c.GetControlId(), runFn, false)
+	c.registerPushFn(runFn, false)
 }
 
 func (c *Control) OnCheckboxChange(fn func(b bool) error) {
@@ -85,7 +98,7 @@ func (c *Control) OnCheckboxChange(fn func(b bool) error) {
 		}
 		return true, nil
 	}
-	Client.RegisterPushFn(c.GetControlId(), runFn, false)
+	c.registerPushFn(runFn, false)
 }
 
 func (c *Control) OnSelectChange(fn func(v string) error) {
@@ -100,18 +113,17 @@ func (c *Control) OnSelectChange(fn func(v string) error) {
 		return true, nil
 	}
 	fmt.Printf("register pushfn %s\n", c.ControlLoc)
-	Client.RegisterPushFn(c.GetControlId(), runFn, false)
+	c.registerPushFn(runFn, false)
 }
 
 func (c *Control) Release() {
 	if c.ClientId != "" {
 		Client.UntrackActive(c.ControlType, c.ControlLoc, c.ClientId)
 	}
+	c.unregisterPushFn()
 	c.ClientId = ""
 	c.ControlType = "invalid"
 	c.ControlLoc = ""
-
-	// TODO release handlers (onclick, onrequest, etc.)
 }
 
 func (c *Control) ProgressSet(val int, status string) {
@@ -266,7 +278,7 @@ func (c *Control) OnDataTableRequest(handlerFn func(*DataTableRequest) (data []m
 		// Client.SendMessage(m)
 		return nil, nil
 	}
-	Client.RegisterPushFn(c.GetControlId(), runFn, false)
+	c.registerPushFn(runFn, false)
 }
 
 func (c *Control) HandlerOnAllRequests(fn func(req *PanelRequest) (bool, error)) {
@@ -298,7 +310,7 @@ func (c *Control) HandlerOnAllRequests(fn func(req *PanelRequest) (bool, error))
 		}
 		return nil, nil
 	}
-	Client.RegisterPushFn(c.GetControlId(), runFn, false)
+	c.registerPushFn(runFn, false)
 }
 
 func (c *Control) TableAddRow(rowStr string, args ...BuilderArg) {
