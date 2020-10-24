@@ -2,6 +2,7 @@ package dash
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
@@ -63,6 +64,18 @@ func Var(name string, val interface{}) BuilderVar {
 	return BuilderVar{VarName: name, VarVal: val}
 }
 
+func JsonAttr(name string, val interface{}) BuilderAttr {
+	if val == nil {
+		return BuilderAttr{} // empty for nil
+	}
+	barr, err := json.Marshal(val)
+	if err != nil {
+		fmt.Printf("Dashborg JsonAttr, cannot marshal val type:%T err:%v", val, err)
+		return BuilderAttr{}
+	}
+	return BuilderAttr{AttrName: name, AttrVal: string(barr)}
+}
+
 func MakeElemBuilder(panelName string, locId string, controlTs int64) *ElemBuilder {
 	return &ElemBuilder{
 		PanelName: panelName,
@@ -110,6 +123,9 @@ func addArgAttrs(attrs map[string]string, args []BuilderArg) map[string]string {
 		if battr, ok := arg.(BuilderAttr); ok {
 			if attrs == nil {
 				attrs = make(map[string]string)
+			}
+			if battr.AttrName == "" {
+				continue
 			}
 			attrs[battr.AttrName] = battr.AttrVal
 		}

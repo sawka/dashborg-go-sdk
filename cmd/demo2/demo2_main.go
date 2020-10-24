@@ -76,11 +76,11 @@ func ShowAccDetail(accId string, req *dash.PanelRequest) {
 	ctx.Print("*[row] [s2 @bold] Email || ${email:%s}", dash.Var("email", acc.Email))
 	ctx.Print("<div>[row]")
 	if acc.IsPaid {
-		ctx.Print("<button/>[@handler=/acc/downgrade] Downgrade", dash.Attr("data", acc.AccId))
+		ctx.Print("<button/>[@handler=/acc/downgrade] Downgrade", dash.JsonAttr("jsondata", acc.AccId))
 	} else {
-		ctx.Print("<button/>[@handler=/acc/upgrade] Upgrade To Paid", dash.Attr("data", acc.AccId))
+		ctx.Print("<button/>[@handler=/acc/upgrade] Upgrade To Paid", dash.JsonAttr("jsondata", acc.AccId))
 	}
-	ctx.Print("<button/>[@handler=/acc/remove] Remove Account", dash.Attr("data", acc.AccId))
+	ctx.Print("<button/>[@handler=/acc/remove] Remove Account", dash.JsonAttr("jsondata", acc.AccId))
 	ctx.Print("</div>")
 	ctx.Print("</div>")
 }
@@ -136,7 +136,7 @@ func Setup() {
 		accList.Print("<div>[col @grow @overflowy=auto]")
 		for _, acc := range AllAccs {
 			accList.Print("<div>[row @alignitems=center]")
-			accList.Print("<link/>[@marginleft=8px @size=16px @handler=/acc/select-account] ${name:%s}", dash.Attr("data", acc.AccId), dash.Var("name", acc.AccName))
+			accList.Print("<link/>[@marginleft=8px @size=16px @handler=/acc/select-account] ${name:%s}", dash.JsonAttr("jsondata", acc.AccId), dash.Var("name", acc.AccName))
 			if acc.IsPaid {
 				accList.Print("[@uilabel @uicolor=blue @uisize=tiny @inline @marginleft=5px] Paid")
 			}
@@ -252,6 +252,10 @@ func Setup() {
 		req.TriggerRequest("/acc/select-account", accId)
 		modal := req.LookupContext("modal")
 		modal.Revert()
+		return nil
+	})
+	panel.OnRequest("/panel/load", func(req *dash.PanelRequest) error {
+		req.TriggerRequest("/acc/refresh-accounts-revertdetail", nil)
 		return nil
 	})
 }

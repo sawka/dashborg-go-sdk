@@ -1,6 +1,7 @@
 <div>[col @padding=10px]
   <context:modal "modal"/>
   <handler "/acc"/>
+  <handler "/panel"/>
   [@h1] Demo 2
   <div>[row]
     <button "btn-refresh"/>[s2:subfill @handler=/acc/refresh-accounts-revertdetail] Refresh Accounts

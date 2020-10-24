@@ -97,8 +97,14 @@ func MakeZPControlLoc(zoneName string, panelName string, controlId string) Contr
 }
 
 func MakeEphCtxLocId(feClientId string, ctxId string, reqId string) string {
-	if !IsUUIDValid(feClientId) || !IsUUIDValid(ctxId) || !IsUUIDValid(reqId) {
-		panic("Invalid FeClientId/CtxId/ReqId passed to MakeEphCtxLocId")
+	if !IsUUIDValid(feClientId) {
+		panic(fmt.Sprintf("Invalid FeClientId MakeEphCtxLocId feclientid:%s", feClientId))
+	}
+	if !IsUUIDValid(ctxId) {
+		panic(fmt.Sprintf("Invalid CtxId ctxid:%s", ctxId))
+	}
+	if !IsUUIDValid(reqId) {
+		panic(fmt.Sprintf("Invalid ReqId passed to MakeEphCtxLocId reqid:%s", reqId))
 	}
 	return "/eph-ctx/" + feClientId + "/" + ctxId + "/" + reqId
 }

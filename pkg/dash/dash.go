@@ -230,14 +230,15 @@ func (req *PanelRequest) LookupContext(name string) *ContextWriter {
 	rtn := &ContextWriter{}
 	p, _ := LookupPanel(req.PanelName) // TODO maybe PanelRequest should return context names?
 	ctx := p.LookupControl("context", name)
-	var ctxId string
 	var locId string
+	fmt.Printf("lookupcontext name:%s %#v\n", name, ctx)
 	if ctx.IsValid() {
 		cloc, err := dashutil.ParseControlLocator(ctx.ControlLoc)
 		if err != nil {
-			ctxId = cloc.ControlId
+			log.Printf("LookupContext invalid context ControlLocator err:%v\n", err)
+		} else {
+			locId = dashutil.MakeEphCtxLocId(req.FeClientId, cloc.ControlId, req.ReqId)
 		}
-		locId = dashutil.MakeEphCtxLocId(req.FeClientId, ctxId, req.ReqId)
 	} else {
 		// invalid locId produces invalid controls
 		log.Printf("Invalid context in PanelRequest.LookupContext")
@@ -248,6 +249,14 @@ func (req *PanelRequest) LookupContext(name string) *ContextWriter {
 	rtn.ReqId = req.ReqId
 	rtn.ContextControl = ctx
 	return rtn
+}
+
+func (req *PanelRequest) DecodeData(out interface{}) error {
+	err := mapstructure.Decode(req.Data, out)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func triggerRequest(req *transport.PanelRequestData) {
@@ -268,9 +277,15 @@ func triggerRequest(req *transport.PanelRequestData) {
 		return
 	}
 	go func() {
+		cloc, err := dashutil.ParseControlLocator(handlerControl.ControlLoc)
+		if err != nil {
+			log.Printf("Dashborg, invalid handler control locator in trigger request err:%v", err)
+			return
+		}
+		fmt.Printf("trigger request %s data:%v\n", req.HandlerPath, req.Data)
 		Client.handlePush(bufsrv.PushType{
 			PushCtx:     Client.GetProcRunId(),
-			PushRecvId:  handlerControl.ControlLoc,
+			PushRecvId:  cloc.ControlId,
 			PushPayload: req,
 		})
 	}()
@@ -286,6 +301,14 @@ func (req *DataTableRequest) TriggerRequest(handlerPath string, data interface{}
 		Depth:       req.Depth + 1,
 	}
 	triggerRequest(reqData)
+}
+
+func (req *DataTableRequest) DecodeData(out interface{}) error {
+	err := mapstructure.Decode(req.Data, out)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (req *DataTableRequest) ElemBuilder() *ElemBuilder {
@@ -418,8 +441,6 @@ func (w *ContextWriter) Flush() {
 	elem := w.DoneElem()
 	w.ReportErrors(os.Stderr)
 	elemText := elem.ElemTextEx(0, nil)
-	// fmt.Printf("context writer flush %v\n", w.ContextControl)
-	// fmt.Printf("%s\n", strings.Join(elemText, "\n"))
 	m := transport.WriteContextMessage{
 		MType:      "writecontext",
 		Ts:         Ts(),
