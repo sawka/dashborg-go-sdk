@@ -231,7 +231,6 @@ func (req *PanelRequest) LookupContext(name string) *ContextWriter {
 	p, _ := LookupPanel(req.PanelName) // TODO maybe PanelRequest should return context names?
 	ctx := p.LookupControl("context", name)
 	var locId string
-	fmt.Printf("lookupcontext name:%s %#v\n", name, ctx)
 	if ctx.IsValid() {
 		cloc, err := dashutil.ParseControlLocator(ctx.ControlLoc)
 		if err != nil {
@@ -282,7 +281,6 @@ func triggerRequest(req *transport.PanelRequestData) {
 			log.Printf("Dashborg, invalid handler control locator in trigger request err:%v", err)
 			return
 		}
-		fmt.Printf("trigger request %s data:%v\n", req.HandlerPath, req.Data)
 		Client.handlePush(bufsrv.PushType{
 			PushCtx:     Client.GetProcRunId(),
 			PushRecvId:  cloc.ControlId,
@@ -459,7 +457,6 @@ func (w *ContextWriter) Revert() {
 		log.Printf("Dashborg attempt to Revert() an invalid ContextControl\n")
 		return
 	}
-	fmt.Printf("context writer revert %v\n", w.ContextControl)
 	m := transport.WriteContextMessage{
 		MType:      "writecontext",
 		Ts:         Ts(),
@@ -544,6 +541,7 @@ func (p *PanelWriter) Flush() (*Panel, error) {
 	if err != nil {
 		return rtnPanel, err
 	}
+	log.Printf("Dashborg Defined Panel [%s] Link %s\n", p.PanelName, panelLink(Client.Config.AccId, Client.Config.ZoneName, p.PanelName))
 	err = rtnPanel.setControlMappings(rtn)
 	if err == nil {
 		setMappingsInCache(p.PanelName, rtnPanel.ControlMappings)
@@ -584,13 +582,14 @@ func LookupPanel(panelName string) (*Panel, error) {
 }
 
 func panelLink(accId string, zoneName string, panelName string) string {
-	if panelName == "" {
-		panelName = "default"
+	panelLinkStr := ""
+	if panelName != "" {
+		panelLinkStr = "/" + panelName
 	}
 	if Client.Config.BufSrvHost == "localhost" {
-		return fmt.Sprintf("http://console-dashborg.localdev:8080/acc/%s/%s/%s", accId, zoneName, panelName)
+		return fmt.Sprintf("http://console-dashborg.localdev:8080/acc/%s/%s%s", accId, zoneName, panelLinkStr)
 	} else {
-		return fmt.Sprintf("https://console.dashborg.net/acc/%s/%s/%s", accId, zoneName, panelName)
+		return fmt.Sprintf("https://console.dashborg.net/acc/%s/%s%s", accId, zoneName, panelLinkStr)
 	}
 }
 

@@ -88,8 +88,8 @@ func StartProcClient(config *Config) *ProcClient {
 	// TODO validate config
 	Client = newProcClient()
 	Client.Config = config
-	log.Printf("Dashborg Initialized Client ProcName:%s ProcRunId:%s\n", Client.Config.ProcName, Client.ProcRunId)
-	log.Printf("Dashborg Zone Link %s\n", panelLink(config.AccId, config.ZoneName, "default"))
+	log.Printf("Dashborg Initialized Client Zone:%s ProcName:%s ProcRunId:%s\n", config.ZoneName, Client.Config.ProcName, Client.ProcRunId)
+	log.Printf("Dashborg Zone [%s] Link %s\n", config.ZoneName, panelLink(config.AccId, config.ZoneName, ""))
 	Client.goConnectClient()
 	Client.KeepAliveTicker = time.NewTicker(5 * time.Second)
 	go func() {
