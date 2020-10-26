@@ -14,7 +14,7 @@ func RunProcess1() {
 	logger := panel.LookupControl("log", "demo-log2")
 	logger.LogText("Running Process #1")
 	// run the actual process
-	p := logger.LogControl("<progress/>[@progresslabel=P1 @progressmax=10]")
+	p := logger.LogControl("<progress/>[@progresslabel=P1 @progressmax=10 @nobubble @width=100%]")
 	if p == nil {
 		fmt.Printf("process1 - nil return from LogControl\n")
 		return
