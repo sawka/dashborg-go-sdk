@@ -60,10 +60,10 @@ You should see output that looks similar to:
 
 <pre><code>&gt; go run demo.go
 1| Dashborg Created new self-signed keypair key:dashborg-client.key cert:dashborg-client.crt for new accountid:<span style="color: red">[YOUR NEW ACCOUNT ID]</span>
-2| Dashborg Initialized Client ProcName:hello ProcRunId:5057081b-18a8-48d3-b701-c7ca6d855ef2
-3| Dashborg Zone Link <span style="font-weight: bold">https://console.dashborg.net/#[YOUR NEW ACCOUNT ID],zone:default,panel:default</span>
+2| Dashborg Initialized Client Zone:default ProcName:demo1 ProcRunId:fd542cff-5a7f-4e86-ab37-26dd9ae54154
+3| Dashborg Zone [default] Link <span style="font-weight: bold">https://console.dashborg.net/acc/[YOUR NEW ACCOUNT ID]/default</span>
 4| Dashborg Client Connected to proc.api.dashborg.net:7533
-5| Dashborg Client SendLoop Done
+...
 </code></pre>
 
 Line #1: The first time you run your program, if you've set "AutoKeygen" to true, the Dashborg SDK will create a new Account Id for you and a self signed keypair in your current directory.  The default filenames for the keypair are "dashborg-client.key" (private key) and dashborg-client.crt (public certificate). You can learn more about how Dashborg is configured and uses these keys in the advanced configuration section of these docs.
