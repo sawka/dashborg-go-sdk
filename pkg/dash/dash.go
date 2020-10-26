@@ -498,6 +498,9 @@ func ParseElemText(panelName string, elemText []string, locId string, controlTs 
 }
 
 func DefinePanel(panelName string) *PanelWriter {
+	if Client == nil {
+		panic("Dashborg not initialized, must call dash.StartProcClient()")
+	}
 	rtn := &PanelWriter{PanelName: panelName}
 	rtn.ElemBuilder = MakeElemBuilder(panelName, dashutil.MakeZPLocId(Client.Config.ZoneName, panelName), 0)
 	rtn.ElemBuilder.SetRootDivClass("rootdiv")
@@ -505,6 +508,9 @@ func DefinePanel(panelName string) *PanelWriter {
 }
 
 func DefinePanelFromFile(panelName string, fileName string) (*Panel, error) {
+	if Client == nil {
+		panic("Dashborg not initialized, must call dash.StartProcClient()")
+	}
 	rtnPanel := &Panel{PanelName: panelName}
 	fd, err := os.Open(fileName)
 	if err != nil {
@@ -571,6 +577,9 @@ type Panel struct {
 }
 
 func LookupPanel(panelName string) (*Panel, error) {
+	if Client == nil {
+		panic("Dashborg not initialized, must call dash.StartProcClient()")
+	}
 	p := &Panel{PanelName: panelName}
 	mappings, ok := getMappingsFromCache(panelName, Client.Config.PanelCacheTime)
 	if ok {
@@ -678,6 +687,9 @@ func logInfo(fmt string, data ...interface{}) {
 
 // returns (blobHash, err)
 func UploadBlob(mimeType string, r io.ReaderAt) (string, error) {
+	if Client == nil {
+		panic("Dashborg not initialized, must call dash.StartProcClient()")
+	}
 	if !dashutil.IsMimeTypeValid(mimeType) {
 		return "", fmt.Errorf("Invalid mime-type passed to UploadBlob mime-type:%s", mimeType)
 	}

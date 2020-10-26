@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
+	"math/rand"
 	"os"
 	"runtime/debug"
 	"strconv"
@@ -18,7 +20,11 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/transport"
 )
 
+// 500ms, 1s, 2s, 4s, 8s, 16s, 32s, 60s...
 const DEFAULT_QUEUESIZE = 100 // DASHBORG_QUEUESIZE
+const MAX_RETRY_DURATION = time.Minute
+const BASE_RETRY_TIME_MS = 500
+const RETRY_JITTER_MS = 100
 
 type queueEntry struct {
 	Message     interface{}
@@ -50,6 +56,7 @@ type ProcClient struct {
 	Connected       bool // connection is open to BufSrv
 	ConnectGiveUp   bool // we've given up on trying to reconnect the client
 	KeepAliveTicker *time.Ticker
+	RetryAttempts   int
 
 	ActiveControls map[string]map[string]bool
 }
@@ -269,10 +276,23 @@ func (pc *ProcClient) getRetryState(lastConnectTry time.Time) (int, time.Duratio
 		return retryDisconnectedTryOnce, 0
 	}
 	now := time.Now()
-	if lastConnectTry.IsZero() || now.Sub(lastConnectTry) >= 500*time.Millisecond {
+	if lastConnectTry.IsZero() || now.Sub(lastConnectTry) >= BASE_RETRY_TIME_MS*time.Millisecond {
 		return retryDisconnectedTry, 0
 	}
-	return retryDisconnectedWait, 500*time.Millisecond - now.Sub(lastConnectTry)
+
+	// waitTime := (BASE_RETRY_TIME_MS*time.Millisecond - now.Sub(lastConnectTry)) + jitter
+	var waitTime time.Duration
+	if pc.RetryAttempts > 10 {
+		waitTime = MAX_RETRY_DURATION
+	} else {
+		multiplier := math.Pow(2, float64(pc.RetryAttempts))
+		waitTime = time.Duration(BASE_RETRY_TIME_MS * time.Millisecond * time.Duration(multiplier))
+	}
+	if waitTime > MAX_RETRY_DURATION {
+		waitTime = MAX_RETRY_DURATION
+	}
+	jitter := time.Duration(rand.Int63n(RETRY_JITTER_MS)) * time.Millisecond
+	return retryDisconnectedWait, waitTime + jitter
 }
 
 func retryStateToString(rs int) string {
@@ -320,6 +340,7 @@ func (pc *ProcClient) retryConnectClient() error {
 			continue
 		}
 		if state == retryDisconnectedWait {
+			pc.RetryAttempts++
 			pc.retryWait(waitDuration)
 			continue
 		}
@@ -379,6 +400,7 @@ func (pc *ProcClient) connectClient() error {
 	pc.CVar.L.Lock()
 	pc.Client = client
 	pc.Connected = true
+	pc.RetryAttempts = 0
 	pc.CVar.Broadcast()
 	pc.CVar.L.Unlock()
 	return nil
