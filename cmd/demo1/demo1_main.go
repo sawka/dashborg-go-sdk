@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"time"
@@ -13,12 +12,7 @@ func RunProcess1() {
 	panel, _ := dash.LookupPanel("demo1")
 	logger := panel.LookupControl("log", "demo-log2")
 	logger.LogText("Running Process #1")
-	// run the actual process
-	p := logger.LogControl("<progress/>[@progresslabel=P1 @progressmax=10 @nobubble @width=100%]")
-	if p == nil {
-		fmt.Printf("process1 - nil return from LogControl\n")
-		return
-	}
+	p := logger.LogControl("<progress/>[@progresslabel=P1 @progressmax=10]")
 	for i := 0; i < 10; i++ {
 		time.Sleep(1 * time.Second)
 		p.ProgressSet(i+1, "running")
@@ -29,7 +23,7 @@ func RunProcess1() {
 
 func Control() {
 	panel, _ := dash.LookupPanel("demo1")
-	logger := panel.LookupControl("log", "demo-log2")
+	logger := panel.LookupControl("log", "demo-log")
 	logger.LogText("demo1 restarted")
 	stopButton := panel.LookupControl("button", "b-stop")
 	b1 := panel.LookupControl("button", "b-1")
@@ -46,12 +40,6 @@ func Control() {
 	<-ch
 }
 
-func DefinePanelHW() {
-	panel := dash.DefinePanel("demo1")
-	panel.Print("hello world")
-	panel.Flush()
-}
-
 func DefinePanel() {
 	panel := dash.DefinePanel("demo1")
 	panel.Print("[@h1] Demo Dashboard")
@@ -59,7 +47,7 @@ func DefinePanel() {
 	panel.Print("  <button b-1/> Run Process #1")
 	panel.Print("  <button b-stop/> Stop")
 	panel.Print("</div>")
-	panel.Print("<log demo-log2/>[logstyle @grow]")
+	panel.Print("<log demo-log/>[@grow]")
 	panel.Flush()
 	panel.Dump(os.Stdout)
 	log.Printf("Panel Link %s\n", panel.PanelLink())
@@ -68,7 +56,6 @@ func DefinePanel() {
 func main() {
 	cfg := &dash.Config{ProcName: "demo1", AnonAcc: true, AutoKeygen: true}
 	defer dash.StartProcClient(cfg).WaitForClear()
-
 	DefinePanel()
 	Control()
 }
