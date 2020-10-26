@@ -3,7 +3,7 @@ package main
 import "github.com/sawka/dashborg-go-sdk/pkg/dash"
 
 func main() {
-	config := &dash.Config{}
+	config := &dash.Config{AnonAcc: true, ProcName: "tutorialtext"}
 	defer dash.StartProcClient(config).WaitForClear()
 	pw := dash.DefinePanel("text")
 	pw.Print("[@h1] Header (H1)")
@@ -33,5 +33,10 @@ func main() {
 	pw.Print("[@bgcolor=#ccc @paddingleft=10% @paddingright=10% @width=50%] margin, padding, width, and height can be percentages")
 	pw.Print("[@height=40px @shrink=0 @bgcolor=#ccc @jc=center @alignitems=center] Text can be aligned @jc / @justifycontent and @alignitems, centered")
 	pw.Print("[@height=40px @shrink=0 @bgcolor=#ccc @center @xcenter] Centering can also be done with @center / @xcenter for main and cross-axis centering")
+	pw.Print("[@bgcolor=#ccc @padding=10px] To mix text styles")
+	pw.Print("[@inline @bold] use the @inline attribute.")
+	pw.Print("[@inline @color=blue] The container is styled using the first element, but")
+	pw.Print("[@inline @color=red @underline] other elements")
+	pw.Print("[@inline] can have different, varied styling.")
 	pw.Flush()
 }
