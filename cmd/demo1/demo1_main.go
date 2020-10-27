@@ -10,7 +10,7 @@ import (
 
 func RunProcess1() {
 	panel, _ := dash.LookupPanel("demo1")
-	logger := panel.LookupControl("log", "demo-log2")
+	logger := panel.LookupControl("log", "demo-log")
 	logger.LogText("Running Process #1")
 	p := logger.LogControl("<progress/>[@progresslabel=P1 @progressmax=10]")
 	for i := 0; i < 10; i++ {

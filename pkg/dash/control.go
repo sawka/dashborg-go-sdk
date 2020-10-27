@@ -75,6 +75,7 @@ func (c *Control) unregisterPushFn() {
 
 func (c *Control) OnClick(fn func() error) {
 	if c.ControlType != "button" || !c.IsValid() {
+		log.Printf("Cannot call OnClick on invalid button control")
 		return
 	}
 	runFn := func(v interface{}) (interface{}, error) {
@@ -89,6 +90,7 @@ func (c *Control) OnClick(fn func() error) {
 
 func (c *Control) OnCheckboxChange(fn func(b bool) error) {
 	if c.ControlType != "input" || !c.IsValid() {
+		log.Printf("Cannot call OnCheckboxChange on invalid input control")
 		return
 	}
 	runFn := func(v interface{}) (interface{}, error) {
@@ -103,6 +105,7 @@ func (c *Control) OnCheckboxChange(fn func(b bool) error) {
 
 func (c *Control) OnSelectChange(fn func(v string) error) {
 	if c.ControlType != "inputselect" || !c.IsValid() {
+		log.Printf("Cannot call OnSelectChange on invalid inputselect control")
 		return
 	}
 	runFn := func(v interface{}) (interface{}, error) {
@@ -128,6 +131,7 @@ func (c *Control) Release() {
 
 func (c *Control) ProgressSet(val int, status string) {
 	if c.ControlType != "progress" || !c.IsValid() {
+		log.Printf("Cannot call ProgressSet on invalid progress control")
 		return
 	}
 	c.GenericUpdate("genupdate", transport.ProgressData{Val: val, Status: status})
@@ -135,6 +139,7 @@ func (c *Control) ProgressSet(val int, status string) {
 
 func (c *Control) ProgressDone() {
 	if c.ControlType != "progress" || !c.IsValid() {
+		log.Printf("Cannot call ProgressDone on invalid progress control")
 		return
 	}
 	c.GenericUpdate("genupdate", transport.ProgressData{Done: true, ClearStatus: true})
@@ -142,6 +147,7 @@ func (c *Control) ProgressDone() {
 
 func (c *Control) ProgressError(err string) {
 	if c.ControlType != "progress" || !c.IsValid() {
+		log.Printf("Cannot call ProgressError on invalid progress control")
 		return
 	}
 	c.GenericUpdate("genupdate", transport.ProgressData{Done: true, ClearStatus: true, Err: err})
@@ -149,6 +155,7 @@ func (c *Control) ProgressError(err string) {
 
 func (c *Control) LogText(fmtStr string, data ...interface{}) {
 	if c.ControlType != "log" || !c.IsValid() {
+		log.Printf("Cannot call LogText on invalid log control")
 		return
 	}
 	text := fmt.Sprintf(fmtStr, data...)
@@ -170,7 +177,8 @@ func (c *Control) LogText(fmtStr string, data ...interface{}) {
 
 func (c *Control) LogControl(text string, args ...BuilderArg) *Control {
 	if c.ControlType != "log" || !c.IsValid() {
-		return nil
+		log.Printf("Cannot call LogControl on invalid log control")
+		return &Control{ControlType: "invalid"}
 	}
 	b := c.ElemBuilder()
 	b.SetAllowBareControl(true)
@@ -180,7 +188,8 @@ func (c *Control) LogControl(text string, args ...BuilderArg) *Control {
 }
 
 func (c *Control) RowDataClear() {
-	if !c.GetMeta().HasRowData {
+	if !c.GetMeta().HasRowData || !c.IsValid() {
+		log.Printf("Cannot call RowDataClear on invalid control")
 		return
 	}
 	ts := Ts()
@@ -200,6 +209,7 @@ func (c *Control) RowDataClear() {
 
 func (c *Control) DynSetFStr(fstr string) {
 	if c.ControlType != "dyn" || !c.IsValid() {
+		log.Printf("Cannot call DynSetFStr on invalid dyn control")
 		return
 	}
 	dynData := transport.DynElemData{}
@@ -221,6 +231,7 @@ func (c *Control) DynSetFStr(fstr string) {
 
 func (c *Control) DynSetData(data ...interface{}) {
 	if c.ControlType != "dyn" || !c.IsValid() {
+		log.Printf("Cannot call DynSetData on invalid dyn control")
 		return
 	}
 	dynData := transport.DynElemData{}

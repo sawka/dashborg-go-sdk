@@ -643,9 +643,11 @@ func (p *Panel) RefreshControlMappings() error {
 func (p *Panel) LookupControl(controlType string, controlName string) *Control {
 	c := p.ControlMappings[controlName]
 	if c == nil {
+		log.Printf("Dashborg, LookupControl cannot find control type:%s name:%s in panel:%s\n", controlType, controlName, p.PanelName)
 		return &Control{ControlType: "invalid"}
 	}
 	if c.ControlType != controlType {
+		log.Printf("Dashborg, LookupControl control type does not match name:%s panel:%s expected-type:%s found-type:%s\n", controlName, p.PanelName, controlType, c.ControlType)
 		return &Control{ControlType: "invalid"}
 	}
 	rtn := &Control{PanelName: p.PanelName, ControlType: c.ControlType, ControlLoc: c.ControlLoc}
