@@ -1,7 +1,9 @@
 package dash
 
 import (
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
@@ -98,14 +100,15 @@ func (c *Config) loadKeys() {
 	if _, errCert := os.Stat(c.CertFileName); os.IsNotExist(errCert) {
 		panic(fmt.Sprintf("Dashborg certificate file does not exist file:%s", c.CertFileName))
 	}
-	accId, err := readAccIdFromCert(c.CertFileName)
+	certInfo, err := readCertInfo(c.CertFileName)
 	if err != nil {
 		panic(err)
 	}
-	if c.AccId != "" && accId != c.AccId {
-		panic(fmt.Sprintf("Dashborg AccId read from certificate:%s does not match AccId in config:%s", accId, c.AccId))
+	if c.AccId != "" && certInfo.AccId != c.AccId {
+		panic(fmt.Sprintf("Dashborg AccId read from certificate:%s does not match AccId in config:%s", certInfo.AccId, c.AccId))
 	}
-	c.AccId = accId
+	log.Printf("Dashborg KeyFile:%s CertFile:%s SHA256:%s\n", c.KeyFileName, c.CertFileName, certInfo.Pk256)
+	c.AccId = certInfo.AccId
 }
 
 func (c *Config) maybeMakeKeys(accId string) error {
@@ -131,22 +134,33 @@ func (c *Config) maybeMakeKeys(accId string) error {
 	return nil
 }
 
-func readAccIdFromCert(certFileName string) (string, error) {
+type certInfo struct {
+	AccId string
+	Pk256 string
+}
+
+func readCertInfo(certFileName string) (*certInfo, error) {
 	certBytes, err := ioutil.ReadFile(certFileName)
 	if err != nil {
-		return "", fmt.Errorf("Cannot read certificate file:%s err:%w", certFileName, err)
+		return nil, fmt.Errorf("Cannot read certificate file:%s err:%w", certFileName, err)
 	}
 	block, _ := pem.Decode(certBytes)
 	if block == nil || block.Type != "CERTIFICATE" {
-		return "", fmt.Errorf("Certificate file malformed, failed to Decode PEM CERTIFICATE block from file:%s", certFileName)
+		return nil, fmt.Errorf("Certificate file malformed, failed to Decode PEM CERTIFICATE block from file:%s", certFileName)
 	}
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil || cert == nil {
-		return "", fmt.Errorf("Error parsing certificate from file:%s err:%w", certFileName, err)
+		return nil, fmt.Errorf("Error parsing certificate from file:%s err:%w", certFileName, err)
 	}
 	cn := cert.Subject.CommonName
 	if cn == "" || !dashutil.IsUUIDValid(cn) {
-		return "", fmt.Errorf("Invalid CN in certificate.  CN should be set to Dashborg Account ID (UUID formatted, 36 chars) CN:%s", cn)
+		return nil, fmt.Errorf("Invalid CN in certificate.  CN should be set to Dashborg Account ID (UUID formatted, 36 chars) CN:%s", cn)
 	}
-	return cn, nil
+	pubKeyBytes, err := x509.MarshalPKIXPublicKey(cert.PublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("Cannot get PublicKey bytes from certificate")
+	}
+	pk256 := sha256.Sum256(pubKeyBytes)
+	pk256Str := base64.StdEncoding.EncodeToString(pk256[:])
+	return &certInfo{AccId: cn, Pk256: pk256Str}, nil
 }
