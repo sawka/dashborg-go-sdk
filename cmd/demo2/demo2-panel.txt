@@ -14,7 +14,6 @@
     <div>[col:s3 @bgcolor="#eee"]
       <context "ctx-acclist"/>
     </div>
-    [@width=10px]
     <div>[col @grow @bgcolor="#eee"]
       <context "ctx-accdetail"/>
     </div>

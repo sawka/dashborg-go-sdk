@@ -2,11 +2,18 @@
 
 Dashborg was built to make connecting your code to the web as simple as writing to the console, reading/writing files, and reading command line arguments.  http://dashborg.net
 
+Live link to SDK demos:
+https://console.dashborg.net/acc/421d595f-9e30-4178-bcc3-b853f890fb8e/default/demo1
+
 ## Documentation
+
+The public API for dashborg is in the **github.com/sawka/dashborg-go-sdk/pkg/dash** package.  Utility functions are provided in **github.com/sawka/dashborg-go-sdk/pkg/dashutil**.  The other packages are internal and not intended to be directly imported into client code.
 
 * GoDoc (godoc.org): https://godoc.org/github.com/sawka/dashborg-go-sdk/pkg/dash
 * GoDoc (pkg.go.dev): https://pkg.go.dev/github.com/sawka/dashborg-go-sdk/pkg/dash
 * Docs: https://docs.dashborg.net/docs/getting-started/
+
+Questions? [Join the Dashborg Slack!](https://join.slack.com/t/dashborgworkspace/shared_invite/zt-iey7ebif-Nps2uXQivdFFlPz63rDb2w)
 
 ## Getting Started
 
@@ -15,12 +22,6 @@ To get started,, you'll need three things:
 * Go development environment
 * Chrome web browser
 * Dashborg SDK
-
-To get started with Go, you'll need a working Go development environment.  If you haven't set up go before, here's the Go's official download/install page: https://golang.org/doc/install.  If you're using OS X, I recommend homebrew:
-
-```
-brew install go
-```
 
 Currently Dashborg only supports the Chrome web browser.  If you don't have it installed, you can install it here: https://www.google.com/chrome/.
 
@@ -60,28 +61,39 @@ You should see output that looks similar to:
 
 <pre><code>&gt; go run demo.go
 1| Dashborg Created new self-signed keypair key:dashborg-client.key cert:dashborg-client.crt for new accountid:<span style="color: red">[YOUR NEW ACCOUNT ID]</span>
-2| Dashborg Initialized Client Zone:default ProcName:demo1 ProcRunId:fd542cff-5a7f-4e86-ab37-26dd9ae54154
-3| Dashborg Zone [default] Link <span style="font-weight: bold">https://console.dashborg.net/acc/[YOUR NEW ACCOUNT ID]/default</span>
+2| Dashborg KeyFile:[KEYFILE-NAME] CertFile:[CERTFILE-NAME] SHA256:[YOUR PUBLIC KEY SHA256 HASH]
+3| Dashborg Zone [default] Link https://console.dashborg.net/acc/[ACCOUNT-ID]/default
 4| Dashborg Client Connected to proc.api.dashborg.net:7533
+5| Dashborg Defined Panel [default] Link https://console.dashborg.net/acc/[ACCOUNT-ID]/default/default
 ...
 </code></pre>
 
-Line #1: The first time you run your program, if you've set "AutoKeygen" to true, the Dashborg SDK will create a new Account Id for you and a self signed keypair in your current directory.  The default filenames for the keypair are "dashborg-client.key" (private key) and dashborg-client.crt (public certificate). You can learn more about how Dashborg is configured and uses these keys in the advanced configuration section of these docs.
+Line #1: The first time you run your program, if you've set "AutoKeygen" to true, the Dashborg SDK will create a new Account Id for you and a self signed keypair in your current directory.  The default filenames for the keypair are "dashborg-client.key" (private key) and dashborg-client.crt (public certificate). This line is only displayed the first time you run the program (when the keys are generated).
 
-Line #3: Here is the link to your new dashboard!  Copy and paste the link into your (Chrome) browser and you should see your newly created dashboard that says "Hello World".
+Line #2: This line shows the keys being used and the SHA256 fingerprint of your Dashborg Public Key.  You'll need this value to claim/administer your account should you choose to register on the Dashborg site.
+
+Line #5: Here's the link to your new panel.  Paste it into Chrome and you should see your "Hello World" panel!
 
 That's it, you've created a new unregistered Dashborg account, and defined your first Dashborg panel.
 
 
 ## Dashborg Demos
 
-There are two demo programs in this repository.  You can run them from the root module directory (demo2 references a file by relative path of "cmd/demo2/demo2-panel.txt").  They will create a demo1 and demo2 panel in your account.  To navigate to the demo pages, you can follow the panel links output by the demo programs.
+Demos and tutorials are contained in the "cmd" directories.  All can be run from the root SDK directory:
 
 ```
 go run cmd/demo1/demo1_main.go
 go run cmd/demo2/demo2_main.go
+go run cmd/tutorial-container/container_main.go
+go run cmd/tutorial-text/text_main.go
 ```
+
+The text tutorial shows how to format text and containers including font size, color, background colors, text effects, margin, padding, etc.  The container tutorial shows some container basics, including how to align rows/columns and position dashborg elements.  Feel free to edit the tutorials and re-run them.  When you run them again your panel will automatically change to reflect the new code.
 
 Demo1 shows how to setup a simple panel with a button and log.  The button triggers some backend code and drives a progess control.
 
 Demo2 shows how to setup a simple webapp that manages a set of fake customer accounts.  It uses handlers, requests, and ephemeral contexts.  When you enter the demo2 panel, click on "refresh" to show the initial account list.
+
+## More
+
+Feel free to contact me with any questions on Slack (see invite link above), on github (sawka), or by email: mike (at) dashborg.net.  This project is under active development and the API will change as I add new controls/functionality.
