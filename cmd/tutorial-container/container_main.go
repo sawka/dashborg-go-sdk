@@ -7,7 +7,7 @@ func main() {
 	defer dash.StartProcClient(config).WaitForClear()
 	pw := dash.DefinePanel("container")
 	pw.Print("[@h1] Container Tutorial")
-	pw.Print("<div>[col:natural @maxwidth=700px @bgcolor=#eee @padding=10px @radius=5px]")
+	pw.Print("<div>[col:natural @maxwidth=700px @bgcolor=#e2e7ea @padding=10px @radius=5px]")
 	pw.Print("Dashborg layout is based on the CSS FlexBox model.")
 	pw.Print("<link/>[@href='https://css-tricks.com/snippets/css/a-guide-to-flexbox/'] https://css-tricks.com/snippets/css/a-guide-to-flexbox/")
 	pw.Print("The attributes which control containers in Dashborg are @jc/@justifycontent, @alignitems, @aligncontent, @center, @xcenter, @wrap, @margin(top/bottom/right/left), @padding(top/bottom/right/left), @border(top/bottom/right/left), @width/@minwidth/@maxwidth, @height/@minheight/@maxheight, @radius, @scroll, @overflow(x/y), @grow, @shrink, @row, and @col.  These generally correspond directly to their CSS equivalents.")
@@ -32,7 +32,7 @@ func main() {
 	// showing a row with extra padding and showing alignment properties
 	// @jc=center (justify-content) will center elements, can also be done using @center
 	pw.Print("[@bold] Aligning items vertically.")
-	pw.Print("<div>[row @height=100px @bgcolor=#eef @jc=center @shrink=0]")
+	pw.Print("<div>[row @height=100px @bgcolor=#96ADC8 @jc=center @shrink=0 @padding=5px]")
 	pw.Print("<button/>[@uiprimary @notrackactive @paddingtop=10px] Button #1")
 	pw.Print("<button/>[@notrackactive @alignself=flex-end] Button #2")
 	pw.Print("<button/>[@notrackactive @alignself=flex-start] Button With Long Name")
@@ -41,20 +41,20 @@ func main() {
 
 	// a row creates a 16-element pseudo grid.  using the classes "s1".."s16" you can size items.
 	pw.Print("[@bold] A row creates a 16-element pseudo-grid.")
-	pw.Print("<div>[row @height=50px @bgcolor=#eef @paddingtop=5px @paddingbottom=5px @shrink=0]")
-	pw.Print("[s2 @bgcolor=#a77 @fullcenter] S2")
-	pw.Print("[s1 @bgcolor=#1890ff @color=white @fullcenter] S1")
-	pw.Print("[s1 @bgcolor=#1890ff @color=white @fullcenter] S1")
-	pw.Print("[s7 @bgcolor=#ccc @fullcenter] S7")
-	pw.Print("[s7 @bgcolor=#a77 @fullcenter] S5")
+	pw.Print("<div>[row @height=50px @bgcolor=#96ADC8 @paddingtop=5px @paddingbottom=5px @shrink=0]")
+	pw.Print("[s2 @bgcolor=#DB7F8E @fullcenter] S2")
+	pw.Print("[s1 @bgcolor=#2C4251 @color=white @fullcenter] S1")
+	pw.Print("[s1 @bgcolor=#2C4251 @color=white @fullcenter] S1")
+	pw.Print("[s7 @bgcolor=#D2D7DA @fullcenter] S7")
+	pw.Print("[s7 @bgcolor=#DB7F8E @fullcenter] S5")
 	pw.Print("</div>")
 
 	// space evenly
 	pw.Print("[@bold] @jc=space-evenly")
-	pw.Print("<div>[row @height=50px @bgcolor=#eef @paddingtop=5px @paddingbottom=5px @jc=space-evenly @shrink=0]")
-	pw.Print("[s1 @bgcolor=#1890ff @color=white @fullcenter] S1")
-	pw.Print("[s1 @bgcolor=#1890ff @color=white @fullcenter] S1")
-	pw.Print("[s1 @bgcolor=#1890ff @color=white @fullcenter] S1")
+	pw.Print("<div>[row @height=50px @bgcolor=#96ADC8 @paddingtop=5px @paddingbottom=5px @jc=space-evenly @shrink=0]")
+	pw.Print("[s1 @bgcolor=#2C4251 @color=white @fullcenter] S1")
+	pw.Print("[s1 @bgcolor=#2C4251 @color=white @fullcenter] S1")
+	pw.Print("[s1 @bgcolor=#2C4251 @color=white @fullcenter] S1")
 	pw.Print("</div>")
 
 	pw.Print("[@h2 @margintop=20px] Columns")
@@ -78,10 +78,10 @@ func main() {
 
 	pw.Print("<div>[s3:col @borderright='1px solid black' @paddingright=10px @paddingleft=10px]")
 	pw.Print("[s1 @bold] 16-Elem Pseudo Grid (S1)")
-	pw.Print("[s2 @bgcolor=#ddaaaa @fullcenter] S2")
-	pw.Print("[s4 @bgcolor=#ccc @fullcenter] S4")
-	pw.Print("[s6 @bgcolor=#1890ff @color=white @fullcenter] S6")
-	pw.Print("[s3 @bgcolor=#000 @color=white @fullcenter] S3")
+	pw.Print("[s2 @bgcolor=#DB7F8E @fullcenter] S2")
+	pw.Print("[s4 @bgcolor=#D2D7DA @fullcenter] S4")
+	pw.Print("[s6 @bgcolor=#2C4251 @color=white @fullcenter] S6")
+	pw.Print("[s3 @bgcolor=#7EBC89 @color=white @fullcenter] S3")
 	pw.Print("</div>")
 
 	pw.Print("<div>[s2:col @borderright='1px solid black' @paddingright=10px @jc=space-evenly]")
