@@ -17,7 +17,7 @@ Questions? [Join the Dashborg Slack!](https://join.slack.com/t/dashborgworkspace
 
 ## Getting Started
 
-To get started,, you'll need three things:
+To get started, you'll need three things:
 
 * Go development environment
 * Chrome web browser
