@@ -175,6 +175,29 @@ func (c *Control) LogText(fmtStr string, data ...interface{}) {
 	Client.SendMessage(m)
 }
 
+func (c *Control) LogTextEcho(fmtStr string, data ...interface{}) {
+	if c.ControlType != "log" || !c.IsValid() {
+		log.Printf("Cannot call LogText on invalid log control")
+		return
+	}
+	text := fmt.Sprintf(fmtStr, data...)
+	log.Printf(fmtStr, data...)
+	ts := Ts()
+	entry := transport.LogEntry{
+		Ts:        ts,
+		ProcRunId: Client.GetProcRunId(),
+		Text:      text,
+	}
+	m := transport.ControlAppendMessage{
+		MType:      "controlappend",
+		Ts:         ts,
+		PanelName:  c.PanelName,
+		ControlLoc: c.ControlLoc,
+		Data:       entry,
+	}
+	Client.SendMessage(m)
+}
+
 func (c *Control) LogControl(text string, args ...BuilderArg) *Control {
 	if c.ControlType != "log" || !c.IsValid() {
 		log.Printf("Cannot call LogControl on invalid log control")

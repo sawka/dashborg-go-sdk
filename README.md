@@ -1,6 +1,6 @@
 # Dashborg Go SDK
 
-Dashborg was built to make connecting your code to the web as simple as writing to the console, reading/writing files, and reading command line arguments.  http://dashborg.net
+Dashborg was built to make connecting your code to the web as simple as writing to the console, reading/writing files, and reading command line arguments.  http://dashborg.net.
 
 Live link to SDK demos:
 https://console.dashborg.net/acc/421d595f-9e30-4178-bcc3-b853f890fb8e/default/demo1
@@ -9,6 +9,7 @@ https://console.dashborg.net/acc/421d595f-9e30-4178-bcc3-b853f890fb8e/default/de
 
 The public API for dashborg is in the **github.com/sawka/dashborg-go-sdk/pkg/dash** package.  Utility functions are provided in **github.com/sawka/dashborg-go-sdk/pkg/dashutil**.  The other packages are internal and not intended to be directly imported into client code.
 
+* Tutorials: https://docs.dashborg.net/tutorials/t1/
 * GoDoc (godoc.org): https://godoc.org/github.com/sawka/dashborg-go-sdk/pkg/dash
 * GoDoc (pkg.go.dev): https://pkg.go.dev/github.com/sawka/dashborg-go-sdk/pkg/dash
 * Docs: https://docs.dashborg.net/docs/getting-started/
