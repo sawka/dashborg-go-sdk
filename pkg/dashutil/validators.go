@@ -11,7 +11,8 @@ const (
 	EMAIL_MAX       = 80
 	PASSWORD_MAX    = 80
 	MIMETYPE_MAX    = 80
-	SHA256_LEN      = 64
+	SHA256_HEX_LEN  = 64
+	SHA256_B64_LEN  = 44
 	UUID_LEN        = 36
 	HANDLERPATH_MAX = 100
 )
@@ -91,11 +92,18 @@ func IsPublicKeyValid(publicKey string) bool {
 	return BASE64_RE.MatchString(publicKey)
 }
 
-func IsSha256HashValid(s string) bool {
-	if len(s) != SHA256_LEN {
+func IsSha256HexHashValid(s string) bool {
+	if len(s) != SHA256_HEX_LEN {
 		return false
 	}
 	return HEX_RE.MatchString(s)
+}
+
+func IsSha256Base64HashValid(s string) bool {
+	if len(s) != SHA256_B64_LEN {
+		return false
+	}
+	return BASE64_RE.MatchString(s)
 }
 
 func IsMimeTypeValid(s string) bool {
