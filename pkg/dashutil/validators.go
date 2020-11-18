@@ -15,6 +15,7 @@ const (
 	SHA256_B64_LEN  = 44
 	UUID_LEN        = 36
 	HANDLERPATH_MAX = 100
+	DATAPATH_MAX    = 200
 )
 
 var (

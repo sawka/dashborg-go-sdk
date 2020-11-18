@@ -1,8 +1,8 @@
 # Dashborg Go SDK
 
-Dashborg was built to simply connect your backend code -- small scripts or large systems -- to a web UI, without
-all the pain of coding/configuring/hosting a frontend web stack.  You can create and interact with a web dashboard,
-all within your Go code, without messing with JavaScript, Babel, Webpack, and React.  http://dashborg.net
+Dashborg was built to be the simplest way to create web-based internal tools from backend code.  Cut out the overhead of configuring and hosting a web stack, and stop wrestling with JavaScript, AJAX, and UI libraries.  Get started with 5 minutes and 5 lines of code.
+
+http://dashborg.net
 
 Live link to SDK demos:
 https://console.dashborg.net/acc/421d595f-9e30-4178-bcc3-b853f890fb8e/default/demo1

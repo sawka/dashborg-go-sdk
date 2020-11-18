@@ -281,6 +281,36 @@ func (c *Control) ElemBuilder() *EmbedControlWriter {
 	return makeEmbedControlWriter(c)
 }
 
+func (c *Control) OnContextRequest(handlerFn func(*ContextWriter, *PanelRequest) error) {
+	if c.ControlType != "context" || !c.IsValid() {
+		log.Printf("Invalid context control for OnContextRequest")
+		return
+	}
+	runFn := func(v interface{}) (interface{}, error) {
+		var preqData transport.PanelRequestData
+		err := mapstructure.Decode(v, &preqData)
+		if err != nil {
+			return nil, fmt.Errorf("Cannot decode PanelRequestData err:%w", err)
+		}
+		req := &PanelRequest{
+			ZoneName:    Client.Config.ZoneName,
+			PanelName:   c.PanelName,
+			FeClientId:  preqData.FeClientId,
+			ReqId:       uuid.New().String(),
+			HandlerPath: preqData.HandlerPath,
+			Data:        preqData.Data,
+			Depth:       preqData.Depth,
+		}
+		cw := makeContextWriter(c, req)
+		err = handlerFn(cw, req)
+		if err != nil {
+			return nil, err
+		}
+		return true, nil
+	}
+	c.registerPushFn(runFn, false)
+}
+
 func (c *Control) OnDataTableRequest(handlerFn func(*DataTableRequest) (data []map[string]interface{}, pinfo *PagingInfo, err error)) {
 	if c.ControlType != "datatable" || !c.IsValid() {
 		log.Printf("Invalid datatable control for OnDataTableRequest")

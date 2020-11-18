@@ -58,15 +58,18 @@ func init() {
 	CMeta["image"] = makeCTM("inline embed control hasdata")
 	CMeta["log"] = makeCTM("rowdata control hasdata active subctl")
 	CMeta["button"] = makeCTM("inline embed control active sub-1")
-	CMeta["context"] = makeCTM("control sub-* eph")
+	CMeta["context"] = makeCTM("control active sub-* eph")
 	CMeta["progress"] = makeCTM("inline embed control active hasdata")
 	CMeta["handler"] = makeCTM("control active")
 	CMeta["input"] = makeCTM("inline embed control")
 	CMeta["inputselect"] = makeCTM("inline embed control rowdata sub-*")
 	CMeta["option"] = makeCTM("embed sub-T")
 	CMeta["table"] = makeCTM("embed control hasdata rowdata subctl sub-*")
+	CMeta["datalist"] = makeCTM("embed control subctl sub-*")
 	CMeta["th"] = makeCTM("sub-*")
 	CMeta["tdformat"] = makeCTM("sub-*")
+	CMeta["dataview"] = makeCTM("")
+	CMeta["html"] = makeCTM("inline embed sub-T")
 
 	CMeta["context"].AllowedSubTypes = map[string]bool{"context": true, "modal": true}
 	CMeta["dyn"].AllowedSubTypes = map[string]bool{"text": true}
@@ -226,10 +229,7 @@ type PanelRequest struct {
 	HandlerPath string
 }
 
-func (req *PanelRequest) LookupContext(name string) *ContextWriter {
-	rtn := &ContextWriter{}
-	p, _ := LookupPanel(req.PanelName) // TODO maybe PanelRequest should return context names?
-	ctx := p.LookupControl("context", name)
+func makeContextWriter(ctx *Control, req *PanelRequest) *ContextWriter {
 	var locId string
 	if ctx.IsValid() {
 		cloc, err := dashutil.ParseControlLocator(ctx.ControlLoc)
@@ -243,6 +243,7 @@ func (req *PanelRequest) LookupContext(name string) *ContextWriter {
 		log.Printf("Invalid context in PanelRequest.LookupContext")
 		locId = ""
 	}
+	rtn := &ContextWriter{}
 	rtn.ElemBuilder = MakeElemBuilder(req.PanelName, locId, 0)
 	rtn.FeClientId = req.FeClientId
 	rtn.ReqId = req.ReqId
@@ -250,8 +251,33 @@ func (req *PanelRequest) LookupContext(name string) *ContextWriter {
 	return rtn
 }
 
+func (req *PanelRequest) LookupContext(name string) *ContextWriter {
+	p, _ := LookupPanel(req.PanelName) // TODO maybe PanelRequest should return context names?
+	ctx := p.LookupControl("context", name)
+	return makeContextWriter(ctx, req)
+}
+
 func (req *PanelRequest) DecodeData(out interface{}) error {
 	err := mapstructure.Decode(req.Data, out)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (req *PanelRequest) DecodeDataPath(path string, out interface{}) error {
+	if req.Data == nil {
+		return fmt.Errorf("PanelRequest data is nil")
+	}
+	dataMap, ok := req.Data.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("PanelRequest data is not a map")
+	}
+	dataVal, ok := dataMap[path]
+	if !ok {
+		return fmt.Errorf("PanelRequest does not have a value for path:%s", path)
+	}
+	err := mapstructure.Decode(dataVal, out)
 	if err != nil {
 		return err
 	}
@@ -590,6 +616,17 @@ func LookupPanel(panelName string) (*Panel, error) {
 	return p, err
 }
 
+func (p *Panel) SetData(path string, data interface{}) {
+	msg := transport.SetPanelDataMessage{
+		MType:     "setpaneldata",
+		Ts:        Ts(),
+		PanelName: p.PanelName,
+		Path:      path,
+		Data:      data,
+	}
+	Client.SendMessage(msg)
+}
+
 func panelLink(accId string, zoneName string, panelName string) string {
 	panelLinkStr := ""
 	if panelName != "" {
@@ -704,6 +741,7 @@ func UploadBlob(mimeType string, r io.ReaderAt) (string, error) {
 	}
 	checkBlobMsg := transport.CheckBlobMessage{
 		MType:    "checkblob",
+		Ts:       Ts(),
 		BlobHash: hashVal,
 	}
 	checkRtn, err := Client.SendMessageWait(checkBlobMsg)

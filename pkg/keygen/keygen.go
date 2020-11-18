@@ -101,7 +101,7 @@ func CreateCertificate(certFileName string, privateKey *ecdsa.PrivateKey, accId 
 	defer certFile.Close()
 	err = pem.Encode(certFile, &pem.Block{Type: "CERTIFICATE", Bytes: certBytes})
 	if err != nil {
-		return fmt.Errorf("Error writing CERTIFICATE pem block err:w", err)
+		return fmt.Errorf("Error writing CERTIFICATE pem block err:%w", err)
 	}
 	return nil
 }

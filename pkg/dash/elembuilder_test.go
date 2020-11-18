@@ -19,7 +19,7 @@ func mustList(e *Elem, pos int) *Elem {
 }
 
 func TestSimple(t *testing.T) {
-	b := MakeElemBuilder("/panel/default/default")
+	b := MakeElemBuilder("default", "/panel/default/default", 0)
 	b.Print("$x = y")
 	if b.Vars["x"] != "y" {
 		t.Errorf("var not set correctly in builder")
@@ -57,7 +57,7 @@ func TestSimple(t *testing.T) {
 		t.Errorf("div was not popped correctly")
 	}
 
-	b = MakeElemBuilder("/panel/default/default")
+	b = MakeElemBuilder("default", "/panel/default/default", 0)
 	p = b.Print("<progress/>", Attr("progressmax", "10"))
 	elem := b.DoneElem()
 	if elem == nil || len(elem.List) != 1 {
@@ -71,7 +71,7 @@ func TestSimple(t *testing.T) {
 		}
 	}
 
-	b = MakeElemBuilder("/panel/default/default")
+	b = MakeElemBuilder("default", "/panel/default/default", 0)
 	b.Print("<link/>[@test=\"hello ${name:%v}\"] Account #${AccId:%s}", Var("AccId", "187"), Var("name", "mike"))
 	wrapElem := b.DoneElem()
 	linkElem := mustList(wrapElem, 0)
@@ -92,7 +92,7 @@ func TestSimple(t *testing.T) {
 		t.Errorf("bad var interpoliation in attr")
 	}
 
-	b = MakeElemBuilder("/panel/default/default")
+	b = MakeElemBuilder("default", "/panel/default/default", 0)
 	b.Print("*[@paddingtop=5px] [@bold @width=120px] Acc ID || ${accId:%s}", Var("accId", "187"))
 	elem = b.DoneElem()
 	if elem == nil || len(elem.List) != 2 {

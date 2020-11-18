@@ -84,6 +84,7 @@ type ResetTsData struct {
 // checkblob
 type CheckBlobMessage struct {
 	MType    string `json:"mtype"`
+	Ts       int64  `json:"ts"`
 	BlobHash string `json:"blobhash"`
 }
 
@@ -116,6 +117,15 @@ type ControlAppendMessage struct {
 	ControlLoc string      `json:"controlloc"`
 	ExpSec     int64       `json:"expsec,omitempty"` // seconds to expire data
 	Data       interface{} `json:"data"`
+}
+
+// setpaneldata
+type SetPanelDataMessage struct {
+	MType     string      `json:"mtype"`
+	Ts        int64       `json:"ts"`
+	PanelName string      `json:"panelname"`
+	Path      string      `json:"path"`
+	Data      interface{} `json:"data"`
 }
 
 // "activecontrols"
