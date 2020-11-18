@@ -301,6 +301,7 @@ func (c *Control) OnContextRequest(handlerFn func(*ContextWriter, *PanelRequest)
 			Data:        preqData.Data,
 			Depth:       preqData.Depth,
 		}
+		req.Panel, _ = LookupPanel(c.PanelName)
 		cw := makeContextWriter(c, req)
 		err = handlerFn(cw, req)
 		if err != nil {
@@ -365,6 +366,7 @@ func (c *Control) HandlerOnAllRequests(fn func(req *PanelRequest) (bool, error))
 			Data:        preqData.Data,
 			Depth:       preqData.Depth,
 		}
+		req.Panel, _ = LookupPanel(c.PanelName)
 		ok, err := fn(req)
 		if err != nil {
 			return nil, err

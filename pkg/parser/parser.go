@@ -3,6 +3,7 @@ package parser
 import (
 	"bytes"
 	"fmt"
+	"reflect"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -314,6 +315,37 @@ func (ctx *ParseContext) varexpr() (string, bool) {
 		return "", false
 	}
 	varVal := ctx.VarFn(varName)
+	if formatSpec == "%B" {
+		var boolVal bool
+		switch v := varVal.(type) {
+		case bool:
+			boolVal = v
+
+		case string:
+			if v != "" {
+				boolVal = true
+			}
+
+		case int, int8, int16, int32, int64:
+			if reflect.ValueOf(v).Int() != 0 {
+				boolVal = true
+			}
+
+		case uint, uint8, uint16, uint32, uint64:
+			if reflect.ValueOf(v).Uint() != 0 {
+				boolVal = true
+			}
+
+		case float32, float64:
+			if reflect.ValueOf(v).Float() != 0 {
+				boolVal = true
+			}
+		}
+		if boolVal {
+			return "1", true
+		}
+		return "", true
+	}
 	str := fmt.Sprintf(formatSpec, varVal)
 	return str, true
 }

@@ -4,6 +4,7 @@ package dash
 import (
 	"bufio"
 	"crypto/md5"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -220,6 +221,7 @@ type PagingInfo struct {
 }
 
 type PanelRequest struct {
+	Panel       *Panel
 	ZoneName    string
 	PanelName   string
 	FeClientId  string
@@ -284,6 +286,24 @@ func (req *PanelRequest) DecodeDataPath(path string, out interface{}) error {
 	return nil
 }
 
+func triggerContext(controlId string, req *transport.PanelRequestData) {
+	if req.Depth > 5 {
+		log.Printf("Dashborg Cannot trigger requests more than 5 levels deep\n")
+		return
+	}
+	if controlId == "" || controlId == dashutil.INVALID_CLOC {
+		log.Printf("Dashborg invalid controlId passed to triggerContext\n")
+		return
+	}
+	go func() {
+		Client.handlePush(bufsrv.PushType{
+			PushCtx:     Client.GetProcRunId(),
+			PushRecvId:  controlId,
+			PushPayload: req,
+		})
+	}()
+}
+
 func triggerRequest(req *transport.PanelRequestData) {
 	if req.Depth > 5 {
 		log.Printf("Dashborg Cannot trigger requests more than 5 levels deep\n")
@@ -295,9 +315,8 @@ func triggerRequest(req *transport.PanelRequestData) {
 		return
 	}
 	panel, _ := LookupPanel(req.PanelName)
-	// TODO don't activate this control
-	handlerControl := panel.LookupControl("handler", handlerMatch[1])
-	if !handlerControl.IsValid() {
+	handlerControl := panel.controlByName(handlerMatch[1])
+	if handlerControl == nil || handlerControl.ControlType != "handler" || !handlerControl.IsValid() {
 		log.Printf("Dashborg, cannot find handler control for %s\n", handlerMatch[1])
 		return
 	}
@@ -349,16 +368,56 @@ func (req *DataTableRequest) ElemBuilder() *ElemBuilder {
 	return rtn
 }
 
-func (req *PanelRequest) TriggerRequest(handlerPath string, data interface{}) {
+func marshalUnmarshal(data interface{}) (interface{}, error) {
+	barr, err := json.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+	var jsonVal interface{}
+	err = json.Unmarshal(barr, &jsonVal)
+	if err != nil {
+		return nil, err
+	}
+	return jsonVal, nil
+}
+
+func (req *PanelRequest) TriggerRequest(handlerPath string, data interface{}) error {
+	jsonVal, err := marshalUnmarshal(data)
+	if err != nil {
+		return err
+	}
 	reqData := &transport.PanelRequestData{
 		FeClientId:  req.FeClientId,
 		ZoneName:    req.ZoneName,
 		PanelName:   req.PanelName,
 		HandlerPath: handlerPath,
-		Data:        data,
+		Data:        jsonVal,
 		Depth:       req.Depth + 1,
 	}
 	triggerRequest(reqData)
+	return nil
+}
+
+func (req *PanelRequest) TriggerContext(contextName string, data interface{}) error {
+	c := req.Panel.controlByName(contextName)
+	if c == nil || c.ControlType != "context" || !c.IsValid() {
+		log.Printf("Invalid context control name:%s, cannot call Trigger", contextName)
+		return fmt.Errorf("Invalid context control name:%s, cannot call Trigger", contextName)
+	}
+	jsonVal, err := marshalUnmarshal(data)
+	if err != nil {
+		return err
+	}
+	reqData := &transport.PanelRequestData{
+		FeClientId:  req.FeClientId,
+		ZoneName:    req.ZoneName,
+		PanelName:   req.PanelName,
+		HandlerPath: "",
+		Data:        jsonVal,
+		Depth:       req.Depth + 1,
+	}
+	triggerContext(c.GetControlId(), reqData)
+	return nil
 }
 
 type EmbedControlWriter struct {
@@ -678,7 +737,7 @@ func (p *Panel) RefreshControlMappings() error {
 }
 
 func (p *Panel) LookupControl(controlType string, controlName string) *Control {
-	c := p.ControlMappings[controlName]
+	c := p.controlByName(controlName)
 	if c == nil {
 		log.Printf("Dashborg, LookupControl cannot find control type:%s name:%s in panel:%s\n", controlType, controlName, p.PanelName)
 		return &Control{ControlType: "invalid"}
@@ -687,11 +746,21 @@ func (p *Panel) LookupControl(controlType string, controlName string) *Control {
 		log.Printf("Dashborg, LookupControl control type does not match name:%s panel:%s expected-type:%s found-type:%s\n", controlName, p.PanelName, controlType, c.ControlType)
 		return &Control{ControlType: "invalid"}
 	}
-	rtn := &Control{PanelName: p.PanelName, ControlType: c.ControlType, ControlLoc: c.ControlLoc}
-	if rtn.GetMeta().TrackActive {
-		rtn.ClientId = uuid.New().String()
-		Client.TrackActive(rtn.ControlType, rtn.ControlLoc, rtn.ClientId)
+	if c.GetMeta().TrackActive {
+		c.ClientId = uuid.New().String()
+		Client.TrackActive(c.ControlType, c.ControlLoc, c.ClientId)
 	}
+	return c
+}
+
+// does not activate, and does not check control type
+// can return nil
+func (p *Panel) controlByName(controlName string) *Control {
+	c := p.ControlMappings[controlName]
+	if c == nil {
+		return nil
+	}
+	rtn := &Control{PanelName: p.PanelName, ControlType: c.ControlType, ControlLoc: c.ControlLoc}
 	return rtn
 }
 

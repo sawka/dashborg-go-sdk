@@ -1,20 +1,22 @@
 <div>[col @padding=10px]
-  <context:modal "modal"/>
+  <context:modal modal/>
   <handler "/acc"/>
   <handler "/panel"/>
   [@h1] Demo 2
   <div>[row]
-    <button "btn-refresh"/>[s2 @block @handler=/acc/refresh-accounts-revertdetail] Refresh Accounts
-    <button "btn-create-account"/>[s2 @block @handler=/acc/show-create-account] Create Account
+    <button "btn-refresh"/>[s2 @block @trigger=ctx-acclist,ctx-accdetail] Refresh Accounts
+    <button "btn-create-account"/>[s2 @block @trigger=modal] Create Account
     <button "btn-stop"/>[s2 @block] Stop
     [@grow]
     <button "btn-regen"/>[s3 @block @handler=/acc/regen-acclist] Regenerate Test Accounts
   </div>
   <div>[row @grow]
-    <div>[col:s3 @bgcolor="#eee"]
-      <context "ctx-acclist"/>
+    <div>[col:s3 @bgcolor="#eee" @padding=10px]
+      [@h3] Accounts
+      <context "ctx-acclist"/>[@onloadtrigger]
     </div>
-    <div>[col @grow @bgcolor="#eee"]
+    <div>[col @grow @bgcolor="#eee" @padding=10px]
+      [@h3] Account Detail
       <context "ctx-accdetail"/>
     </div>
   </div>

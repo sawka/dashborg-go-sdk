@@ -20,8 +20,7 @@ var SuffixStrs = []string{"LLC", "Inc", "Corp", "Corp", "Ltd", "", "", "", "", "
 var ModWordStrs = []string{"Star", "Lightning", "Flash", "Media", "Data", "Micro", "Net", "Echo", "World", "Red", "Blue", "Green", "Yellow", "Purple", "Tele", "Cloud", "Insta", "Face"}
 var EmailStrs = []string{"mike", "matt", "michelle", "pat", "jim", "marc", "andrew", "alan"}
 
-var AccLock = &sync.Mutex{}
-var AllAccs []*AccType
+var Model *AccModel
 
 type AccType struct {
 	AccId   string
@@ -30,19 +29,91 @@ type AccType struct {
 	Email   string
 }
 
-func RandomWord(list []string) string {
-	return list[rand.Int31n(int32(len(list)))]
+type AccModel struct {
+	Lock *sync.Mutex
+	Accs []*AccType
 }
 
-func AccById(id string) *AccType {
-	AccLock.Lock()
-	defer AccLock.Unlock()
-	for _, acc := range AllAccs {
+func MakeAccModel() *AccModel {
+	rtn := &AccModel{Lock: &sync.Mutex{}}
+	rtn.RegenAccounts()
+	return rtn
+}
+
+func (m *AccModel) AccById(id string) *AccType {
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
+	return m.accByIdNoLock(id)
+}
+
+func (m *AccModel) accByIdNoLock(id string) *AccType {
+	for _, acc := range m.Accs {
 		if acc.AccId == id {
 			return acc
 		}
 	}
 	return nil
+}
+
+func (m *AccModel) CreateAcc(name string, email string) string {
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
+	accId := uuid.New().String()
+	m.Accs = append(m.Accs, &AccType{AccId: accId, AccName: name, Email: email})
+	return accId
+}
+
+func (m *AccModel) RemoveAcc(id string) bool {
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
+
+	pos := -1
+	for idx, acc := range m.Accs {
+		if acc.AccId == id {
+			pos = idx
+			break
+		}
+	}
+	if pos == -1 {
+		return false
+	}
+	m.Accs = append(m.Accs[:pos], m.Accs[pos+1:]...)
+	return true
+}
+
+func (m *AccModel) Upgrade(id string) bool {
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
+	acc := m.accByIdNoLock(id)
+	if acc == nil {
+		return false
+	}
+	acc.IsPaid = true
+	return true
+}
+
+func (m *AccModel) Downgrade(id string) bool {
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
+	acc := m.accByIdNoLock(id)
+	if acc == nil {
+		return false
+	}
+	acc.IsPaid = false
+	return true
+}
+
+func (m *AccModel) RegenAccounts() {
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
+	m.Accs = nil
+	for i := 0; i < 5; i++ {
+		m.Accs = append(m.Accs, MakeRandomAcc())
+	}
+}
+
+func RandomWord(list []string) string {
+	return list[rand.Int31n(int32(len(list)))]
 }
 
 func MakeRandomAcc() *AccType {
@@ -54,60 +125,80 @@ func MakeRandomAcc() *AccType {
 	}
 }
 
-func ShowAccDetail(accId string, req *dash.PanelRequest) {
-	panel, _ := dash.LookupPanel("demo2")
-	logger := panel.LookupControl("log", "log")
-	acc := AccById(accId)
-	ctx := req.LookupContext("ctx-accdetail")
-	defer ctx.Flush()
+func RenderAccDetail(cw *dash.ContextWriter, req *dash.PanelRequest) error {
+	logger := req.Panel.LookupControl("log", "log")
+	accId, ok := req.Data.(string)
+	logger.LogText("ShowAccDetail accId:%s", accId)
+	if !ok {
+		cw.Revert()
+		return nil
+	}
+	defer cw.Flush()
+	acc := Model.AccById(accId)
 	if acc == nil {
-		logger.LogText("Account not found :/")
-		ctx.Print("<div>[col @padding=5px @paddingleft=15px]")
-		ctx.Print("[@paddingtop=10px] Account ${accId:%s} not found.", dash.Var("accId", accId))
-		ctx.Print("<link/>[@handler=/acc/clear-detail @block] Clear")
-		ctx.Print("</div>")
-		return
+		cw.Print("<div>[col @padding=5px @paddingleft=15px]")
+		cw.Print("[@paddingtop=10px] Account ${accId:%s} not found.", dash.Var("accId", accId))
+		cw.Print("<link/>[@trigger=ctx-accdetail @block] Clear")
+		cw.Print("</div>")
+		return nil
 	}
-	ctx.Print("<div>[col @padding=10px]")
-	ctx.Print("[@h3] Account Detail")
-	ctx.Print("*[row] [s2 @bold] Acc ID || ${accId:%s}", dash.Var("accId", acc.AccId))
-	ctx.Print("*[row] [s2 @bold] Name || ${accName:%s}", dash.Var("accName", acc.AccName))
-	ctx.Print("*[row] [s2 @bold] Paid Acc || ${isPaid:%v}", dash.Var("isPaid", acc.IsPaid))
-	ctx.Print("*[row] [s2 @bold] Email || ${email:%s}", dash.Var("email", acc.Email))
-	ctx.Print("<div>[row]")
+	cw.Print("<div>[col]")
+	cw.Print("*[row] [s2 @bold] Acc ID || ${accId:%s}", dash.Var("accId", acc.AccId))
+	cw.Print("*[row] [s2 @bold] Name || ${accName:%s}", dash.Var("accName", acc.AccName))
+	cw.Print("*[row] [s2 @bold] Paid Acc || ${isPaid:%v}", dash.Var("isPaid", acc.IsPaid))
+	cw.Print("*[row] [s2 @bold] Email || ${email:%s}", dash.Var("email", acc.Email))
+	cw.Print("<div>[row]")
 	if acc.IsPaid {
-		ctx.Print("<button/>[@handler=/acc/downgrade] Downgrade", dash.JsonAttr("jsondata", acc.AccId))
+		cw.Print("<button/>[@handler=/acc/downgrade] Downgrade", dash.JsonAttr("jsondata", acc.AccId))
 	} else {
-		ctx.Print("<button/>[@handler=/acc/upgrade] Upgrade To Paid", dash.JsonAttr("jsondata", acc.AccId))
+		cw.Print("<button/>[@handler=/acc/upgrade] Upgrade To Paid", dash.JsonAttr("jsondata", acc.AccId))
 	}
-	ctx.Print("<button/>[@handler=/acc/remove] Remove Account", dash.JsonAttr("jsondata", acc.AccId))
-	ctx.Print("</div>")
-	ctx.Print("</div>")
+	cw.Print("<button/>[@handler=/acc/remove] Remove Account", dash.JsonAttr("jsondata", acc.AccId))
+	cw.Print("</div>")
+	cw.Print("</div>")
+	return nil
 }
 
-func RenderCreateAccountModal(req *dash.PanelRequest, errs map[string]string) {
+func RenderCreateAccountModal(cw *dash.ContextWriter, req *dash.PanelRequest) error {
+	var errs map[string]string
+	req.DecodeData(&errs)
 	modal := req.LookupContext("modal")
-	modal.Print("<div>[@modaltitle='Create Account' @col]")
-
-	modal.Print("<div>[@alignitems=center @width=100% @col]")
-	modal.Print("<input:text/>[@noflex @formfield=name @form=create-account @inputlabel=Name @width=100%]")
-	if errs["name"] != "" {
-		modal.Print("[@uilabel @uipointing=above @uicolor=red @uibasic @alignself=flex-start] ${nameerr:%s}", dash.Var("nameerr", errs["name"]))
-	}
-	modal.Print("</div>")
-
-	modal.Print("<div>[@alignitems=center @margintop=10px @col]")
-	modal.Print("<input:text/>[@noflex @formfield=email @form=create-account @inputlabel=Email @width=100%]")
-	if errs["email"] != "" {
-		modal.Print("[@uilabel @uipointing=above @uicolor=red @uibasic @alignself=flex-start] ${emailerr:%s}", dash.Var("emailerr", errs["email"]))
-	}
-	modal.Print("</div>")
-
-	modal.Print("<div>[@jc=center @margintop=20px]")
-	modal.Print("<button/>[@handler=/acc/create-account @dataform=create-account] Create Account")
-	modal.Print("</div>")
-	modal.Print("</div>")
+	templateStr := `
+      <div>[col @modaltitle='Create Account']
+        <div>[col @alignitems=center @width=100%]
+          <input:text/>[@noflex @formfield=name @form=create-account @inputlabel=Name @width=100%]
+          {{if .name}}[@uilabel @uipointing=above @uicolor=red @uibasic @alignself=flex-start] {{.name}}{{end}}
+        </div>
+        <div>[col @alignitems=center @margintop=10px]
+          <input:text/>[@noflex @formfield=email @form=create-account @inputlabel=Email @width=100%]
+          {{if .email}}[@uilabel @uipointing=above @uicolor=red @uibasic @alignself=flex-start] {{.email}}{{end}}
+        </div>
+        <div>[@jc=center @margintop=20px]
+          <button/>[@handler=/acc/create-account @dataform=create-account] Create Account
+        </div>
+      </div>`
+	modal.PrintTemplate(templateStr, errs)
 	modal.Flush()
+	return nil
+}
+
+func RenderAccList(cw *dash.ContextWriter, req *dash.PanelRequest) error {
+	logger := req.Panel.LookupControl("log", "log")
+	Model.Lock.Lock()
+	defer Model.Lock.Unlock()
+	logger.LogText("Refresh Accounts (ctx-request)")
+	cw.Print("<div>[col @grow @overflowy=auto]")
+	for _, acc := range Model.Accs {
+		cw.Print("<div>[row @alignitems=center]")
+		cw.Print("<link/>[@marginleft=8px @size=16px @trigger=ctx-accdetail] ${name:%s}", dash.JsonAttr("jsondata", acc.AccId), dash.Var("name", acc.AccName))
+		if acc.IsPaid {
+			cw.Print("[@uilabel @uicolor=blue @uisize=tiny @inline @marginleft=5px] Paid")
+		}
+		cw.Print("</div>")
+	}
+	cw.Print("</div>")
+	cw.Flush()
+	return nil
 }
 
 var EmailRe = regexp.MustCompile("^[a-zA-Z0-9.-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
@@ -117,105 +208,72 @@ type CreateAccountFormData struct {
 	Email string `json:"email"`
 }
 
+func (d CreateAccountFormData) Validate() map[string]string {
+	errors := make(map[string]string)
+	if d.Name == "" {
+		errors["name"] = "Name must not be empty"
+	} else if len(d.Name) > 40 {
+		errors["name"] = "Name can only be 40 characters"
+	}
+	if d.Email == "" {
+		errors["email"] = "Email must not be empty"
+	} else if len(d.Email) > 40 {
+		errors["email"] = "Email can only be 40 characters"
+	} else if !EmailRe.MatchString(d.Email) {
+		errors["email"] = "Email format is not correct"
+	}
+	return errors
+}
+
 func Setup() {
 	panel, _ := dash.LookupPanel("demo2")
 	logger := panel.LookupControl("log", "log")
 	logger.LogText("Starting Demo2")
-	panel.OnRequest("/acc/refresh-accounts-revertdetail", func(req *dash.PanelRequest) error {
-		req.LookupContext("ctx-accdetail").Revert()
-		req.TriggerRequest("/acc/refresh-accounts", nil)
-		return nil
-	})
-	panel.OnRequest("/acc/refresh-accounts", func(req *dash.PanelRequest) error {
-		AccLock.Lock()
-		defer AccLock.Unlock()
-		logger.LogText("Refresh Accounts")
-		accList := req.LookupContext("ctx-acclist")
-		accList.Print("<div>[col @padding=10px]")
-		accList.Print("[@h3] Accounts")
-		accList.Print("<div>[col @grow @overflowy=auto]")
-		for _, acc := range AllAccs {
-			accList.Print("<div>[row @alignitems=center]")
-			accList.Print("<link/>[@marginleft=8px @size=16px @handler=/acc/select-account] ${name:%s}", dash.JsonAttr("jsondata", acc.AccId), dash.Var("name", acc.AccName))
-			if acc.IsPaid {
-				accList.Print("[@uilabel @uicolor=blue @uisize=tiny @inline @marginleft=5px] Paid")
-			}
-			accList.Print("</div>")
-		}
-		accList.Print("</div>")
-		accList.Print("</div>")
-		accList.Flush()
-		return nil
-	})
-	panel.OnRequest("/acc/select-account", func(req *dash.PanelRequest) error {
-		accId := req.Data.(string)
-		logger.LogText("Select Account id:%s", accId)
-		ShowAccDetail(accId, req)
-		return nil
-	})
-	panel.OnRequest("/acc/clear-detail", func(req *dash.PanelRequest) error {
-		ctx := req.LookupContext("ctx-accdetail")
-		ctx.Revert()
-		return nil
-	})
+
+	panel.LookupControl("context", "ctx-acclist").OnContextRequest(RenderAccList)
+	panel.LookupControl("context", "ctx-accdetail").OnContextRequest(RenderAccDetail)
+	panel.LookupControl("context", "modal").OnContextRequest(RenderCreateAccountModal)
+
 	panel.OnRequest("/acc/upgrade", func(req *dash.PanelRequest) error {
 		accId := req.Data.(string)
-		acc := AccById(accId)
-		if acc == nil {
+		ok := Model.Upgrade(accId)
+		if !ok {
 			logger.LogText("Account not found id:%s", accId)
 			return nil
 		}
 		logger.LogText("Upgrade Account id:%s", accId)
-		acc.IsPaid = true
-		ShowAccDetail(accId, req)
-		req.TriggerRequest("/acc/refresh-accounts", nil)
+		req.TriggerContext("ctx-acclist", nil)
+		req.TriggerContext("ctx-accdetail", accId)
 		return nil
 	})
 	panel.OnRequest("/acc/downgrade", func(req *dash.PanelRequest) error {
 		accId := req.Data.(string)
-		acc := AccById(accId)
-		if acc == nil {
+		ok := Model.Downgrade(accId)
+		if !ok {
 			logger.LogText("Account not found id:%s", accId)
 			return nil
 		}
 		logger.LogText("Downgrade Account id:%s", accId)
-		acc.IsPaid = false
-		ShowAccDetail(accId, req)
-		req.TriggerRequest("/acc/refresh-accounts", nil)
+		req.TriggerContext("ctx-acclist", nil)
+		req.TriggerContext("ctx-accdetail", accId)
 		return nil
 	})
 	panel.OnRequest("/acc/remove", func(req *dash.PanelRequest) error {
 		accId := req.Data.(string)
-		AccLock.Lock()
-		defer AccLock.Unlock()
-		pos := -1
-		for idx, acc := range AllAccs {
-			if acc.AccId == accId {
-				pos = idx
-				break
-			}
-		}
-		if pos == -1 {
+		ok := Model.RemoveAcc(accId)
+		if !ok {
 			logger.LogText("Account not found id:%s", accId)
 			return nil
 		}
-		AllAccs = append(AllAccs[:pos], AllAccs[pos+1:]...)
-		req.TriggerRequest("/acc/refresh-accounts-revertdetail", nil)
+		req.TriggerContext("ctx-acclist", nil)
+		req.TriggerContext("ctx-accdetail", nil)
 		return nil
 	})
 	panel.OnRequest("/acc/regen-acclist", func(req *dash.PanelRequest) error {
 		logger.LogText("Regen Account List")
-		AccLock.Lock()
-		defer AccLock.Unlock()
-		AllAccs = make([]*AccType, 0)
-		for i := 0; i < 5; i++ {
-			AllAccs = append(AllAccs, MakeRandomAcc())
-		}
-		req.TriggerRequest("/acc/refresh-accounts-revertdetail", nil)
-		return nil
-	})
-	panel.OnRequest("/acc/show-create-account", func(req *dash.PanelRequest) error {
-		RenderCreateAccountModal(req, nil)
+		Model.RegenAccounts()
+		req.TriggerContext("ctx-acclist", nil)
+		req.TriggerContext("ctx-accdetail", nil)
 		return nil
 	})
 	panel.OnRequest("/acc/create-account", func(req *dash.PanelRequest) error {
@@ -226,48 +284,25 @@ func Setup() {
 			logger.LogText(fmt.Sprintf("Error decoding form data %v", err))
 			return nil
 		}
-		errors := make(map[string]string)
-		if formData.Name == "" {
-			errors["name"] = "Name must not be empty"
-		} else if len(formData.Name) > 40 {
-			errors["name"] = "Name can only be 40 characters"
-		}
-		if formData.Email == "" {
-			errors["email"] = "Email must not be empty"
-		} else if len(formData.Email) > 40 {
-			errors["email"] = "Email can only be 40 characters"
-		} else if !EmailRe.MatchString(formData.Email) {
-			errors["email"] = "Email format is not correct"
-		}
+		errors := formData.Validate()
 		if len(errors) > 0 {
-			RenderCreateAccountModal(req, errors)
+			req.TriggerContext("modal", errors)
 			return nil
 		}
-		AccLock.Lock()
-		defer AccLock.Unlock()
-		accId := uuid.New().String()
-		AllAccs = append(AllAccs, &AccType{AccId: accId, AccName: formData.Name, Email: formData.Email})
+		accId := Model.CreateAcc(formData.Name, formData.Email)
 		logger.LogText("Account created id:%s", accId)
-		req.TriggerRequest("/acc/refresh-accounts", nil)
-		req.TriggerRequest("/acc/select-account", accId)
-		modal := req.LookupContext("modal")
-		modal.Revert()
-		return nil
-	})
-	panel.OnRequest("/panel/load", func(req *dash.PanelRequest) error {
-		req.TriggerRequest("/acc/refresh-accounts-revertdetail", nil)
+		req.TriggerContext("ctx-acclist", nil)
+		req.TriggerContext("ctx-accdetail", accId)
+		req.LookupContext("modal").Revert()
 		return nil
 	})
 }
 
 func main() {
+	rand.Seed(time.Now().Unix())
+	Model = MakeAccModel()
 	cfg := &dash.Config{ProcName: "demo2", AnonAcc: true, AutoKeygen: true}
 	defer dash.StartProcClient(cfg).WaitForClear()
-
-	rand.Seed(time.Now().Unix())
-	for i := 0; i < 5; i++ {
-		AllAccs = append(AllAccs, MakeRandomAcc())
-	}
 
 	demo2Panel, err := dash.DefinePanelFromFile("demo2", "cmd/demo2/demo2-panel.txt")
 	if err != nil {

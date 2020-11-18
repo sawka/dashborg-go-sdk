@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"github.com/google/uuid"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
@@ -153,9 +154,33 @@ func (b *ElemBuilder) ReportErrors(w io.Writer) {
 	}
 }
 
+func (b *ElemBuilder) PrintMulti(text string) {
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		b.Print(line)
+	}
+}
+
+func (b *ElemBuilder) PrintTemplate(tmplStr string, data interface{}) error {
+	tmpl, err := template.New("gotemplate").Parse(tmplStr)
+	if err != nil {
+		return err
+	}
+	var buf bytes.Buffer
+	err = tmpl.Execute(&buf, data)
+	if err != nil {
+		return err
+	}
+	b.PrintMulti(buf.String())
+	return nil
+}
+
 func (b *ElemBuilder) Print(text string, args ...BuilderArg) *Control {
 	b.RawLines = append(b.RawLines, text)
 	b.LineNo++
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
 	tempVars := tempVarsFromArgs(args)
 	ctx := parser.MakeParseContext(text, b.LineNo, parser.Map2VarFn(b.Vars, tempVars))
 	edecl := ctx.ParseLine()
