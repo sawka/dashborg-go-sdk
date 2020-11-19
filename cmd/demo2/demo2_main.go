@@ -8,11 +8,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 	"github.com/sawka/dashborg-go-sdk/pkg/dash"
+	"github.com/sawka/dashborg-go-sdk/pkg/dashtmpl"
 )
 
 var FruitStrs = []string{"Apple", "Banana", "Guava", "Orange", "Blackberry", "Mango", "Kiwi", "Raspberry", "Pineapple", "Avacado", "Onion", "Lettuce", "Cheese"}
@@ -21,6 +23,7 @@ var ModWordStrs = []string{"Star", "Lightning", "Flash", "Media", "Data", "Micro
 var EmailStrs = []string{"mike", "matt", "michelle", "pat", "jim", "marc", "andrew", "alan"}
 
 var Model *AccModel
+var DBTemplates *template.Template
 
 type AccType struct {
 	AccId   string
@@ -44,6 +47,17 @@ func (m *AccModel) AccById(id string) *AccType {
 	m.Lock.Lock()
 	defer m.Lock.Unlock()
 	return m.accByIdNoLock(id)
+}
+
+func (m *AccModel) CopyAccList() []*AccType {
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
+	rtn := make([]*AccType, len(m.Accs))
+	for i := 0; i < len(m.Accs); i++ {
+		accCopy := *m.Accs[i]
+		rtn[i] = &accCopy
+	}
+	return rtn
 }
 
 func (m *AccModel) accByIdNoLock(id string) *AccType {
@@ -136,50 +150,27 @@ func RenderAccDetail(cw *dash.ContextWriter, req *dash.PanelRequest) error {
 	defer cw.Flush()
 	acc := Model.AccById(accId)
 	if acc == nil {
-		cw.Print("<div>[col @padding=5px @paddingleft=15px]")
-		cw.Print("[@paddingtop=10px] Account ${accId:%s} not found.", dash.Var("accId", accId))
-		cw.Print("<link/>[@trigger=ctx-accdetail @block] Clear")
-		cw.Print("</div>")
-		return nil
+		return dashtmpl.PrintTemplate(cw, DBTemplates, "ctx-accdetail/no-account", map[string]string{"AccId": accId})
 	}
-	cw.Print("<div>[col]")
-	cw.Print("*[row] [s2 @bold] Acc ID || ${accId:%s}", dash.Var("accId", acc.AccId))
-	cw.Print("*[row] [s2 @bold] Name || ${accName:%s}", dash.Var("accName", acc.AccName))
-	cw.Print("*[row] [s2 @bold] Paid Acc || ${isPaid:%v}", dash.Var("isPaid", acc.IsPaid))
-	cw.Print("*[row] [s2 @bold] Email || ${email:%s}", dash.Var("email", acc.Email))
-	cw.Print("<div>[row]")
-	if acc.IsPaid {
-		cw.Print("<button/>[@handler=/acc/downgrade] Downgrade", dash.JsonAttr("jsondata", acc.AccId))
-	} else {
-		cw.Print("<button/>[@handler=/acc/upgrade] Upgrade To Paid", dash.JsonAttr("jsondata", acc.AccId))
-	}
-	cw.Print("<button/>[@handler=/acc/remove] Remove Account", dash.JsonAttr("jsondata", acc.AccId))
-	cw.Print("</div>")
-	cw.Print("</div>")
-	return nil
+	return dashtmpl.PrintTemplate(cw, DBTemplates, "ctx-accdetail", acc)
 }
 
 func RenderCreateAccountModal(cw *dash.ContextWriter, req *dash.PanelRequest) error {
 	var errs map[string]string
 	req.DecodeData(&errs)
 	modal := req.LookupContext("modal")
-	templateStr := `
-      <div>[col @modaltitle='Create Account']
-        <div>[col @alignitems=center @width=100%]
-          <input:text/>[@noflex @formfield=name @form=create-account @inputlabel=Name @width=100%]
-          {{if .name}}[@uilabel @uipointing=above @uicolor=red @uibasic @alignself=flex-start] {{.name}}{{end}}
-        </div>
-        <div>[col @alignitems=center @margintop=10px]
-          <input:text/>[@noflex @formfield=email @form=create-account @inputlabel=Email @width=100%]
-          {{if .email}}[@uilabel @uipointing=above @uicolor=red @uibasic @alignself=flex-start] {{.email}}{{end}}
-        </div>
-        <div>[@jc=center @margintop=20px]
-          <button/>[@handler=/acc/create-account @dataform=create-account] Create Account
-        </div>
-      </div>`
-	modal.PrintTemplate(templateStr, errs)
+	err := dashtmpl.PrintTemplate(modal, DBTemplates, "modal", errs)
+	if err != nil {
+		return err
+	}
 	modal.Flush()
 	return nil
+}
+
+func AccListData(req *dash.PanelRequest) (interface{}, error) {
+	logger := req.Panel.LookupControl("log", "log")
+	logger.LogText("Refresh Accounts (ctx-request)")
+	return Model.CopyAccList(), nil
 }
 
 func RenderAccList(cw *dash.ContextWriter, req *dash.PanelRequest) error {
@@ -187,16 +178,10 @@ func RenderAccList(cw *dash.ContextWriter, req *dash.PanelRequest) error {
 	Model.Lock.Lock()
 	defer Model.Lock.Unlock()
 	logger.LogText("Refresh Accounts (ctx-request)")
-	cw.Print("<div>[col @grow @overflowy=auto]")
-	for _, acc := range Model.Accs {
-		cw.Print("<div>[row @alignitems=center]")
-		cw.Print("<link/>[@marginleft=8px @size=16px @trigger=ctx-accdetail] ${name:%s}", dash.JsonAttr("jsondata", acc.AccId), dash.Var("name", acc.AccName))
-		if acc.IsPaid {
-			cw.Print("[@uilabel @uicolor=blue @uisize=tiny @inline @marginleft=5px] Paid")
-		}
-		cw.Print("</div>")
+	err := dashtmpl.PrintTemplate(cw, DBTemplates, "ctx-acclist", Model.Accs)
+	if err != nil {
+		return err
 	}
-	cw.Print("</div>")
 	cw.Flush()
 	return nil
 }
@@ -230,7 +215,8 @@ func Setup() {
 	logger := panel.LookupControl("log", "log")
 	logger.LogText("Starting Demo2")
 
-	panel.LookupControl("context", "ctx-acclist").OnContextRequest(RenderAccList)
+	// panel.LookupControl("context", "ctx-acclist").OnContextRequest(RenderAccList)
+	dashtmpl.RenderContextTemplate(panel, "ctx-acclist", AccListData, DBTemplates)
 	panel.LookupControl("context", "ctx-accdetail").OnContextRequest(RenderAccDetail)
 	panel.LookupControl("context", "modal").OnContextRequest(RenderCreateAccountModal)
 
@@ -300,11 +286,17 @@ func Setup() {
 
 func main() {
 	rand.Seed(time.Now().Unix())
-	Model = MakeAccModel()
 	cfg := &dash.Config{ProcName: "demo2", AnonAcc: true, AutoKeygen: true}
 	defer dash.StartProcClient(cfg).WaitForClear()
 
-	demo2Panel, err := dash.DefinePanelFromFile("demo2", "cmd/demo2/demo2-panel.txt")
+	Model = MakeAccModel()
+	DBTemplates = dashtmpl.NewTemplate("demo2-panel")
+	_, err := DBTemplates.ParseFiles("cmd/demo2/demo2-panel.txt")
+	if err != nil {
+		fmt.Printf("Error parsing template demo2-panel.txt, err:%v\n", err)
+		return
+	}
+	demo2Panel, err := dashtmpl.DefinePanelFromTemplate("demo2", DBTemplates, "panel", nil)
 	if err != nil {
 		log.Printf("ERROR Defining Panel: %v\n", err)
 		return

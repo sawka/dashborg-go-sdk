@@ -1,3 +1,4 @@
+{{define "panel"}}
 <div>[col @padding=10px]
   <context:modal modal/>
   <handler "/acc"/>
@@ -22,3 +23,52 @@
   </div>
   <log "log"/>[logstyle @height=300px]
 </div>
+{{end}}
+    
+{{define "modal"}}
+<div>[col @modaltitle='Create Account']
+    <div>[col @alignitems=center @width=100%]
+        <input:text/>[@noflex @formfield=name @form=create-account @inputlabel=Name @width=100%]
+        {{if .name}}[@uilabel @uipointing=above @uicolor=red @uibasic @alignself=flex-start] {{.name}}{{end}}
+    </div>
+    <div>[col @alignitems=center @margintop=10px]
+        <input:text/>[@noflex @formfield=email @form=create-account @inputlabel=Email @width=100%]
+        {{if .email}}[@uilabel @uipointing=above @uicolor=red @uibasic @alignself=flex-start] {{.email}}{{end}}
+    </div>
+    <div>[@jc=center @margintop=20px]
+        <button/>[@handler=/acc/create-account @dataform=create-account] Create Account
+     </div>
+</div>
+{{end}}
+
+{{define "ctx-accdetail/no-account"}}
+<div>[col @padding=5px @paddingleft=15px]
+    [@paddingtop=10px] Account {{.AccId}} not found.
+    <link/>[@trigger=ctx-accdetail @block] Clear
+</div>
+{{end}}
+
+{{define "ctx-accdetail"}}
+<div>[col]
+    *[row] [s2 @bold] Acc ID || {{.AccId}}
+    *[row] [s2 @bold] Name || {{.AccName}}
+    *[row] [s2 @bold] Paid Acc || {{printf "%v" .IsPaid}}
+    *[row] [s2 @bold] Email || {{.Email}}
+    <div>[row]
+        {{if .IsPaid}}<button/>[@handler=/acc/downgrade @jsondata='"{{.AccId}}"'] Downgrade{{end}}
+        {{if (not .IsPaid)}}<button/>[@handler=/acc/upgrade @jsondata='"{{.AccId}}"'] Upgrade To Paid{{end}}
+        <button/>[@handler=/acc/remove @jsondata='"{{.AccId}}"'] Remove Account
+    </div>
+</div>
+{{end}}
+
+{{define "ctx-acclist"}}
+<div>[col @grow @overflowy=auto]
+    {{range .}}
+    <div>[row @alignitems=center]
+      <link/>[@marginleft=8px @size=16px @trigger=ctx-accdetail @jsondata='"{{.AccId}}"'] {{.AccName}}
+      {{if .IsPaid}}[@uilabel @uicolor=blue @uisize=tiny @inline @marginleft=5px] Paid {{end}}
+    </div>
+    {{end}}
+</div>
+{{end}}

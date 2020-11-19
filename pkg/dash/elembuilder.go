@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"text/template"
 
 	"github.com/google/uuid"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
@@ -159,20 +158,6 @@ func (b *ElemBuilder) PrintMulti(text string) {
 	for _, line := range lines {
 		b.Print(line)
 	}
-}
-
-func (b *ElemBuilder) PrintTemplate(tmplStr string, data interface{}) error {
-	tmpl, err := template.New("gotemplate").Parse(tmplStr)
-	if err != nil {
-		return err
-	}
-	var buf bytes.Buffer
-	err = tmpl.Execute(&buf, data)
-	if err != nil {
-		return err
-	}
-	b.PrintMulti(buf.String())
-	return nil
 }
 
 func (b *ElemBuilder) Print(text string, args ...BuilderArg) *Control {
@@ -407,7 +392,7 @@ func (e *Elem) writeAttrsStr(buf *bytes.Buffer) bool {
 	for _, name := range attrNames {
 		val := e.Attrs[name]
 		escVal := strings.ReplaceAll(val, "\\", "\\\\")
-		escVal = strings.ReplaceAll(val, "\"", "\\\"")
+		escVal = strings.ReplaceAll(escVal, "\"", "\\\"")
 		if attrIdx != 0 {
 			buf.WriteByte(' ')
 		}
