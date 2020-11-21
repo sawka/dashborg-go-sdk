@@ -77,6 +77,7 @@ func init() {
 	CMeta["progress"].AllowedSubTypes = map[string]bool{"bar": true, "spinner": true}
 	CMeta["input"].AllowedSubTypes = map[string]bool{
 		"text":     true,
+		"textarea": true,
 		"password": true,
 		"hidden":   true,
 		"checkbox": true,

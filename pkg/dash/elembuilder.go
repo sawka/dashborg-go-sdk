@@ -153,6 +153,10 @@ func (b *ElemBuilder) ReportErrors(w io.Writer) {
 	}
 }
 
+func (b *ElemBuilder) HasErrors() bool {
+	return len(b.Errs) > 0
+}
+
 func (b *ElemBuilder) PrintMulti(text string) {
 	lines := strings.Split(text, "\n")
 	for _, line := range lines {
