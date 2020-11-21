@@ -15,6 +15,7 @@ The public API for dashborg is in the **github.com/sawka/dashborg-go-sdk/pkg/das
 * Docs: https://docs.dashborg.net/docs/getting-started/
 * GoDoc (godoc.org): https://godoc.org/github.com/sawka/dashborg-go-sdk/pkg/dash
 * GoDoc (pkg.go.dev): https://pkg.go.dev/github.com/sawka/dashborg-go-sdk/pkg/dash
+* DML Playground: https://console.dashborg.net/acc/421d595f-9e30-4178-bcc3-b853f890fb8e/default/playground
 
 Questions? [Join the Dashborg Slack!](https://join.slack.com/t/dashborgworkspace/shared_invite/zt-iey7ebif-Nps2uXQivdFFlPz63rDb2w)
 
