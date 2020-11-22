@@ -14,7 +14,7 @@ func DmlPlayground() {
 	panel.Print("<div>[row @grow]")
 	panel.Print("  <handler /playground/>")
 	panel.Print("  <div>[col @width=700px @borderright='1px solid black' @paddingright=10px]")
-	panel.Print("    <input:textarea dmlinput/>[@block @form=f1 @formfield=text @width=100% @height=50% @fixedfont @value='[@h1] Playground Test']")
+	panel.Print("    <input:textarea dmlinput/>[@block @form=f1 @formfield=text @width=100% @height=50% @fixedfont @defaultvalue='[@h1] Playground Test']")
 	panel.Print("    <button/>[@handler=/playground/submit @dataform=f1] Submit")
 	panel.Print("    <context errors/>[col]")
 	panel.Print("  </div>")
