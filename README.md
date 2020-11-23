@@ -2,20 +2,16 @@
 
 Dashborg was built to be the simplest way to create web-based internal tools from backend code.  Cut out the overhead of configuring and hosting a web stack, and stop wrestling with JavaScript, AJAX, and UI libraries.  Get started with 5 minutes and 5 lines of code.
 
-http://dashborg.net
-
-Live link to SDK demos:
-https://console.dashborg.net/acc/421d595f-9e30-4178-bcc3-b853f890fb8e/default/demo1
-
 ## Documentation
 
-The public API for dashborg is in the **github.com/sawka/dashborg-go-sdk/pkg/dash** package.  Utility functions are provided in **github.com/sawka/dashborg-go-sdk/pkg/dashutil**.  The other packages are internal and not intended to be directly imported into client code.
-
 * Tutorials: https://docs.dashborg.net/tutorials/t1/
-* Docs: https://docs.dashborg.net/docs/getting-started/
+* Docs: https://docs.dashborg.net/
 * GoDoc (godoc.org): https://godoc.org/github.com/sawka/dashborg-go-sdk/pkg/dash
 * GoDoc (pkg.go.dev): https://pkg.go.dev/github.com/sawka/dashborg-go-sdk/pkg/dash
+* Live link to SDK Demos: https://console.dashborg.net/acc/421d595f-9e30-4178-bcc3-b853f890fb8e/default/demo1
 * DML Playground: https://console.dashborg.net/acc/421d595f-9e30-4178-bcc3-b853f890fb8e/default/playground
+
+The public API for dashborg is in the **github.com/sawka/dashborg-go-sdk/pkg/dash** package.  Utility functions are provided in **github.com/sawka/dashborg-go-sdk/pkg/dashutil**.  The other packages are internal and not intended to be directly imported into client code.
 
 Questions? [Join the Dashborg Slack!](https://join.slack.com/t/dashborgworkspace/shared_invite/zt-iey7ebif-Nps2uXQivdFFlPz63rDb2w)
 
