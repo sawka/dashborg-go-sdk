@@ -66,7 +66,8 @@ func init() {
 	CMeta["inputselect"] = makeCTM("inline embed control rowdata sub-*")
 	CMeta["option"] = makeCTM("embed sub-T")
 	CMeta["table"] = makeCTM("embed control hasdata rowdata subctl sub-*")
-	CMeta["datalist"] = makeCTM("embed control subctl sub-*")
+	CMeta["datalist"] = makeCTM("embed active control subctl sub-* eph")
+	CMeta["datatable"] = makeCTM("embed active control subctl sub-* eph")
 	CMeta["th"] = makeCTM("sub-*")
 	CMeta["tdformat"] = makeCTM("sub-*")
 	CMeta["dataview"] = makeCTM("")
@@ -195,30 +196,21 @@ func (e *Elem) Walk(visitFn func(*Elem)) {
 	}
 }
 
-type SortSpecType struct {
+type PagingInput struct {
+	Cursor  string
+	Offset  int
+	Limit   int
+	Forward bool
+}
+
+type SortSpec struct {
 	Field string
 	Asc   bool
 }
 
-type DataTableRequest struct {
-	ControlLoc  string
-	ZoneName    string
-	PanelName   string
-	FeClientId  string
-	ReqId       string
-	Data        interface{}
-	Depth       int
-	HandlerPath string
-	SortSpec    []SortSpecType
-	PageSize    int
-	PageNum     int
-	PagingData  interface{}
-}
-
-type PagingInfo struct {
-	DataComplete bool
-	TotalSize    int
-	PagingData   interface{}
+type FilterSpec struct {
+	FilterStr string
+	// field filters
 }
 
 type PanelRequest struct {
@@ -230,6 +222,9 @@ type PanelRequest struct {
 	Data        interface{}
 	Depth       int
 	HandlerPath string
+	SortSpec    []SortSpec
+	PagingInput *PagingInput
+	FilterSpec  *FilterSpec
 }
 
 func makeContextWriter(ctx *Control, req *PanelRequest) *ContextWriter {
@@ -333,40 +328,6 @@ func triggerRequest(req *transport.PanelRequestData) {
 			PushPayload: req,
 		})
 	}()
-}
-
-func (req *DataTableRequest) TriggerRequest(handlerPath string, data interface{}) {
-	reqData := &transport.PanelRequestData{
-		FeClientId:  req.FeClientId,
-		ZoneName:    req.ZoneName,
-		PanelName:   req.PanelName,
-		HandlerPath: handlerPath,
-		Data:        data,
-		Depth:       req.Depth + 1,
-	}
-	triggerRequest(reqData)
-}
-
-func (req *DataTableRequest) DecodeData(out interface{}) error {
-	err := mapstructure.Decode(req.Data, out)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (req *DataTableRequest) ElemBuilder() *ElemBuilder {
-	cloc, err := dashutil.ParseControlLocator(req.ControlLoc)
-	var rtn *ElemBuilder
-	if err != nil {
-		log.Printf("Invalid DataTableRequest.ControlLoc cloc:%s\n", req.ControlLoc)
-		rtn = MakeElemBuilder(req.PanelName, "", 0) // invalid locId produces invalid controls
-	} else {
-		locId := dashutil.MakeEphCtxLocId(req.FeClientId, cloc.ControlId, req.ReqId)
-		rtn = MakeElemBuilder(req.PanelName, locId, 0)
-	}
-	rtn.SetAllowBareControl(true)
-	return rtn
 }
 
 func marshalUnmarshal(data interface{}) (interface{}, error) {
@@ -518,7 +479,7 @@ func (req *PanelRequest) SendFile(fileName string, mimeType string, fd io.Reader
 }
 
 func (w *ContextWriter) Flush() {
-	if !w.ContextControl.IsValid() {
+	if !w.ContextControl.IsValid() || !w.ContextControl.GetMeta().HasEph {
 		log.Printf("Dashborg attempt to Flush() an invalid ContextControl\n")
 		return
 	}

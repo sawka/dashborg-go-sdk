@@ -176,16 +176,36 @@ type ProgressData struct {
 	Reset       bool   `json:"reset"`
 }
 
-type PanelRequestData struct {
-	FeClientId  string      `json:"feclientid"`
-	ZoneName    string      `json:"zonename"`
-	PanelName   string      `json:"panelname"`
-	HandlerPath string      `json:"handlerpath"`
-	Data        interface{} `json:"data"`
-	Depth       int         `json:"depth"`
+type PagingInput struct {
+	Cursor  string `json:"cursor"`
+	Offset  int    `json:"offset"`
+	Limit   int    `json:"limit"`
+	Forward bool   `json:"forward"`
 }
 
-type TableRequestData struct {
+type SortSpec struct {
+	Field string `json:"field"`
+	Asc   bool   `json:"asc"`
+}
+
+type FilterSpec struct {
+	FilterStr string `json:"filterstr"`
+	// field filters
+}
+
+type PanelRequestData struct {
+	FeClientId  string       `json:"feclientid"`
+	ZoneName    string       `json:"zonename"`
+	PanelName   string       `json:"panelname"`
+	HandlerPath string       `json:"handlerpath"`
+	Data        interface{}  `json:"data"`
+	Depth       int          `json:"depth"`
+	PagingInput *PagingInput `json:"paginginput,omitempty"`
+	SortSpec    []SortSpec   `json:"sortspec,omitempty"`
+	FilterSpec  *FilterSpec  `json:"filterspec,omitempty"`
+}
+
+type DataRequestData struct {
 	ControlLoc  string      `json:"controlloc"`
 	FeClientId  string      `json:"feclientid"`
 	ZoneName    string      `json:"zonename"`

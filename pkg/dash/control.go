@@ -281,9 +281,25 @@ func (c *Control) ElemBuilder() *EmbedControlWriter {
 	return makeEmbedControlWriter(c)
 }
 
+func (c *Control) OnDataRequest(handlerFn func(*ContextWriter, *PanelRequest) error) {
+	if !c.GetMeta().HasEph || !c.IsValid() {
+		log.Printf("Invalid context/data control for OnDataRequest")
+		return
+	}
+	c.OnContextRequest(handlerFn)
+}
+
+func convertSortSpec(input []transport.SortSpec) []SortSpec {
+	rtn := make([]SortSpec, len(input))
+	for idx, ss := range input {
+		rtn[idx] = SortSpec(ss)
+	}
+	return rtn
+}
+
 func (c *Control) OnContextRequest(handlerFn func(*ContextWriter, *PanelRequest) error) {
-	if c.ControlType != "context" || !c.IsValid() {
-		log.Printf("Invalid context control for OnContextRequest")
+	if !c.GetMeta().HasEph || !c.IsValid() {
+		log.Printf("Invalid context/data control for OnContextRequest")
 		return
 	}
 	runFn := func(v interface{}) (interface{}, error) {
@@ -300,6 +316,9 @@ func (c *Control) OnContextRequest(handlerFn func(*ContextWriter, *PanelRequest)
 			HandlerPath: preqData.HandlerPath,
 			Data:        preqData.Data,
 			Depth:       preqData.Depth,
+			PagingInput: (*PagingInput)(preqData.PagingInput),
+			FilterSpec:  (*FilterSpec)(preqData.FilterSpec),
+			SortSpec:    convertSortSpec(preqData.SortSpec),
 		}
 		req.Panel, _ = LookupPanel(c.PanelName)
 		cw := makeContextWriter(c, req)
@@ -308,40 +327,6 @@ func (c *Control) OnContextRequest(handlerFn func(*ContextWriter, *PanelRequest)
 			return nil, err
 		}
 		return true, nil
-	}
-	c.registerPushFn(runFn, false)
-}
-
-func (c *Control) OnDataTableRequest(handlerFn func(*DataTableRequest) (data []map[string]interface{}, pinfo *PagingInfo, err error)) {
-	if c.ControlType != "datatable" || !c.IsValid() {
-		log.Printf("Invalid datatable control for OnDataTableRequest")
-		return
-	}
-	runFn := func(v interface{}) (interface{}, error) {
-		var treqData transport.TableRequestData
-		err := mapstructure.Decode(v, &treqData)
-		if err != nil {
-			return nil, fmt.Errorf("Cannot decode TableRequestData err:%w", err)
-		}
-		req := &DataTableRequest{
-			ZoneName:    Client.Config.ZoneName,
-			PanelName:   c.PanelName,
-			FeClientId:  treqData.FeClientId,
-			ReqId:       uuid.New().String(),
-			HandlerPath: treqData.HandlerPath,
-			Data:        treqData.Data,
-			Depth:       treqData.Depth,
-			PageSize:    treqData.PageSize,
-			PageNum:     treqData.PageNum,
-			PagingData:  treqData.PagingData,
-		}
-		data, pinfo, err := handlerFn(req)
-		if err != nil {
-			return nil, err
-		}
-		fmt.Printf("TableRequest pinfo:%v data:%v\n", pinfo, data)
-		// Client.SendMessage(m)
-		return nil, nil
 	}
 	c.registerPushFn(runFn, false)
 }
