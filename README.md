@@ -98,6 +98,11 @@ Demo1 shows how to setup a simple panel with a button and log.  The button trigg
 
 Demo2 shows how to setup a simple webapp that manages a set of fake customer accounts.  It uses handlers, requests, and ephemeral contexts.  When you enter the demo2 panel, click on "refresh" to show the initial account list.
 
+## Why Dashborg?
+
+I started my career as a backend developer.  I loved how straightforward backend code was.  You open files, read command line arguments, and write to the console.  I always hoped that writing to a webpage would be just as simple.  Unfortunately, with all of the new JS frameworks (and security requirements), it has only gotten harder to create basic, good-looking, functional UI.  Creating a UI/dashboard, even for a for a small command-line script, requires working in multiple languages, configuring multiple frameworks, and hosting a FE stack -- all things that might take more code than your original script -- and it takes hours (if not days) to get it all up and running!  On the other hand, the *only* way for non-engineers to interact with your code is through the web.  So you either pay all the cost to make an interface, or you don't.  I built Dashborg so you don't have to make that choice.  What if it was just as easy to Printf to the web as it was to the console?  What if you could just add an "OnClick" handler as easily in your backend code as you could to a webpage?  Maybe then we could get more tools online faster and get back to the real work of adding functionality, not wrestling with and configuring FE technologies.
+
+
 ## More
 
 Feel free to contact me with any questions on Slack (see invite link above), on github (sawka), or by email: mike (at) dashborg.net.  This project is under active development and the API will change as I add new controls/functionality.
