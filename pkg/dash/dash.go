@@ -152,9 +152,9 @@ type Config struct {
 	Verbose bool
 
 	// These are for internal testing, should not normally be set by clients.
-	Env        string // DASHBORG_ENV
-	BufSrvHost string // DASHBORG_PROCHOST
-	BufSrvPort int    // DASHBORG_PROCPORT
+	Env             string // DASHBORG_ENV
+	DashborgSrvHost string // DASHBORG_PROCHOST
+	DashborgSrvPort int    // DASHBORG_PROCPORT
 }
 
 type Elem struct {
@@ -653,7 +653,7 @@ func panelLink(accId string, zoneName string, panelName string) string {
 	if panelName != "" {
 		panelLinkStr = "/" + panelName
 	}
-	if Client.Config.BufSrvHost == "localhost" {
+	if Client.Config.DashborgSrvHost == "localhost" {
 		return fmt.Sprintf("http://console-dashborg.localdev:8080/acc/%s/%s%s", accId, zoneName, panelLinkStr)
 	} else {
 		return fmt.Sprintf("https://console.dashborg.net/acc/%s/%s%s", accId, zoneName, panelLinkStr)

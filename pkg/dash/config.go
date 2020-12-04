@@ -42,20 +42,20 @@ func (c *Config) setDefaults() {
 	c.ZoneName = defaultString(c.ZoneName, os.Getenv("DASHBORG_ZONE"), DEFAULT_ZONENAME)
 	c.Env = defaultString(c.Env, os.Getenv("DASHBORG_ENV"), "prod")
 	if c.Env == "prod" {
-		c.BufSrvHost = defaultString(c.BufSrvHost, os.Getenv("DASHBORG_PROCHOST"), "proc.api.dashborg.net")
+		c.DashborgSrvHost = defaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "proc.api.dashborg.net")
 	} else {
-		c.BufSrvHost = defaultString(c.BufSrvHost, os.Getenv("DASHBORG_PROCHOST"), "localhost")
+		c.DashborgSrvHost = defaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "localhost")
 	}
-	if c.BufSrvPort == 0 {
-		if os.Getenv("DASHBORG_PROC_PORT") != "" {
+	if c.DashborgSrvPort == 0 {
+		if os.Getenv("DASHBORG_PROCPORT") != "" {
 			var err error
-			c.BufSrvPort, err = strconv.Atoi(os.Getenv("DASHBORG_PROCPORT"))
+			c.DashborgSrvPort, err = strconv.Atoi(os.Getenv("DASHBORG_PROCPORT"))
 			if err != nil {
-				log.Printf("Invalid DASHBORG_PROC_PORT environment variable: %v\n", err)
+				log.Printf("Invalid DASHBORG_PROCPORT environment variable: %v\n", err)
 			}
 		}
-		if c.BufSrvPort == 0 {
-			c.BufSrvPort = 7533
+		if c.DashborgSrvPort == 0 {
+			c.DashborgSrvPort = 7533
 		}
 	}
 	var cmdName string
@@ -85,6 +85,11 @@ func (c *Config) setDefaults() {
 			c.PanelCacheTime = time.Minute
 		}
 	}
+}
+
+func (c *Config) SetupForProcClient() {
+	c.setDefaults()
+	c.loadKeys()
 }
 
 func (c *Config) loadKeys() {

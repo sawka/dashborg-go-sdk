@@ -87,8 +87,7 @@ func newProcClient() *ProcClient {
 }
 
 func StartProcClient(config *Config) *ProcClient {
-	config.setDefaults()
-	config.loadKeys()
+	config.SetupForProcClient()
 	if config.AccId == "" {
 		panic("dashborg.StartProcClient() cannot start, no AccId specified.  Call UseAnonKeys() or UseKeys() and ensure certificate file is properly formated.")
 	}
@@ -364,7 +363,7 @@ func (pc *ProcClient) retryConnectClient() error {
 func (pc *ProcClient) connectClient() error {
 	// TODO connect timeout (context?)
 	c := pc.Config
-	addr := c.BufSrvHost + ":" + strconv.Itoa(c.BufSrvPort)
+	addr := c.DashborgSrvHost + ":" + strconv.Itoa(c.DashborgSrvPort)
 	var tlsConfig *tls.Config
 	cert, err := tls.LoadX509KeyPair(c.CertFileName, c.KeyFileName)
 	if err != nil {

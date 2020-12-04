@@ -37,7 +37,7 @@
     </div>
     <div>[@jc=center @margintop=20px]
         <button/>[@handler=/acc/create-account @dataform=create-account] Create Account
-     </div>
+    </div>
 </div>
 {{end}}
 
