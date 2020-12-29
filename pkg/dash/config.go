@@ -71,20 +71,6 @@ func (c *Config) setDefaults() {
 	if c.MinClearTimeout == 0 {
 		c.MinClearTimeout = 1 * time.Second
 	}
-	if c.PanelCacheTime == 0 {
-		panelCacheStr := os.Getenv("DASHBORG_PANELCACHEMS")
-		if panelCacheStr != "" {
-			pcVal, err := strconv.Atoi(panelCacheStr)
-			if err != nil {
-				log.Printf("Invalid DASHBORG_PANELCACHEMS value[%s] defaulting to 1 minute", panelCacheStr)
-				c.PanelCacheTime = time.Minute
-			} else {
-				c.PanelCacheTime = time.Duration(pcVal) * time.Millisecond
-			}
-		} else {
-			c.PanelCacheTime = time.Minute
-		}
-	}
 }
 
 func (c *Config) SetupForProcClient() {

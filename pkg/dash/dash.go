@@ -1,117 +1,16 @@
-//
 package dash
 
 import (
-	"bufio"
-	"crypto/md5"
-	"encoding/json"
+	"context"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"log"
 	"os"
-	"regexp"
-	"strings"
+	"sync"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/mitchellh/mapstructure"
-	"github.com/sawka/dashborg-go-sdk/pkg/bufsrv"
-	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
-	"github.com/sawka/dashborg-go-sdk/pkg/transport"
+	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 )
-
-const (
-	SUBELEM_TEXT = "T"
-	SUBELEM_ONE  = "1"
-	SUBELEM_LIST = "*"
-)
-
-var handlerRe *regexp.Regexp = regexp.MustCompile("^(/[a-zA-Z0-9_-]+)/")
-
-type ControlTypeMeta struct {
-	IsValid         bool
-	CanInline       bool
-	CanEmbed        bool
-	HasControl      bool
-	HasData         bool
-	HasRowData      bool
-	HasEph          bool
-	HasSubControls  bool
-	TrackActive     bool
-	SubElemType     string
-	AllowedSubTypes map[string]bool
-}
-
-func (ctm *ControlTypeMeta) CanOpen() bool {
-	return ctm.SubElemType == SUBELEM_ONE || ctm.SubElemType == SUBELEM_LIST
-}
-
-var CMeta map[string]*ControlTypeMeta
-
-func init() {
-	CMeta = make(map[string]*ControlTypeMeta)
-	CMeta["text"] = makeCTM("inline embed sub-T")
-	CMeta["hr"] = makeCTM("embed")
-	CMeta["div"] = makeCTM("embed sub-*")
-	CMeta["link"] = makeCTM("inline embed sub-1")
-	CMeta["youtube"] = makeCTM("embed")
-	CMeta["dyn"] = makeCTM("inline embed control hasdata sub-1")
-	CMeta["image"] = makeCTM("inline embed control hasdata")
-	CMeta["log"] = makeCTM("rowdata control hasdata active subctl")
-	CMeta["button"] = makeCTM("inline embed control active sub-1")
-	CMeta["context"] = makeCTM("control active sub-* eph")
-	CMeta["progress"] = makeCTM("inline embed control active hasdata")
-	CMeta["handler"] = makeCTM("control active")
-	CMeta["input"] = makeCTM("inline embed control")
-	CMeta["inputselect"] = makeCTM("inline embed control rowdata sub-*")
-	CMeta["option"] = makeCTM("embed sub-T")
-	CMeta["table"] = makeCTM("embed control hasdata rowdata subctl sub-*")
-	CMeta["datalist"] = makeCTM("embed active control subctl sub-* eph")
-	CMeta["datatable"] = makeCTM("embed active control subctl sub-* eph")
-	CMeta["th"] = makeCTM("sub-*")
-	CMeta["tdformat"] = makeCTM("sub-*")
-	CMeta["dataview"] = makeCTM("")
-	CMeta["html"] = makeCTM("inline embed sub-T")
-
-	CMeta["context"].AllowedSubTypes = map[string]bool{"context": true, "modal": true}
-	CMeta["dyn"].AllowedSubTypes = map[string]bool{"text": true}
-	CMeta["progress"].AllowedSubTypes = map[string]bool{"bar": true, "spinner": true}
-	CMeta["input"].AllowedSubTypes = map[string]bool{
-		"text":     true,
-		"textarea": true,
-		"password": true,
-		"hidden":   true,
-		"checkbox": true,
-		"toggle":   true,
-		"date":     true,
-		"time":     true,
-		"datetime": true,
-	}
-	CMeta["inputselect"].AllowedSubTypes = map[string]bool{"select": true, "combo": true, "search": true}
-}
-
-func makeCTM(text string) *ControlTypeMeta {
-	rtn := &ControlTypeMeta{}
-	rtn.IsValid = true
-	rtn.CanInline = strings.Contains(text, "inline")
-	rtn.CanEmbed = strings.Contains(text, "embed")
-	rtn.HasControl = strings.Contains(text, "control")
-	rtn.HasData = strings.Contains(text, "hasdata")
-	rtn.HasRowData = strings.Contains(text, "rowdata")
-	rtn.HasEph = strings.Contains(text, "eph")
-	rtn.HasSubControls = strings.Contains(text, "subctl")
-	rtn.TrackActive = strings.Contains(text, "active")
-	if strings.Contains(text, "sub-T") {
-		rtn.SubElemType = "T"
-	}
-	if strings.Contains(text, "sub-1") {
-		rtn.SubElemType = "1"
-	}
-	if strings.Contains(text, "sub-*") {
-		rtn.SubElemType = "*"
-	}
-	return rtn
-}
 
 type Config struct {
 	// DASHBORG_ACCID, set to force an AccountId (must match certificate).  If not set, AccountId is set from certificate file.
@@ -127,9 +26,8 @@ type Config struct {
 	ZoneName string
 
 	// Process Name Attributes.  Only ProcName is required
-	ProcName  string // DASHBORG_PROCNAME (set from executable filename if not set)
-	ProcIName string
-	ProcTags  map[string]string
+	ProcName string // DASHBORG_PROCNAME (set from executable filename if not set)
+	ProcTags map[string]string
 
 	KeyFileName  string // DASHBORG_KEYFILE private key file
 	CertFileName string // DASHBORG_CERTFILE certificate file, CN must be set to your Dashborg Account Id.
@@ -142,12 +40,6 @@ type Config struct {
 	// Defaults to 1 second.
 	MinClearTimeout time.Duration
 
-	// DASHBORG_PANELCACHEMS, sets how long LookupPanel calls are cached
-	// The environment variable sets the time in milliseconds.
-	// In order to disable the cache (not recommended), set the environment variable to "0" or
-	//   set the value in the Config structure to <= 1ms.
-	PanelCacheTime time.Duration
-
 	// DASHBORG_VERBOSE, set to true for extra debugging information
 	Verbose bool
 
@@ -157,648 +49,194 @@ type Config struct {
 	DashborgSrvPort int    // DASHBORG_PROCPORT
 }
 
-type Elem struct {
-	ElemType    string            `json:"elemtype"`
-	ElemSubType string            `json:"elemsubtype,omitempty"`
-	ClassNames  []string          `json:"classnames,omitempty"`
-	Attrs       map[string]string `json:"attrs,omitempty"`
-	ControlName string            `json:"controlname,omitempty"`
-	ControlLoc  string            `json:"controlloc,omitempty"`
-	Text        string            `json:"text,omitempty"`
-	SubElem     *Elem             `json:"subelem,omitempty"`
-	List        []*Elem           `json:"list,omitempty"`
-
-	// used by server
-	AnonProcRunId string `json:"anonprocrunid,omitempty"`
-}
-
-func (e *Elem) GetMeta() *ControlTypeMeta {
-	if e == nil {
-		return &ControlTypeMeta{}
-	}
-	meta := CMeta[e.ElemType]
-	if meta == nil {
-		meta = &ControlTypeMeta{}
-	}
-	return meta
-}
-
-func (e *Elem) Walk(visitFn func(*Elem)) {
-	if e == nil {
-		return
-	}
-	visitFn(e)
-	if e.SubElem != nil {
-		e.SubElem.Walk(visitFn)
-	}
-	for _, se := range e.List {
-		se.Walk(visitFn)
-	}
-}
-
-type PagingInput struct {
-	Cursor  string
-	Offset  int
-	Limit   int
-	Forward bool
-}
-
-type SortSpec struct {
-	Field string
-	Asc   bool
-}
-
-type FilterSpec struct {
-	FilterStr string
-	// field filters
-}
-
 type PanelRequest struct {
-	Panel       *Panel
-	ZoneName    string
-	PanelName   string
-	FeClientId  string
-	ReqId       string
-	Data        interface{}
-	Depth       int
-	HandlerPath string
-	SortSpec    []SortSpec
-	PagingInput *PagingInput
-	FilterSpec  *FilterSpec
+	Ctx        context.Context
+	Lock       *sync.Mutex // synchronizes RRActions
+	PanelName  string
+	ReqId      string
+	FeClientId string
+	Path       string
+	Data       interface{}
+	RRActions  []*dashproto.RRAction
+	Err        error
+	IsDone     bool
 }
 
-func makeContextWriter(ctx *Control, req *PanelRequest) *ContextWriter {
-	var locId string
-	if ctx.IsValid() {
-		cloc, err := dashutil.ParseControlLocator(ctx.ControlLoc)
-		if err != nil {
-			log.Printf("LookupContext invalid context ControlLocator err:%v\n", err)
-		} else {
-			locId = dashutil.MakeEphCtxLocId(req.FeClientId, cloc.ControlId, req.ReqId)
-		}
-	} else {
-		// invalid locId produces invalid controls
-		log.Printf("Invalid context in PanelRequest.LookupContext")
-		locId = ""
-	}
-	rtn := &ContextWriter{}
-	rtn.ElemBuilder = MakeElemBuilder(req.PanelName, locId, 0)
-	rtn.FeClientId = req.FeClientId
-	rtn.ReqId = req.ReqId
-	rtn.ContextControl = ctx
-	return rtn
-}
-
-func (req *PanelRequest) LookupContext(name string) *ContextWriter {
-	p, _ := LookupPanel(req.PanelName) // TODO maybe PanelRequest should return context names?
-	ctx := p.LookupControl("context", name)
-	return makeContextWriter(ctx, req)
-}
-
-func (req *PanelRequest) DecodeData(out interface{}) error {
-	err := mapstructure.Decode(req.Data, out)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (req *PanelRequest) DecodeDataPath(path string, out interface{}) error {
-	if req.Data == nil {
-		return fmt.Errorf("PanelRequest data is nil")
-	}
-	dataMap, ok := req.Data.(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("PanelRequest data is not a map")
-	}
-	dataVal, ok := dataMap[path]
-	if !ok {
-		return fmt.Errorf("PanelRequest does not have a value for path:%s", path)
-	}
-	err := mapstructure.Decode(dataVal, out)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func triggerContext(controlId string, req *transport.PanelRequestData) {
-	if req.Depth > 5 {
-		log.Printf("Dashborg Cannot trigger requests more than 5 levels deep\n")
-		return
-	}
-	if controlId == "" || controlId == dashutil.INVALID_CLOC {
-		log.Printf("Dashborg invalid controlId passed to triggerContext\n")
-		return
-	}
-	go func() {
-		Client.handlePush(bufsrv.PushType{
-			PushCtx:     Client.GetProcRunId(),
-			PushRecvId:  controlId,
-			PushPayload: req,
-		})
-	}()
-}
-
-func triggerRequest(req *transport.PanelRequestData) {
-	if req.Depth > 5 {
-		log.Printf("Dashborg Cannot trigger requests more than 5 levels deep\n")
-		return
-	}
-	handlerMatch := handlerRe.FindStringSubmatch(req.HandlerPath)
-	if handlerMatch == nil {
-		log.Printf("Dashborg Bad handlerPath:%s passed to TriggerRequest\n", req.HandlerPath)
-		return
-	}
-	panel, _ := LookupPanel(req.PanelName)
-	handlerControl := panel.controlByName(handlerMatch[1])
-	if handlerControl == nil || handlerControl.ControlType != "handler" || !handlerControl.IsValid() {
-		log.Printf("Dashborg, cannot find handler control for %s\n", handlerMatch[1])
-		return
-	}
-	go func() {
-		cloc, err := dashutil.ParseControlLocator(handlerControl.ControlLoc)
-		if err != nil {
-			log.Printf("Dashborg, invalid handler control locator in trigger request err:%v", err)
-			return
-		}
-		Client.handlePush(bufsrv.PushType{
-			PushCtx:     Client.GetProcRunId(),
-			PushRecvId:  cloc.ControlId,
-			PushPayload: req,
-		})
-	}()
-}
-
-func marshalUnmarshal(data interface{}) (interface{}, error) {
-	barr, err := json.Marshal(data)
-	if err != nil {
-		return nil, err
-	}
-	var jsonVal interface{}
-	err = json.Unmarshal(barr, &jsonVal)
-	if err != nil {
-		return nil, err
-	}
-	return jsonVal, nil
-}
-
-func (req *PanelRequest) TriggerRequest(handlerPath string, data interface{}) error {
-	jsonVal, err := marshalUnmarshal(data)
-	if err != nil {
-		return err
-	}
-	reqData := &transport.PanelRequestData{
-		FeClientId:  req.FeClientId,
-		ZoneName:    req.ZoneName,
-		PanelName:   req.PanelName,
-		HandlerPath: handlerPath,
-		Data:        jsonVal,
-		Depth:       req.Depth + 1,
-	}
-	triggerRequest(reqData)
-	return nil
-}
-
-func (req *PanelRequest) TriggerContext(contextName string, data interface{}) error {
-	c := req.Panel.controlByName(contextName)
-	if c == nil || c.ControlType != "context" || !c.IsValid() {
-		log.Printf("Invalid context control name:%s, cannot call Trigger", contextName)
-		return fmt.Errorf("Invalid context control name:%s, cannot call Trigger", contextName)
-	}
-	jsonVal, err := marshalUnmarshal(data)
-	if err != nil {
-		return err
-	}
-	reqData := &transport.PanelRequestData{
-		FeClientId:  req.FeClientId,
-		ZoneName:    req.ZoneName,
-		PanelName:   req.PanelName,
-		HandlerPath: "",
-		Data:        jsonVal,
-		Depth:       req.Depth + 1,
-	}
-	triggerContext(c.GetControlId(), reqData)
-	return nil
-}
-
-type EmbedControlWriter struct {
-	*ElemBuilder
-	Control *Control
-	Ts      int64
-}
-
-func makeEmbedControlWriter(c *Control) *EmbedControlWriter {
-	rtn := &EmbedControlWriter{}
-	cloc, err := dashutil.ParseControlLocator(c.ControlLoc)
-	var locId string
-	if err == nil {
-		locId = dashutil.MakeScLocId(cloc.IsEph(), cloc.ControlId)
-	}
-	rtn.Ts = Ts()
-	rtn.ElemBuilder = MakeElemBuilder(c.PanelName, locId, rtn.Ts)
-	rtn.Control = c
-	return rtn
-}
-
-func (w *EmbedControlWriter) Flush() {
-	c := w.Control
-	if c == nil || (c.ControlType != "dyn" && c.ControlType != "table" && c.ControlType != "log") || !c.IsValid() {
-		log.Printf("Invalid Control for creating an ElemBuilder, cannot Flush().  Must be a valid dyn, table, or log control.")
-		return
-	}
-	elem := w.DoneElem()
-	fmt.Printf("EmbedControlWriter %s\n", c.ControlType)
-	elem.Dump(os.Stdout)
-	w.ReportErrors(os.Stderr)
-	elemText := elem.ElemTextEx(0, nil)
-	if c.ControlType == "log" || c.ControlType == "table" {
-		entry := transport.LogEntry{
-			Ts:        w.Ts,
-			ProcRunId: Client.GetProcRunId(),
-			ElemText:  elemText,
-		}
-		m := transport.ControlAppendMessage{
-			MType:      "controlappend",
-			Ts:         w.Ts,
-			PanelName:  c.PanelName,
-			ControlLoc: c.ControlLoc,
-			Data:       entry,
-		}
-		Client.SendMessage(m)
-	} else if c.ControlType == "dyn" {
-		dynData := transport.DynElemData{
-			Ts:        w.Ts,
-			ProcRunId: Client.GetProcRunId(),
-			ElemText:  elemText,
-		}
-		m := transport.ControlUpdateMessage{
-			MType:      "controlupdate",
-			Cmd:        "setdata",
-			Ts:         w.Ts,
-			ControlLoc: c.ControlLoc,
-			PanelName:  c.PanelName,
-			Data:       dynData,
-		}
-		fmt.Printf("sending dyn message panel:%s %#v\n", c.PanelName, c)
-		Client.SendMessage(m)
-	}
-}
-
-type ContextWriter struct {
-	*ElemBuilder
-	FeClientId     string
-	ReqId          string
-	ContextControl *Control
-}
-
-func computeElemHash(elemText []string) string {
-	h := md5.New()
-	for _, text := range elemText {
-		io.WriteString(h, text)
-	}
-	return fmt.Sprintf("%x", h.Sum(nil))
-}
-
-func (req *PanelRequest) SendFile(fileName string, mimeType string, fd io.ReaderAt) error {
-	hash, err := UploadBlob(mimeType, fd)
-	if err != nil {
-		return err
-	}
-	sfm := transport.SendFileMessage{
-		MType:      "sendfile",
-		MimeType:   mimeType,
-		BlobHash:   hash,
-		FileName:   fileName,
-		PanelName:  req.PanelName,
-		FeClientId: req.FeClientId,
-		ReqId:      req.ReqId,
-	}
-	Client.SendMessage(sfm)
-	return nil
-}
-
-func (w *ContextWriter) Flush() {
-	if !w.ContextControl.IsValid() || !w.ContextControl.GetMeta().HasEph {
-		log.Printf("Dashborg attempt to Flush() an invalid ContextControl\n")
-		return
-	}
-	elem := w.DoneElem()
-	w.ReportErrors(os.Stderr)
-	elemText := elem.ElemTextEx(0, nil)
-	m := transport.WriteContextMessage{
-		MType:      "writecontext",
-		Ts:         Ts(),
-		ZoneName:   Client.Config.ZoneName,
-		PanelName:  w.ContextControl.PanelName,
-		ContextLoc: w.ContextControl.ControlLoc,
-		FeClientId: w.FeClientId,
-		ReqId:      w.ReqId,
-		ElemText:   elemText,
-	}
-	Client.SendMessage(m)
-}
-
-func (w *ContextWriter) Revert() {
-	if !w.ContextControl.IsValid() {
-		log.Printf("Dashborg attempt to Revert() an invalid ContextControl\n")
-		return
-	}
-	m := transport.WriteContextMessage{
-		MType:      "writecontext",
-		Ts:         Ts(),
-		ZoneName:   Client.Config.ZoneName,
-		PanelName:  w.ContextControl.PanelName,
-		ContextLoc: w.ContextControl.ControlLoc,
-		FeClientId: w.FeClientId,
-		ReqId:      w.ReqId,
-		ElemText:   nil,
-	}
-	Client.SendMessage(m)
-}
-
-type PanelWriter struct {
-	*ElemBuilder
-	PanelName string
-}
-
-func ParseElemText(panelName string, elemText []string, locId string, controlTs int64, anonProcRunId string) *Elem {
-	// never allow implicit root when parsing (already done on proc side)
-	if len(elemText) == 0 {
-		return nil
-	}
-	b := MakeElemBuilder(panelName, locId, controlTs)
-	b.SetAllowBareControl(true)
-	for _, text := range elemText {
-		b.Print(text)
-	}
-	elem := b.DoneElem()
-	if elem != nil && anonProcRunId != "" {
-		elem.Walk(func(e *Elem) {
-			meta := e.GetMeta()
-			if meta.HasControl && e.ControlName == "" && e.ControlLoc != "" {
-				e.AnonProcRunId = anonProcRunId
-			}
-		})
-	}
-	return elem
-}
-
-func DefinePanel(panelName string) *PanelWriter {
-	if Client == nil {
-		panic("Dashborg not initialized, must call dash.StartProcClient()")
-	}
-	rtn := &PanelWriter{PanelName: panelName}
-	rtn.ElemBuilder = MakeElemBuilder(panelName, dashutil.MakeZPLocId(Client.Config.ZoneName, panelName), 0)
-	rtn.ElemBuilder.SetRootDivClass("rootdiv")
-	return rtn
-}
-
-func DefinePanelFromFile(panelName string, fileName string) (*Panel, error) {
-	if Client == nil {
-		panic("Dashborg not initialized, must call dash.StartProcClient()")
-	}
-	rtnPanel := &Panel{PanelName: panelName}
-	fd, err := os.Open(fileName)
-	if err != nil {
-		return rtnPanel, err
-	}
-	defer fd.Close()
-	pw := DefinePanel(panelName)
-	scanner := bufio.NewScanner(fd)
-	for scanner.Scan() {
-		pw.Print(scanner.Text())
-	}
-	err = scanner.Err()
-	if err != nil {
-		log.Printf("Dashborg.DefinePanelFromFile error reading file:%s err:%v\n", fileName, err)
-		return rtnPanel, err
-	}
-	return pw.Flush()
-}
-
-func (p *PanelWriter) Flush() (*Panel, error) {
-	elemText := p.DoneText()
-	m := transport.DefinePanelMessage{
-		MType:     "definepanel",
-		Ts:        Ts(),
-		ZoneName:  Client.Config.ZoneName,
-		PanelName: p.PanelName,
-		TrackAnon: !p.ElemBuilder.NoAnon,
-		ElemText:  elemText,
-		ElemHash:  computeElemHash(elemText),
-	}
-	p.ElemBuilder.ReportErrors(os.Stderr)
-	rtn, err := Client.SendMessageWait(m)
-	rtnPanel := &Panel{PanelName: p.PanelName}
-	if err != nil {
-		return rtnPanel, err
-	}
-	log.Printf("Dashborg Defined Panel [%s] Link %s\n", p.PanelName, panelLink(Client.Config.AccId, Client.Config.ZoneName, p.PanelName))
-	err = rtnPanel.setControlMappings(rtn)
-	if err == nil {
-		setMappingsInCache(p.PanelName, rtnPanel.ControlMappings)
-	}
-	return rtnPanel, err
-}
-
-func (p *PanelWriter) Dump(w io.Writer) {
-	p.DoneElem().Dump(w)
-}
-
-func (p *PanelWriter) DoneText() []string {
-	e := p.DoneElem()
-	if e == nil {
-		return nil
-	}
-	return e.ElemTextEx(0, nil)
-}
-
-func (p *PanelWriter) PanelLink() string {
-	return panelLink(Client.Config.AccId, Client.Config.ZoneName, p.PanelName)
-}
-
-type Panel struct {
-	PanelName       string
-	ControlMappings map[string]*Control
-}
-
-func LookupPanel(panelName string) (*Panel, error) {
-	if Client == nil {
-		panic("Dashborg not initialized, must call dash.StartProcClient()")
-	}
-	p := &Panel{PanelName: panelName}
-	mappings, ok := getMappingsFromCache(panelName, Client.Config.PanelCacheTime)
-	if ok {
-		p.ControlMappings = mappings
-		return p, nil
-	}
-	err := p.RefreshControlMappings()
-	return p, err
-}
-
-func (p *Panel) SetData(path string, data interface{}) {
-	msg := transport.SetPanelDataMessage{
-		MType:     "setpaneldata",
-		Ts:        Ts(),
-		PanelName: p.PanelName,
-		Path:      path,
-		Data:      data,
-	}
-	Client.SendMessage(msg)
-}
-
-func panelLink(accId string, zoneName string, panelName string) string {
-	panelLinkStr := ""
-	if panelName != "" {
-		panelLinkStr = "/" + panelName
-	}
-	if Client.Config.DashborgSrvHost == "localhost" {
-		return fmt.Sprintf("http://console-dashborg.localdev:8080/acc/%s/%s%s", accId, zoneName, panelLinkStr)
-	} else {
-		return fmt.Sprintf("https://console.dashborg.net/acc/%s/%s%s", accId, zoneName, panelLinkStr)
-	}
-}
-
-func (p *Panel) PanelLink() string {
-	return panelLink(Client.Config.AccId, Client.Config.ZoneName, p.PanelName)
-}
-
-func (p *Panel) setControlMappings(rtn interface{}) error {
-	var mrtn transport.MappingsReturn
-	err := mapstructure.Decode(rtn, &mrtn)
-	if err != nil {
-		log.Printf("Dashborg.LookupPanel() bad return value from server err:%v\n", err)
-		return err
-	}
-	p.ControlMappings = make(map[string]*Control)
-	for _, m := range mrtn.Mappings {
-		p.ControlMappings[m.ControlName] = &Control{PanelName: p.PanelName, ControlType: m.ControlType, ControlLoc: m.ControlLoc}
-	}
-	return nil
-}
-
-// force a refresh, bypasses cache
-func (p *Panel) RefreshControlMappings() error {
-	lpm := transport.LookupPanelMessage{
-		MType:     "lookuppanel",
-		Ts:        Ts(),
-		ZoneName:  Client.Config.ZoneName,
-		PanelName: p.PanelName,
-	}
-	rtn, err := Client.SendMessageWait(lpm)
-	if err != nil {
-		log.Printf("Dashborg.LookupPanel() error looking up panel err:%v\n", err)
-		return err
-	}
-	err = p.setControlMappings(rtn)
-	if err == nil {
-		setMappingsInCache(p.PanelName, p.ControlMappings)
-	}
-	return err
-}
-
-func (p *Panel) LookupControl(controlType string, controlName string) *Control {
-	c := p.controlByName(controlName)
-	if c == nil {
-		log.Printf("Dashborg, LookupControl cannot find control type:%s name:%s in panel:%s\n", controlType, controlName, p.PanelName)
-		return &Control{ControlType: "invalid"}
-	}
-	if c.ControlType != controlType {
-		log.Printf("Dashborg, LookupControl control type does not match name:%s panel:%s expected-type:%s found-type:%s\n", controlName, p.PanelName, controlType, c.ControlType)
-		return &Control{ControlType: "invalid"}
-	}
-	if c.GetMeta().TrackActive {
-		c.ClientId = uuid.New().String()
-		Client.TrackActive(c.ControlType, c.ControlLoc, c.ClientId)
-	}
-	return c
-}
-
-// does not activate, and does not check control type
-// can return nil
-func (p *Panel) controlByName(controlName string) *Control {
-	c := p.ControlMappings[controlName]
-	if c == nil {
-		return nil
-	}
-	rtn := &Control{PanelName: p.PanelName, ControlType: c.ControlType, ControlLoc: c.ControlLoc}
-	return rtn
-}
-
-func (p *Panel) OnRequest(handlerPath string, handlerFn func(*PanelRequest) error) {
-	handlerMatch := handlerRe.FindStringSubmatch(handlerPath)
-	if handlerMatch == nil {
-		log.Printf("Bad handlerPath:%s passed to OnRequest", handlerPath)
-		return
-	}
-	handlerControl := p.LookupControl("handler", handlerMatch[1])
-	handlerControl.HandlerOnAllRequests(func(req *PanelRequest) (bool, error) {
-		if req.HandlerPath != handlerPath {
-			return false, nil
-		}
-		err := handlerFn(req)
-		if err != nil {
-			return true, err
-		}
-		return true, nil
-	})
+type HandlerOpt interface {
+	HandlerOptType() string
 }
 
 func Ts() int64 {
 	return time.Now().UnixNano() / 1000000
 }
 
-func logInfo(fmt string, data ...interface{}) {
-	if Client.Config.Verbose {
-		log.Printf(fmt, data...)
+func DefinePanel(panelName string, html string) error {
+	ts := Ts()
+	runFn := func(req *PanelRequest) error {
+		htmlAction := &dashproto.RRAction{
+			Ts:         ts,
+			ActionType: "panel",
+			Html:       html,
+		}
+		req.appendRR(htmlAction)
+		return nil
 	}
+	hkey := &dashproto.HandlerKey{
+		PanelName:   panelName,
+		HandlerType: "panel",
+		Path:        "",
+	}
+	Client.registerHandler(hkey, runFn)
+	return nil
 }
 
-// returns (blobHash, err)
-func UploadBlob(mimeType string, r io.ReaderAt) (string, error) {
-	if Client == nil {
-		panic("Dashborg not initialized, must call dash.StartProcClient()")
-	}
-	if !dashutil.IsMimeTypeValid(mimeType) {
-		return "", fmt.Errorf("Invalid mime-type passed to UploadBlob mime-type:%s", mimeType)
-	}
-	hashVal, size, err := sha256FromReader(r)
+// returns contents, fileinfo, use-cached, err
+func readConditionally(fileName string, finfo os.FileInfo) (string, os.FileInfo, bool, error) {
+	newFinfo, err := os.Stat(fileName)
 	if err != nil {
-		return "", err
+		return "", nil, false, err
 	}
-	if size > MAX_BLOB_SIZE {
-		return "", fmt.Errorf("Maximum Blob size exceeded max:%d size:%d\n", MAX_BLOB_SIZE, size)
-	}
-	checkBlobMsg := transport.CheckBlobMessage{
-		MType:    "checkblob",
-		Ts:       Ts(),
-		BlobHash: hashVal,
-	}
-	checkRtn, err := Client.SendMessageWait(checkBlobMsg)
+	shouldReload := finfo == nil || finfo.Size() != newFinfo.Size() || finfo.ModTime() != newFinfo.ModTime()
+
+	fd, err := os.Open(fileName)
 	if err != nil {
-		return "", fmt.Errorf("Error from CheckBlobMessage err:%w", err)
+		return "", nil, false, err
 	}
-	if checkBool, ok := checkRtn.(bool); ok && checkBool {
-		return hashVal, nil
+	defer fd.Close()
+	if !shouldReload {
+		return "", finfo, true, nil
 	}
-	// format = SHA-265 + len(mimeType) + mimeType + data
-	buf := make([]byte, 64+1+len(mimeType)+int(size))
-	copy(buf[0:], []byte(hashVal))   // 64
-	buf[64] = byte(len(mimeType))    // 1
-	copy(buf[65:], []byte(mimeType)) // len(mimeType)
-	n, err := r.ReadAt(buf[65+len(mimeType):], 0)
-	if err != nil && err != io.EOF {
-		return "", err
+	htmlBytes, err := ioutil.ReadAll(fd)
+	if err != nil {
+		return "", nil, false, err
 	}
-	if int64(n) != size {
-		// this shouldn't happen
-		return "", fmt.Errorf("Could not read blob data fully (partial read, invalid ReaderAt)")
+	return string(htmlBytes), finfo, false, nil
+}
+
+func DefinePanelFromFile(panelName string, fileName string, pollTime time.Duration) error {
+	html, finfo, _, err := readConditionally(fileName, nil)
+	if err != nil {
+		return err
 	}
-	rawMsg := transport.RawMessage{
-		MType: "raw:blob",
-		Data:  buf,
+	log.Printf("DefinePanel loaded panel:%s from file:%s len:%d\n", panelName, fileName, len(html))
+	runFn := func(req *PanelRequest) error {
+		ts := Ts()
+		htmlAction := &dashproto.RRAction{
+			Ts:         ts,
+			ActionType: "panel",
+			Html:       html,
+		}
+		req.appendRR(htmlAction)
+		return nil
 	}
-	Client.SendMessage(rawMsg)
-	return hashVal, nil
+	hkey := &dashproto.HandlerKey{
+		PanelName:   panelName,
+		HandlerType: "panel",
+		Path:        "",
+	}
+	Client.registerHandler(hkey, runFn)
+	if pollTime > 0 {
+		if pollTime < 200*time.Millisecond {
+			pollTime = 200 * time.Millisecond
+		}
+		go func() {
+			ticker := time.NewTicker(pollTime)
+			var lastError error
+			for {
+				select {
+				case <-ticker.C:
+				}
+				newHtml, newFinfo, cached, err := readConditionally(fileName, finfo)
+				if err != nil && lastError == nil {
+					lastError = err
+					log.Printf("Error polling panel:%s file:%s for changes: %v\n", panelName, fileName, err)
+					continue
+				}
+				if cached {
+					continue
+				}
+				if html != newHtml {
+					html = newHtml
+					finfo = newFinfo
+					log.Printf("DefinePanel reloaded panel:%s file:%s len:%d\n", panelName, fileName, len(html))
+				}
+			}
+		}()
+	}
+	return nil
+}
+
+func (req *PanelRequest) appendRR(rrAction *dashproto.RRAction) {
+	req.Lock.Lock()
+	defer req.Lock.Unlock()
+	req.RRActions = append(req.RRActions, rrAction)
+}
+
+func (req *PanelRequest) SetData(path string, data interface{}) error {
+	if req.IsDone {
+		return fmt.Errorf("Cannot call SetData(), path=%s, PanelRequest is already done", path)
+	}
+	jsonData, err := marshalJson(data)
+	if err != nil {
+		return fmt.Errorf("Error marshaling json for SetData, path:%s, err:%v\n", path, err)
+	}
+	rrAction := &dashproto.RRAction{
+		Ts:         Ts(),
+		ActionType: "setdata",
+		Selector:   path,
+		JsonData:   jsonData,
+	}
+	req.appendRR(rrAction)
+	return nil
+}
+
+func (req *PanelRequest) SendEvent(selector string, eventType string, data interface{}) error {
+	if req.IsDone {
+		return fmt.Errorf("Cannot call SendEvent(), selector=%s, event=%s, PanelRequest is already done", selector, eventType)
+	}
+	jsonData, err := marshalJson(data)
+	if err != nil {
+		return fmt.Errorf("Error marshaling json for SendEvent, selector:%s, event:%s, err:%v\n", selector, eventType, err)
+	}
+	rrAction := &dashproto.RRAction{
+		Ts:         Ts(),
+		ActionType: "event",
+		Selector:   selector,
+		EventType:  eventType,
+		JsonData:   jsonData,
+	}
+	req.appendRR(rrAction)
+	return nil
+}
+
+func (req *PanelRequest) Flush() error {
+	if req.IsDone {
+		return fmt.Errorf("Cannot Flush(), PanelRequest is already done")
+	}
+	return Client.sendRequestResponse(req, false)
+}
+
+func (req *PanelRequest) Done() error {
+	if req.IsDone {
+		return nil
+	}
+	return Client.sendRequestResponse(req, true)
+}
+
+func RegisterPanelHandler(panelName string, path string, handlerFn func(*PanelRequest) error, opts ...HandlerOpt) {
+	hkey := &dashproto.HandlerKey{
+		PanelName:   panelName,
+		HandlerType: "handler",
+		Path:        path,
+	}
+	Client.registerHandler(hkey, handlerFn)
+}
+
+func RegisterPanelData(panelName string, path string, handlerFn func(*PanelRequest) error, opts ...HandlerOpt) {
+	hkey := &dashproto.HandlerKey{
+		PanelName:   panelName,
+		HandlerType: "data",
+		Path:        path,
+	}
+	Client.registerHandler(hkey, handlerFn)
 }

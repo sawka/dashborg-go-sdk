@@ -1,573 +1,456 @@
 package dash
 
 import (
+	"bytes"
+	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
-	"math"
-	"math/rand"
 	"os"
-	"runtime/debug"
 	"strconv"
-	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/mitchellh/mapstructure"
-	"github.com/sawka/dashborg-go-sdk/pkg/bufsrv"
-	"github.com/sawka/dashborg-go-sdk/pkg/transport"
+	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/metadata"
 )
 
-// 500ms, 1s, 2s, 4s, 8s, 16s, 32s, 60s...
-const DEFAULT_QUEUESIZE = 100 // DASHBORG_QUEUESIZE
-const MAX_RETRY_DURATION = time.Minute
-const BASE_RETRY_TIME_MS = 500
-const RETRY_JITTER_MS = 100
-
-type queueEntry struct {
-	Message     interface{}
-	RtnCallback func(interface{}, error)
-}
-
-type pushFnWrap struct {
-	Id string
-	Fn PushFn
-}
-
-type PushFn func(interface{}) (interface{}, error)
-
-type ProcClient struct {
-	CVar *sync.Cond
-
-	StartTs   int64
-	ProcRunId string
-	Config    *Config
-
-	Client *bufsrv.Client
-
-	Queue   chan queueEntry
-	PushMap map[string][]pushFnWrap
-
-	Wg              sync.WaitGroup
-	Done            bool // WaitForClear, no more messages can be queued
-	QueueClear      bool // the last message has been sent
-	Connected       bool // connection is open to BufSrv
-	ConnectGiveUp   bool // we've given up on trying to reconnect the client
-	KeepAliveTicker *time.Ticker
-	RetryAttempts   int
-
-	ActiveControls map[string]map[string]bool
-}
+const EC_EOF = "EOF"
+const EC_UNKNOWN = "UNKNOWN"
+const EC_BADCONNID = "BADCONNID"
+const EC_ACCACCESS = "ACCACCESS"
 
 var Client *ProcClient
+
+type HandlerKey struct {
+	PanelName   string
+	HandlerType string // data, handler
+	Path        string
+}
+
+type HandlerFuncType = func(*PanelRequest) error
+
+type HandlerVal struct {
+	ProtoHKey *dashproto.HandlerKey
+	HandlerFn HandlerFuncType
+}
+
+type ProcClient struct {
+	CVar       *sync.Cond
+	StartTs    int64
+	ProcRunId  string
+	Config     *Config
+	Conn       *grpc.ClientConn
+	DBService  dashproto.DashborgServiceClient
+	HandlerMap map[HandlerKey]HandlerVal
+	ConnId     *atomic.Value
+}
 
 func newProcClient() *ProcClient {
 	rtn := &ProcClient{}
 	rtn.CVar = sync.NewCond(&sync.Mutex{})
 	rtn.StartTs = Ts()
 	rtn.ProcRunId = uuid.New().String()
-	rtn.ActiveControls = make(map[string]map[string]bool)
+	rtn.HandlerMap = make(map[HandlerKey]HandlerVal)
+	rtn.ConnId = &atomic.Value{}
+	rtn.ConnId.Store("")
+	return rtn
+}
 
-	queueSize := DEFAULT_QUEUESIZE
-	if os.Getenv("DASHBORG_QUEUESIZE") != "" {
-		var err error
-		queueSize, err = strconv.Atoi(os.Getenv("DASHBORG_QUEUESIZE"))
-		if err != nil {
-			log.Printf("Invalid DASHBORG_QUEUESIZE env var [%s]", os.Getenv("DASHBORG_QUEUESIZE"))
-			queueSize = DEFAULT_QUEUESIZE
+func (pc *ProcClient) copyHandlerKeys() []*dashproto.HandlerKey {
+	pc.CVar.L.Lock()
+	defer pc.CVar.L.Unlock()
+	rtn := make([]*dashproto.HandlerKey, 0, len(pc.HandlerMap))
+	for hk, _ := range pc.HandlerMap {
+		hkCopy := &dashproto.HandlerKey{
+			PanelName:   hk.PanelName,
+			HandlerType: hk.HandlerType,
+			Path:        hk.Path,
 		}
-		// TODO range check
+		rtn = append(rtn, hkCopy)
 	}
-	rtn.Queue = make(chan queueEntry, queueSize)
-	rtn.PushMap = make(map[string][]pushFnWrap)
-	rtn.Wg = sync.WaitGroup{}
 	return rtn
 }
 
 func StartProcClient(config *Config) *ProcClient {
 	config.SetupForProcClient()
-	if config.AccId == "" {
-		panic("dashborg.StartProcClient() cannot start, no AccId specified.  Call UseAnonKeys() or UseKeys() and ensure certificate file is properly formated.")
+	config.DashborgSrvHost = "localhost"
+	config.DashborgSrvPort = 7632
+	client := newProcClient()
+	client.Config = config
+	// TODO keepalive
+	err := client.connectGrpc()
+	if err != nil {
+		log.Printf("ERROR connecting gRPC client: %v\n", err)
 	}
-	// TODO validate config
-	Client = newProcClient()
-	Client.Config = config
-	log.Printf("Dashborg Initialized Client Zone:%s ProcName:%s ProcRunId:%s\n", config.ZoneName, Client.Config.ProcName, Client.ProcRunId)
-	log.Printf("Dashborg Zone [%s] Link %s\n", config.ZoneName, panelLink(config.AccId, config.ZoneName, ""))
-	Client.goConnectClient()
-	Client.KeepAliveTicker = time.NewTicker(5 * time.Second)
-	go func() {
-		for range Client.KeepAliveTicker.C {
-			Client.SendKeepAlive()
-		}
-	}()
+	log.Printf("Dashborg Initialized Client AccId:%s Zone:%s ProcName:%s ProcRunId:%s\n", config.AccId, config.ZoneName, config.ProcName, client.ProcRunId)
+	// TODO error handling, run async, and hold other requests until this is done
+	client.sendProcMessage()
+	go client.runRequestStreamLoop()
+	Client = client
 	return Client
 }
 
-func (pc *ProcClient) WaitForClear() {
-	time.Sleep(Client.Config.MinClearTimeout)
-	pc.CVar.L.Lock()
-	pc.Done = true
-	pc.CVar.Broadcast()
-	pc.CVar.L.Unlock()
-
-	dm := transport.DoneMessage{
-		MType: "done",
-		Ts:    Ts(),
-	}
-	Client.SendMessageWithCallback(dm, func(v interface{}, err error) {
-		close(pc.Queue)
-		pc.CVar.L.Lock()
-		pc.QueueClear = true
-		pc.CVar.Broadcast()
-		pc.CVar.L.Unlock()
-	})
-	Client.KeepAliveTicker.Stop()
-	pc.Wg.Wait()
-}
-
-func (pc *ProcClient) SendKeepAlive() {
-	var isConnected bool
-	var queueLen int
-	pc.CVar.L.Lock()
-	isConnected = pc.Connected
-	queueLen = len(pc.Queue)
-	pc.CVar.L.Unlock()
-	if isConnected && queueLen == 0 {
-		kam := transport.KeepAliveMessage{MType: "keepalive"}
-		Client.SendMessage(kam)
-	}
-}
-
-func (pc *ProcClient) GetProcRunId() string {
-	return pc.ProcRunId
-}
-
-func (pc *ProcClient) SendMessage(m interface{}) error {
-	return pc.SendMessageWithCallback(m, nil)
-}
-
-func (pc *ProcClient) SendMessageWithCallback(m interface{}, callback func(interface{}, error)) error {
-	isDoneMsg := transport.GetMType(m) == "done"
+func (pc *ProcClient) registerHandlerFn(hkey HandlerKey, protoHKey *dashproto.HandlerKey, handlerFn HandlerFuncType) {
 	pc.CVar.L.Lock()
 	defer pc.CVar.L.Unlock()
-	if !isDoneMsg && pc.Done {
-		return errors.New("ProcClient done, dropping message")
-	}
-	qe := queueEntry{Message: m, RtnCallback: callback}
-	select {
-	case pc.Queue <- qe:
-	default:
-		return fmt.Errorf("ProcClient queue full, dropping message")
-	}
-	return nil
+	pc.HandlerMap[hkey] = HandlerVal{HandlerFn: handlerFn, ProtoHKey: protoHKey}
 }
 
-func (pc *ProcClient) SendMessageWait(m interface{}) (interface{}, error) {
-	var outerRtn interface{}
-	var outerErr error
-	ch := make(chan bool)
-	sendErr := pc.SendMessageWithCallback(m, func(rtn interface{}, err error) {
-		outerRtn = rtn
-		outerErr = err
-		close(ch)
-	})
-	if sendErr != nil {
-		return nil, sendErr
+func (pc *ProcClient) connectGrpc() error {
+	addr := pc.Config.DashborgSrvHost + ":" + strconv.Itoa(pc.Config.DashborgSrvPort)
+	backoffConfig := backoff.Config{
+		BaseDelay:  1.0 * time.Second,
+		Multiplier: 1.6,
+		Jitter:     0.2,
+		MaxDelay:   60 * time.Second,
 	}
-	<-ch
-	return outerRtn, outerErr
-}
-
-func (c *ProcClient) goConnectClient() {
-	Client.Wg.Add(1)
-	go func() {
-		defer Client.Wg.Done()
-		go c.retryConnectClient()
-		Client.sendLoop()
-	}()
-}
-
-func (c *ProcClient) sendLoop() {
-	var retryEntry *queueEntry
-	for {
-		// only send if Connected
-		c.CVar.L.Lock()
-		for !c.Connected && !c.ConnectGiveUp {
-			c.CVar.Wait()
-		}
-		if !c.Connected && c.ConnectGiveUp {
-			c.CVar.L.Unlock()
-			log.Printf("Dashborg ProcClient SendLoop GiveUp\n")
-			break
-		}
-		c.CVar.L.Unlock()
-
-		var entry queueEntry
-		if retryEntry == nil {
-			var ok bool
-			entry, ok = <-c.Queue
-			if !ok {
-				break
-			}
-		} else {
-			entry = *retryEntry
-			retryEntry = nil
-		}
-
-		// deal with error conditions
-		startTs := time.Now()
-		mtype := transport.GetMType(entry.Message)
-		var resp bufsrv.ResponseType
-		if strings.HasPrefix(mtype, "raw:") {
-			rawMsg := entry.Message.(transport.RawMessage)
-			resp = c.Client.DoRequest(mtype, rawMsg.Data)
-			fmt.Printf("send rawmessage %s %d\n", mtype, len(rawMsg.Data))
-		} else {
-			resp = c.Client.DoRequest("msg", entry.Message)
-		}
-		if mtype != "keepalive" {
-			logInfo("Message %s elapsed:%dms\n", mtype, int(time.Since(startTs)/time.Millisecond))
-		}
-		if resp.ConnError != nil {
-			log.Printf("Dashborg ProcClient ConnError:%v\n", resp.ConnError)
-			retryEntry = &entry
-			c.CVar.L.Lock()
-			c.Client = nil
-			c.Connected = false
-			c.CVar.Broadcast()
-			c.CVar.L.Unlock()
-			logInfo("Dashborg ProcClient Disconnected, will retry last message\n")
-			continue
-		} else {
-			err := resp.Err()
-			if err != nil {
-				log.Printf("Dashborg ProcClient err:%v\n", err)
-			}
-			if entry.RtnCallback != nil {
-				go entry.RtnCallback(resp.Response, err)
-			}
-		}
-
-	}
-	log.Printf("Dashborg Client SendLoop Done\n")
-}
-
-// retry states
-const (
-	retryConnectedWait = iota
-	retryQueueClear
-	retryDisconnectedTryOnce
-	retryDisconnectedTry
-	retryDisconnectedWait
-)
-
-func (pc *ProcClient) getRetryState(lastConnectTry time.Time) (int, time.Duration) {
-	if pc.QueueClear {
-		return retryQueueClear, 0
-	}
-	if pc.Connected {
-		return retryConnectedWait, 0
-	}
-	if pc.Done {
-		return retryDisconnectedTryOnce, 0
-	}
-	now := time.Now()
-	if lastConnectTry.IsZero() || now.Sub(lastConnectTry) >= BASE_RETRY_TIME_MS*time.Millisecond {
-		return retryDisconnectedTry, 0
-	}
-
-	// waitTime := (BASE_RETRY_TIME_MS*time.Millisecond - now.Sub(lastConnectTry)) + jitter
-	var waitTime time.Duration
-	if pc.RetryAttempts > 10 {
-		waitTime = MAX_RETRY_DURATION
-	} else {
-		multiplier := math.Pow(2, float64(pc.RetryAttempts))
-		waitTime = time.Duration(BASE_RETRY_TIME_MS * time.Millisecond * time.Duration(multiplier))
-	}
-	if waitTime > MAX_RETRY_DURATION {
-		waitTime = MAX_RETRY_DURATION
-	}
-	jitter := time.Duration(rand.Int63n(RETRY_JITTER_MS)) * time.Millisecond
-	return retryDisconnectedWait, waitTime + jitter
-}
-
-func retryStateToString(rs int) string {
-	switch rs {
-	case retryConnectedWait:
-		return "retryConnectedWait"
-	case retryQueueClear:
-		return "retryQueueClear"
-	case retryDisconnectedTryOnce:
-		return "retryDisconnectedTryOnce"
-	case retryDisconnectedTry:
-		return "retryDisconnectedTry"
-	case retryDisconnectedWait:
-		return "retryDisconnectedWait"
-	}
-	return ""
-}
-
-func (pc *ProcClient) retryWait(d time.Duration) {
-	pc.CVar.L.Lock()
-	defer pc.CVar.L.Unlock()
-	if d > 0 {
-		go func() {
-			time.Sleep(d)
-			pc.CVar.Broadcast()
-		}()
-	}
-	pc.CVar.Wait()
-}
-
-// retry every 0.5s
-// stop retrying after queue is clear or done, must try at least once
-func (pc *ProcClient) retryConnectClient() error {
-	var lastConnectTry time.Time
-	for {
-		pc.CVar.L.Lock()
-		state, waitDuration := pc.getRetryState(lastConnectTry)
-		pc.CVar.L.Unlock()
-		// log.Printf("** (%s) Retry State: %s / %v\n", pc.Config.ProcName, retryStateToString(state), waitDuration)
-		if state == retryQueueClear {
-			break
-		}
-		if state == retryConnectedWait {
-			pc.retryWait(0)
-			continue
-		}
-		if state == retryDisconnectedWait {
-			pc.RetryAttempts++
-			pc.retryWait(waitDuration)
-			continue
-		}
-		lastConnectTry = time.Now()
-		err := pc.connectClient()
-		if err != nil {
-			log.Printf("Dashborg ProcClient Error Connecting client err:%v\n", err)
-		}
-		if err != nil && state == retryDisconnectedTryOnce {
-			break
-		}
-	}
-	pc.CVar.L.Lock()
-	pc.ConnectGiveUp = true
-	pc.CVar.Broadcast()
-	pc.CVar.L.Unlock()
-	logInfo("ProcClient RetryConnectClient done\n")
-	return nil
-}
-
-func (pc *ProcClient) connectClient() error {
-	// TODO connect timeout (context?)
-	c := pc.Config
-	addr := c.DashborgSrvHost + ":" + strconv.Itoa(c.DashborgSrvPort)
-	var tlsConfig *tls.Config
-	cert, err := tls.LoadX509KeyPair(c.CertFileName, c.KeyFileName)
+	connectParams := grpc.ConnectParams{MinConnectTimeout: time.Second, Backoff: backoffConfig}
+	keepaliveParams := keepalive.ClientParameters{Time: 10 * time.Second, Timeout: 5 * time.Second, PermitWithoutStream: true}
+	clientCert, err := tls.LoadX509KeyPair(pc.Config.CertFileName, pc.Config.KeyFileName)
 	if err != nil {
-		return fmt.Errorf("Cannot load keypair key:%s cert:%s err:%w", c.KeyFileName, c.CertFileName, err)
+		return fmt.Errorf("Cannot load keypair key:%s cert:%s err:%w", pc.Config.KeyFileName, pc.Config.CertFileName, err)
 	}
-	tlsConfig = &tls.Config{
+	tlsConfig := &tls.Config{
 		MinVersion:               tls.VersionTLS13,
 		CurvePreferences:         []tls.CurveID{tls.CurveP384},
 		PreferServerCipherSuites: true,
 		InsecureSkipVerify:       true,
-		Certificates:             []tls.Certificate{cert},
+		Certificates:             []tls.Certificate{clientCert},
 		CipherSuites: []uint16{
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
-	logInfo("Connecting to addr:%s\n", addr)
-	client, err := bufsrv.MakeClient(addr, tlsConfig)
+	tlsCreds := credentials.NewTLS(tlsConfig)
+	conn, err := grpc.Dial(
+		addr,
+		grpc.WithConnectParams(connectParams),
+		grpc.WithKeepaliveParams(keepaliveParams),
+		grpc.WithTransportCredentials(tlsCreds),
+	)
+	pc.Conn = conn
+	pc.DBService = dashproto.NewDashborgServiceClient(conn)
+	return err
+}
+
+func marshalJson(val interface{}) (string, error) {
+	var jsonBuf bytes.Buffer
+	enc := json.NewEncoder(&jsonBuf)
+	enc.SetEscapeHTML(false)
+	err := enc.Encode(val)
+	if err != nil {
+		return "", err
+	}
+	return jsonBuf.String(), nil
+}
+
+func (pc *ProcClient) sendRequestResponse(req *PanelRequest, done bool) error {
+	m := &dashproto.SendResponseMessage{
+		Ts:           Ts(),
+		ReqId:        req.ReqId,
+		PanelName:    req.PanelName,
+		FeClientId:   req.FeClientId,
+		ResponseDone: done,
+	}
+	if req.Err != nil {
+		m.Err = req.Err.Error()
+	}
+
+	req.Lock.Lock()
+	m.Actions = req.RRActions
+	req.RRActions = nil
+	req.Lock.Unlock()
+
+	if pc.ConnId.Load().(string) == "" {
+		return fmt.Errorf("No Active ConnId")
+	}
+	resp, err := pc.DBService.SendResponse(pc.ctxWithMd(), m)
 	if err != nil {
 		return err
 	}
-	log.Printf("Dashborg Client Connected to %s\n", addr)
-	err = client.SetPushCtx(pc.ProcRunId, pc.handlePush)
-	if err != nil {
-		client.Close()
-		return err
+	if resp.Err != "" {
+		return errors.New(resp.Err)
 	}
-	err = sendProcMessage(client)
-	if err != nil {
-		client.Close()
-		return err
+	return nil
+}
+
+func (pc *ProcClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) {
+	if reqMsg.Err != "" {
+		log.Printf("gRPC got error request: err=%s\n", reqMsg.Err)
+		return
+	}
+	log.Printf("gRPC got request: panel=%s, type=%s, path=%s\n", reqMsg.PanelName, reqMsg.RequestType, reqMsg.Path)
+	preq := &PanelRequest{
+		Ctx:        ctx,
+		Lock:       &sync.Mutex{},
+		PanelName:  reqMsg.PanelName,
+		ReqId:      reqMsg.ReqId,
+		FeClientId: reqMsg.FeClientId,
+		Path:       reqMsg.Path,
+	}
+	hkey := HandlerKey{
+		PanelName: reqMsg.PanelName,
+		Path:      reqMsg.Path,
+	}
+	switch reqMsg.RequestType {
+	case "data":
+		hkey.HandlerType = "data"
+	case "handler":
+		hkey.HandlerType = "handler"
+	case "panel":
+		hkey.HandlerType = "panel"
+	case "streamopen":
+		fallthrough
+	case "streamclose":
+		hkey.HandlerType = "stream"
+	default:
+		preq.Err = fmt.Errorf("Invalid RequestMessage.RequestType [%s]", reqMsg.RequestType)
+		preq.Done()
+		return
 	}
 	pc.CVar.L.Lock()
-	pc.Client = client
-	pc.Connected = true
-	pc.RetryAttempts = 0
-	pc.CVar.Broadcast()
+	hval, ok := pc.HandlerMap[hkey]
 	pc.CVar.L.Unlock()
-	return nil
-}
-
-func (c *ProcClient) handlePush(p bufsrv.PushType) {
-	defer func() {
-		r := recover()
-		if r != nil {
-			stackTrace := string(debug.Stack())
-			log.Printf("PANIC running proc PushFn err:%v\n", r)
-			log.Printf("%s\n", stackTrace)
-			errMsg := transport.PushErrorMessage{
-				MType:      "pusherror",
-				FeClientId: p.PushSourceId,
-				Message:    fmt.Sprintf("%v", r),
-				StackTrace: stackTrace,
-			}
-			c.SendMessage(errMsg)
-		}
-	}()
-	err := c.handlePushInternal(p)
-	if err != nil {
-		errMsg := transport.PushErrorMessage{
-			MType:      "pusherror",
-			FeClientId: p.PushSourceId,
-			Message:    fmt.Sprintf("%v", err),
-		}
-		c.SendMessage(errMsg)
+	if !ok {
+		preq.Err = fmt.Errorf("No Handler found for path=%s", reqMsg.Path)
+		preq.Done()
+		return
 	}
-}
-
-func (c *ProcClient) handlePushInternal(p bufsrv.PushType) error {
-	if p.PushRecvId == "" || p.PushRecvId == "#keepalive" {
-		// keepalive request
-		return nil
-	}
-	if p.PushRecvId == "#message" {
-		var pm transport.PushMessage
-		err := mapstructure.Decode(p.PushPayload, &pm)
+	var data interface{}
+	if reqMsg.JsonData != "" {
+		err := json.Unmarshal([]byte(reqMsg.JsonData), &data)
 		if err != nil {
-			return fmt.Errorf("Invalid PushMessage sent to #message err:%w", err)
+			preq.Err = fmt.Errorf("Cannot unmarshal JsonData: %v", err)
+			preq.Done()
+			return
 		}
-		log.Printf("Dashborg Message: %s\n", pm.Message)
-		return nil
 	}
-	logInfo("handle push %#v\n", p)
-	c.CVar.L.Lock()
-	pfns := c.PushMap[p.PushRecvId]
-	pfnsCopy := make([]pushFnWrap, len(pfns))
-	copy(pfnsCopy, pfns)
-	c.CVar.L.Unlock()
-	if len(pfnsCopy) == 0 {
-		logInfo("No receiver registered for PushRecvId[%s]", p.PushRecvId)
-		return nil
-	}
-	for _, pfn := range pfnsCopy {
-		rtn, err := pfn.Fn(p.PushPayload)
-		if err != nil {
-			return err
-		}
-		if rtn != nil {
-			return nil
-		}
-		// if (false, nil), continue
-	}
-	return nil
+	preq.Data = data
+
+	// TODO catch error
+	defer preq.Done()
+	preq.Err = hval.HandlerFn(preq)
 }
 
-func sendProcMessage(client *bufsrv.Client) error {
+// TODO sync, only one procmessage allowed at a time
+func (pc *ProcClient) sendProcMessage() error {
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostname = "unknown"
 	}
-	pm := transport.ProcMessage{
-		MType:     "proc",
+	hostData := map[string]string{
+		"HostName": hostname,
+		"Pid":      strconv.Itoa(os.Getpid()),
+	}
+	hkeys := pc.copyHandlerKeys()
+	m := &dashproto.ProcMessage{
 		Ts:        Ts(),
-		AccId:     Client.Config.AccId,
-		AnonAcc:   Client.Config.AnonAcc,
-		ProcName:  Client.Config.ProcName,
-		ProcIName: Client.Config.ProcIName,
-		ProcTags:  Client.Config.ProcTags,
-		ProcRunId: Client.ProcRunId,
-		ZoneName:  Client.Config.ZoneName,
-		StartTs:   Client.StartTs,
-		HostData: map[string]string{
-			"HostName": hostname,
-			"Pid":      strconv.Itoa(os.Getpid()),
-		},
-		ActiveControls: Client.getActiveControls(),
+		ProcRunId: pc.ProcRunId,
+		AccId:     pc.Config.AccId,
+		ZoneName:  pc.Config.ZoneName,
+		AnonAcc:   pc.Config.AnonAcc,
+		ProcName:  pc.Config.ProcName,
+		ProcTags:  pc.Config.ProcTags,
+		HostData:  hostData,
+		StartTs:   pc.StartTs,
+		Handlers:  hkeys,
 	}
-	resp := client.DoRequest("msg", pm)
-	return resp.Err()
+	resp, err := pc.DBService.Proc(pc.ctxWithMd(), m)
+	if err != nil {
+		log.Printf("procclient sendProcMessage error: %v\n", err)
+		pc.ConnId.Store("")
+		return err
+	}
+	if !resp.Success {
+		log.Printf("procclient sendProcMessage error: %s\n", resp.Err)
+		pc.ConnId.Store("")
+		return errors.New(resp.Err)
+	}
+	pc.ConnId.Store(resp.ConnId)
+	log.Printf("procclient sendProcMessage success connid:%s\n", resp.ConnId)
+	return nil
 }
 
-func (pc *ProcClient) RegisterPushFn(id string, pfn PushFn, prepend bool) string {
-	pfnWrap := pushFnWrap{Id: uuid.New().String(), Fn: pfn}
-	pc.CVar.L.Lock()
-	defer pc.CVar.L.Unlock()
-	if prepend {
-		pc.PushMap[id] = append([]pushFnWrap{pfnWrap}, pc.PushMap[id]...)
-	} else {
-		pc.PushMap[id] = append(pc.PushMap[id], pfnWrap)
-	}
-	return pfnWrap.Id
+func (pc *ProcClient) ctxWithMd() context.Context {
+	ctx := context.Background()
+	connId := pc.ConnId.Load().(string)
+	ctx = metadata.AppendToOutgoingContext(ctx, "dashborg-connid", connId)
+	return ctx
 }
 
-func (pc *ProcClient) UnregisterPushFn(id string, pfnId string) {
-	pc.CVar.L.Lock()
-	defer pc.CVar.L.Unlock()
+type ExpoWait struct {
+	ForceWait       bool
+	InitialWait     time.Time
+	CurWaitDeadline time.Time
+	LastOkMs        int64
+	WaitTimes       int
+}
 
-	arr := pc.PushMap[id]
-	pos := -1
-	for idx, v := range arr {
-		if v.Id == pfnId {
-			pos = idx
+func (w *ExpoWait) Wait() bool {
+	hasInitialWait := !w.InitialWait.IsZero()
+	if w.InitialWait.IsZero() {
+		w.InitialWait = time.Now()
+	}
+	if w.ForceWait || hasInitialWait {
+		time.Sleep(1 * time.Second)
+		w.WaitTimes++
+		w.ForceWait = false
+	}
+	msWait := int64(time.Since(w.InitialWait)) / int64(time.Millisecond)
+	if !hasInitialWait {
+		w.LastOkMs = msWait
+		return true
+	}
+	diffWait := msWait - w.LastOkMs
+	var rtnOk bool
+	switch {
+	case msWait < 4000:
+		w.LastOkMs = msWait
+		rtnOk = true
+
+	case msWait < 60000 && diffWait > 4800:
+		w.LastOkMs = msWait
+		rtnOk = true
+
+	case diffWait > 29500:
+		w.LastOkMs = msWait
+		rtnOk = true
+	}
+	if rtnOk {
+		log.Printf("procclient RunRequestStreamLoop trying to connect (%0.1fs) %d\n", float64(msWait)/1000, w.WaitTimes)
+	}
+	return rtnOk
+}
+
+func (w *ExpoWait) Reset() {
+	*w = ExpoWait{}
+}
+
+func (pc *ProcClient) runRequestStreamLoop() {
+	w := &ExpoWait{}
+	for {
+		state := pc.Conn.GetState()
+		if state == connectivity.Shutdown {
+			log.Printf("procclient RunRequestStreamLoop exiting -- Conn Shutdown\n")
 			break
 		}
+		if state == connectivity.Connecting || state == connectivity.TransientFailure {
+			time.Sleep(1 * time.Second)
+			w.Reset()
+			continue
+		}
+		okWait := w.Wait()
+		if !okWait {
+			continue
+		}
+		if pc.ConnId.Load().(string) == "" {
+			err := pc.sendProcMessage()
+			if err != nil {
+				continue
+			}
+		}
+		ranOk, ec := pc.runRequestStream()
+		if ranOk {
+			w.Reset()
+		}
+		if ec == EC_BADCONNID {
+			pc.ConnId.Store("")
+			continue
+		}
+		w.ForceWait = true
 	}
-	if pos == -1 {
+}
+
+func (pc *ProcClient) runRequestStream() (bool, string) {
+	m := &dashproto.RequestStreamMessage{Ts: Ts()}
+	log.Printf("gRPC RequestStream starting\n")
+	reqStreamClient, err := pc.DBService.RequestStream(pc.ctxWithMd(), m)
+	if err != nil {
+		// TODO retry
+		log.Printf("Error setting up gRPC RequestStream: %v\n", err)
+		return false, EC_UNKNOWN
+	}
+	startTime := time.Now()
+	reqCounter := 0
+	var endingErrCode string
+	for {
+		reqMsg, err := reqStreamClient.Recv()
+		log.Printf("rtn from req-stream %v | %v\n", reqMsg, err)
+		if err == io.EOF {
+			log.Printf("gRPC RequestStream done: EOF\n")
+			endingErrCode = EC_EOF
+			break
+		}
+		if err != nil {
+			log.Printf("gRPC RequestStream ERROR: %v\n", err)
+			endingErrCode = EC_UNKNOWN
+			break
+		}
+		if reqMsg.ErrCode == EC_BADCONNID {
+			log.Printf("gRPC RequestStream BADCONNID\n")
+			endingErrCode = EC_BADCONNID
+			break
+		}
+		go func() {
+			reqCounter++
+			ctx := context.Background()
+			if reqMsg.TimeoutMs > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, time.Duration(reqMsg.TimeoutMs)*time.Millisecond)
+				defer cancel()
+			}
+			pc.dispatchRequest(ctx, reqMsg)
+		}()
+	}
+	elapsed := time.Since(startTime)
+	return (elapsed >= 5*time.Second), endingErrCode
+}
+
+func (pc *ProcClient) WaitForClear() {
+	time.Sleep(Client.Config.MinClearTimeout)
+	err := pc.Conn.Close()
+	if err != nil {
+		log.Printf("ERROR closing gRPC connection: %v\n", err)
+	}
+}
+
+// no error returned, locally registers if cannot connect
+func (pc *ProcClient) registerHandler(protoHkey *dashproto.HandlerKey, handlerFn func(*PanelRequest) error) {
+	hkey := HandlerKey{
+		PanelName:   protoHkey.PanelName,
+		HandlerType: protoHkey.HandlerType,
+		Path:        protoHkey.Path,
+	}
+	pc.registerHandlerFn(hkey, protoHkey, handlerFn)
+
+	// TODO what to do on error?
+	// TODO retry/flag errors
+	if pc.ConnId.Load().(string) == "" {
 		return
 	}
-	pc.PushMap[id] = append(arr[0:pos], arr[pos+1:]...)
-}
-
-func (pc *ProcClient) getActiveControls() []string {
-	pc.CVar.L.Lock()
-	defer pc.CVar.L.Unlock()
-
-	rtn := make([]string, 0, len(pc.ActiveControls))
-	for cloc, _ := range pc.ActiveControls {
-		rtn = append(rtn, cloc)
+	msg := &dashproto.RegisterHandlerMessage{
+		Ts:       Ts(),
+		Handlers: []*dashproto.HandlerKey{protoHkey},
 	}
-	return rtn
-}
-
-func (pc *ProcClient) TrackActive(controlType string, controlLoc string, clientId string) {
-	pc.CVar.L.Lock()
-	defer pc.CVar.L.Unlock()
-	amap := pc.ActiveControls[controlLoc]
-	if amap == nil {
-		amap = make(map[string]bool)
-		m := transport.ActiveControlsMessage{
-			MType:    "activecontrols",
-			Ts:       Ts(),
-			Activate: []string{controlLoc},
-		}
-		go pc.SendMessage(m)
-	}
-	amap[clientId] = true
-	pc.ActiveControls[controlLoc] = amap
-}
-
-func (pc *ProcClient) UntrackActive(controlType string, controlLoc string, clientId string) {
-	pc.CVar.L.Lock()
-	defer pc.CVar.L.Unlock()
-	amap := pc.ActiveControls[controlLoc]
-	if len(amap) == 0 {
+	resp, err := Client.DBService.RegisterHandler(pc.ctxWithMd(), msg)
+	if err != nil {
+		log.Printf("RegisterHandler ERROR-rpc %v\n", err)
 		return
 	}
-	delete(amap, clientId)
-	if len(amap) == 0 {
-		delete(pc.ActiveControls, controlLoc)
-		m := transport.ActiveControlsMessage{
-			MType:      "activecontrols",
-			Ts:         Ts(),
-			Deactivate: []string{controlLoc},
-		}
-		go pc.SendMessage(m)
+	if resp.Err != "" {
+		log.Printf("RegisterHandler ERROR %v\n", resp.Err)
+		return
 	}
+	log.Printf("RegisterHandler %v success\n", hkey)
 }
