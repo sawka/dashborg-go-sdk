@@ -29,45 +29,47 @@ const EC_EOF = "EOF"
 const EC_UNKNOWN = "UNKNOWN"
 const EC_BADCONNID = "BADCONNID"
 const EC_ACCACCESS = "ACCACCESS"
+const EC_NOHANDLER = "NOHANDLER"
+const EC_UNAVAILABLE = "UNAVAILABLE"
 
-var Client *ProcClient
+var globalClient *procClient
 
-type HandlerKey struct {
+type handlerKey struct {
 	PanelName   string
 	HandlerType string // data, handler
 	Path        string
 }
 
-type HandlerFuncType = func(*PanelRequest) error
+type handlerFuncType = func(*PanelRequest) (interface{}, error)
 
-type HandlerVal struct {
+type handlerVal struct {
 	ProtoHKey *dashproto.HandlerKey
-	HandlerFn HandlerFuncType
+	HandlerFn handlerFuncType
 }
 
-type ProcClient struct {
+type procClient struct {
 	CVar       *sync.Cond
 	StartTs    int64
 	ProcRunId  string
 	Config     *Config
 	Conn       *grpc.ClientConn
 	DBService  dashproto.DashborgServiceClient
-	HandlerMap map[HandlerKey]HandlerVal
+	HandlerMap map[handlerKey]handlerVal
 	ConnId     *atomic.Value
 }
 
-func newProcClient() *ProcClient {
-	rtn := &ProcClient{}
+func newProcClient() *procClient {
+	rtn := &procClient{}
 	rtn.CVar = sync.NewCond(&sync.Mutex{})
 	rtn.StartTs = Ts()
 	rtn.ProcRunId = uuid.New().String()
-	rtn.HandlerMap = make(map[HandlerKey]HandlerVal)
+	rtn.HandlerMap = make(map[handlerKey]handlerVal)
 	rtn.ConnId = &atomic.Value{}
 	rtn.ConnId.Store("")
 	return rtn
 }
 
-func (pc *ProcClient) copyHandlerKeys() []*dashproto.HandlerKey {
+func (pc *procClient) copyHandlerKeys() []*dashproto.HandlerKey {
 	pc.CVar.L.Lock()
 	defer pc.CVar.L.Unlock()
 	rtn := make([]*dashproto.HandlerKey, 0, len(pc.HandlerMap))
@@ -82,10 +84,8 @@ func (pc *ProcClient) copyHandlerKeys() []*dashproto.HandlerKey {
 	return rtn
 }
 
-func StartProcClient(config *Config) *ProcClient {
+func StartProcClient(config *Config) {
 	config.SetupForProcClient()
-	config.DashborgSrvHost = "localhost"
-	config.DashborgSrvPort = 7632
 	client := newProcClient()
 	client.Config = config
 	// TODO keepalive
@@ -97,17 +97,16 @@ func StartProcClient(config *Config) *ProcClient {
 	// TODO error handling, run async, and hold other requests until this is done
 	client.sendProcMessage()
 	go client.runRequestStreamLoop()
-	Client = client
-	return Client
+	globalClient = client
 }
 
-func (pc *ProcClient) registerHandlerFn(hkey HandlerKey, protoHKey *dashproto.HandlerKey, handlerFn HandlerFuncType) {
+func (pc *procClient) registerHandlerFn(hkey handlerKey, protoHKey *dashproto.HandlerKey, handlerFn handlerFuncType) {
 	pc.CVar.L.Lock()
 	defer pc.CVar.L.Unlock()
-	pc.HandlerMap[hkey] = HandlerVal{HandlerFn: handlerFn, ProtoHKey: protoHKey}
+	pc.HandlerMap[hkey] = handlerVal{HandlerFn: handlerFn, ProtoHKey: protoHKey}
 }
 
-func (pc *ProcClient) connectGrpc() error {
+func (pc *procClient) connectGrpc() error {
 	addr := pc.Config.DashborgSrvHost + ":" + strconv.Itoa(pc.Config.DashborgSrvPort)
 	backoffConfig := backoff.Config{
 		BaseDelay:  1.0 * time.Second,
@@ -155,7 +154,7 @@ func marshalJson(val interface{}) (string, error) {
 	return jsonBuf.String(), nil
 }
 
-func (pc *ProcClient) sendRequestResponse(req *PanelRequest, done bool) error {
+func (pc *procClient) sendRequestResponse(req *PanelRequest, done bool) error {
 	m := &dashproto.SendResponseMessage{
 		Ts:           Ts(),
 		ReqId:        req.ReqId,
@@ -185,7 +184,7 @@ func (pc *ProcClient) sendRequestResponse(req *PanelRequest, done bool) error {
 	return nil
 }
 
-func (pc *ProcClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) {
+func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) {
 	if reqMsg.Err != "" {
 		log.Printf("gRPC got error request: err=%s\n", reqMsg.Err)
 		return
@@ -199,7 +198,7 @@ func (pc *ProcClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 		FeClientId: reqMsg.FeClientId,
 		Path:       reqMsg.Path,
 	}
-	hkey := HandlerKey{
+	hkey := handlerKey{
 		PanelName: reqMsg.PanelName,
 		Path:      reqMsg.Path,
 	}
@@ -240,11 +239,11 @@ func (pc *ProcClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 
 	// TODO catch error
 	defer preq.Done()
-	preq.Err = hval.HandlerFn(preq)
+	_, preq.Err = hval.HandlerFn(preq)
 }
 
 // TODO sync, only one procmessage allowed at a time
-func (pc *ProcClient) sendProcMessage() error {
+func (pc *procClient) sendProcMessage() error {
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostname = "unknown"
@@ -282,14 +281,14 @@ func (pc *ProcClient) sendProcMessage() error {
 	return nil
 }
 
-func (pc *ProcClient) ctxWithMd() context.Context {
+func (pc *procClient) ctxWithMd() context.Context {
 	ctx := context.Background()
 	connId := pc.ConnId.Load().(string)
 	ctx = metadata.AppendToOutgoingContext(ctx, "dashborg-connid", connId)
 	return ctx
 }
 
-type ExpoWait struct {
+type expoWait struct {
 	ForceWait       bool
 	InitialWait     time.Time
 	CurWaitDeadline time.Time
@@ -297,7 +296,7 @@ type ExpoWait struct {
 	WaitTimes       int
 }
 
-func (w *ExpoWait) Wait() bool {
+func (w *expoWait) Wait() bool {
 	hasInitialWait := !w.InitialWait.IsZero()
 	if w.InitialWait.IsZero() {
 		w.InitialWait = time.Now()
@@ -333,12 +332,12 @@ func (w *ExpoWait) Wait() bool {
 	return rtnOk
 }
 
-func (w *ExpoWait) Reset() {
-	*w = ExpoWait{}
+func (w *expoWait) Reset() {
+	*w = expoWait{}
 }
 
-func (pc *ProcClient) runRequestStreamLoop() {
-	w := &ExpoWait{}
+func (pc *procClient) runRequestStreamLoop() {
+	w := &expoWait{}
 	for {
 		state := pc.Conn.GetState()
 		if state == connectivity.Shutdown {
@@ -372,7 +371,7 @@ func (pc *ProcClient) runRequestStreamLoop() {
 	}
 }
 
-func (pc *ProcClient) runRequestStream() (bool, string) {
+func (pc *procClient) runRequestStream() (bool, string) {
 	m := &dashproto.RequestStreamMessage{Ts: Ts()}
 	log.Printf("gRPC RequestStream starting\n")
 	reqStreamClient, err := pc.DBService.RequestStream(pc.ctxWithMd(), m)
@@ -397,7 +396,7 @@ func (pc *ProcClient) runRequestStream() (bool, string) {
 			endingErrCode = EC_UNKNOWN
 			break
 		}
-		if reqMsg.ErrCode == EC_BADCONNID {
+		if reqMsg.ErrCode == dashproto.ErrorCode_EC_BADCONNID {
 			log.Printf("gRPC RequestStream BADCONNID\n")
 			endingErrCode = EC_BADCONNID
 			break
@@ -417,17 +416,17 @@ func (pc *ProcClient) runRequestStream() (bool, string) {
 	return (elapsed >= 5*time.Second), endingErrCode
 }
 
-func (pc *ProcClient) WaitForClear() {
-	time.Sleep(Client.Config.MinClearTimeout)
-	err := pc.Conn.Close()
+func WaitForClear() {
+	time.Sleep(globalClient.Config.MinClearTimeout)
+	err := globalClient.Conn.Close()
 	if err != nil {
 		log.Printf("ERROR closing gRPC connection: %v\n", err)
 	}
 }
 
 // no error returned, locally registers if cannot connect
-func (pc *ProcClient) registerHandler(protoHkey *dashproto.HandlerKey, handlerFn func(*PanelRequest) error) {
-	hkey := HandlerKey{
+func (pc *procClient) registerHandler(protoHkey *dashproto.HandlerKey, handlerFn handlerFuncType) {
+	hkey := handlerKey{
 		PanelName:   protoHkey.PanelName,
 		HandlerType: protoHkey.HandlerType,
 		Path:        protoHkey.Path,
@@ -443,7 +442,7 @@ func (pc *ProcClient) registerHandler(protoHkey *dashproto.HandlerKey, handlerFn
 		Ts:       Ts(),
 		Handlers: []*dashproto.HandlerKey{protoHkey},
 	}
-	resp, err := Client.DBService.RegisterHandler(pc.ctxWithMd(), msg)
+	resp, err := globalClient.DBService.RegisterHandler(pc.ctxWithMd(), msg)
 	if err != nil {
 		log.Printf("RegisterHandler ERROR-rpc %v\n", err)
 		return

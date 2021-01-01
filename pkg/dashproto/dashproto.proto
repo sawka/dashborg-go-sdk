@@ -2,6 +2,16 @@ syntax = "proto3";
 package dashborg.rpc1;
 option go_package = "github.com/sawka/dashborg-go-sdk/pkg/dashproto";
 
+enum ErrorCode {
+    EC_NONE = 0;
+    EC_EOF = 1;
+    EC_UNKNOWN = 2;
+    EC_BADCONNID = 3;
+    EC_ACCACCESS = 4;
+    EC_NOHANDLER = 5;
+    EC_UNAVAILABLE = 6;
+}
+
 message RRAction {
     int64 Ts = 1;
     string ActionType = 2;  // "setdata", "event", "invalidate", "panel"
@@ -34,7 +44,7 @@ message RequestMessage {
     string Path = 9;
     string JsonData = 10;
     string Err = 11;        // only used for server-side errors
-    string ErrCode = 12;    // only used for server-side errors
+    ErrorCode ErrCode = 12;    // only used for server-side errors
     int64 TimeoutMs = 13;
     repeated string DataPaths = 14;
 }
@@ -44,7 +54,7 @@ message HandlerOpt {
 
 message HandlerKey {
     string PanelName = 1;
-    string HandlerType = 2; // "data", "handler", "stream"
+    string HandlerType = 2; // "data", "handler", "stream", "panel"
     string Path = 3;
     repeated HandlerOpt Opts = 4;
 }    
@@ -57,7 +67,7 @@ message RegisterHandlerMessage {
 message RegisterHandlerResponse {
     bool Success = 1;
     string Err = 2;
-    string ErrCode = 3;
+    ErrorCode ErrCode = 3;
 }
 
 message ProcMessage {
@@ -76,7 +86,7 @@ message ProcMessage {
 message ProcResponse {
     bool Success = 1;
     string Err = 2;
-    string ErrCode = 3;
+    ErrorCode ErrCode = 3;
     string ConnId = 4;
 }
 
@@ -88,7 +98,7 @@ message RequestStreamMessage {
 message SendResponseResponse {
     bool Success = 1;
     string Err = 2;
-    string ErrCode = 3;
+    ErrorCode ErrCode = 3;
 }
 
 service DashborgService {

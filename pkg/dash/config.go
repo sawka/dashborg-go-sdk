@@ -42,7 +42,7 @@ func (c *Config) setDefaults() {
 	c.ZoneName = defaultString(c.ZoneName, os.Getenv("DASHBORG_ZONE"), DEFAULT_ZONENAME)
 	c.Env = defaultString(c.Env, os.Getenv("DASHBORG_ENV"), "prod")
 	if c.Env == "prod" {
-		c.DashborgSrvHost = defaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "proc.api.dashborg.net")
+		c.DashborgSrvHost = defaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "grpc.api.dashborg.net")
 	} else {
 		c.DashborgSrvHost = defaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "localhost")
 	}
@@ -55,7 +55,7 @@ func (c *Config) setDefaults() {
 			}
 		}
 		if c.DashborgSrvPort == 0 {
-			c.DashborgSrvPort = 7533
+			c.DashborgSrvPort = 7632
 		}
 	}
 	var cmdName string
@@ -121,7 +121,7 @@ func (c *Config) maybeMakeKeys(accId string) error {
 	if err != nil {
 		return fmt.Errorf("Cannot create keypair err:%v", err)
 	}
-	log.Printf("Dashborg Created new self-signed keypair key:%s cert:%s for new accountid:%s\n", c.KeyFileName, c.CertFileName, accId)
+	log.Printf("Dashborg created new self-signed keypair key:%s cert:%s for new accountid:%s\n", c.KeyFileName, c.CertFileName, accId)
 	return nil
 }
 

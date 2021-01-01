@@ -62,31 +62,27 @@ type PanelRequest struct {
 	IsDone     bool
 }
 
-type HandlerOpt interface {
-	HandlerOptType() string
-}
-
 func Ts() int64 {
 	return time.Now().UnixNano() / 1000000
 }
 
 func DefinePanel(panelName string, html string) error {
 	ts := Ts()
-	runFn := func(req *PanelRequest) error {
+	runFn := func(req *PanelRequest) (interface{}, error) {
 		htmlAction := &dashproto.RRAction{
 			Ts:         ts,
 			ActionType: "panel",
 			Html:       html,
 		}
 		req.appendRR(htmlAction)
-		return nil
+		return nil, nil
 	}
 	hkey := &dashproto.HandlerKey{
 		PanelName:   panelName,
 		HandlerType: "panel",
 		Path:        "",
 	}
-	Client.registerHandler(hkey, runFn)
+	globalClient.registerHandler(hkey, runFn)
 	return nil
 }
 
@@ -97,20 +93,19 @@ func readConditionally(fileName string, finfo os.FileInfo) (string, os.FileInfo,
 		return "", nil, false, err
 	}
 	shouldReload := finfo == nil || finfo.Size() != newFinfo.Size() || finfo.ModTime() != newFinfo.ModTime()
-
+	if !shouldReload {
+		return "", finfo, true, nil
+	}
 	fd, err := os.Open(fileName)
 	if err != nil {
 		return "", nil, false, err
 	}
 	defer fd.Close()
-	if !shouldReload {
-		return "", finfo, true, nil
-	}
 	htmlBytes, err := ioutil.ReadAll(fd)
 	if err != nil {
 		return "", nil, false, err
 	}
-	return string(htmlBytes), finfo, false, nil
+	return string(htmlBytes), newFinfo, false, nil
 }
 
 func DefinePanelFromFile(panelName string, fileName string, pollTime time.Duration) error {
@@ -119,7 +114,7 @@ func DefinePanelFromFile(panelName string, fileName string, pollTime time.Durati
 		return err
 	}
 	log.Printf("DefinePanel loaded panel:%s from file:%s len:%d\n", panelName, fileName, len(html))
-	runFn := func(req *PanelRequest) error {
+	runFn := func(req *PanelRequest) (interface{}, error) {
 		ts := Ts()
 		htmlAction := &dashproto.RRAction{
 			Ts:         ts,
@@ -127,14 +122,14 @@ func DefinePanelFromFile(panelName string, fileName string, pollTime time.Durati
 			Html:       html,
 		}
 		req.appendRR(htmlAction)
-		return nil
+		return nil, nil
 	}
 	hkey := &dashproto.HandlerKey{
 		PanelName:   panelName,
 		HandlerType: "panel",
 		Path:        "",
 	}
-	Client.registerHandler(hkey, runFn)
+	globalClient.registerHandler(hkey, runFn)
 	if pollTime > 0 {
 		if pollTime < 200*time.Millisecond {
 			pollTime = 200 * time.Millisecond
@@ -155,9 +150,9 @@ func DefinePanelFromFile(panelName string, fileName string, pollTime time.Durati
 				if cached {
 					continue
 				}
+				finfo = newFinfo
 				if html != newHtml {
 					html = newHtml
-					finfo = newFinfo
 					log.Printf("DefinePanel reloaded panel:%s file:%s len:%d\n", panelName, fileName, len(html))
 				}
 			}
@@ -190,7 +185,7 @@ func (req *PanelRequest) SetData(path string, data interface{}) error {
 	return nil
 }
 
-func (req *PanelRequest) SendEvent(selector string, eventType string, data interface{}) error {
+func (req *PanelRequest) sendEvent(selector string, eventType string, data interface{}) error {
 	if req.IsDone {
 		return fmt.Errorf("Cannot call SendEvent(), selector=%s, event=%s, PanelRequest is already done", selector, eventType)
 	}
@@ -209,34 +204,38 @@ func (req *PanelRequest) SendEvent(selector string, eventType string, data inter
 	return nil
 }
 
-func (req *PanelRequest) Flush() error {
+func (req *PanelRequest) flush() error {
 	if req.IsDone {
 		return fmt.Errorf("Cannot Flush(), PanelRequest is already done")
 	}
-	return Client.sendRequestResponse(req, false)
+	return globalClient.sendRequestResponse(req, false)
 }
 
 func (req *PanelRequest) Done() error {
 	if req.IsDone {
 		return nil
 	}
-	return Client.sendRequestResponse(req, true)
+	return globalClient.sendRequestResponse(req, true)
 }
 
-func RegisterPanelHandler(panelName string, path string, handlerFn func(*PanelRequest) error, opts ...HandlerOpt) {
+func RegisterPanelHandler(panelName string, path string, handlerFn func(*PanelRequest) error) {
 	hkey := &dashproto.HandlerKey{
 		PanelName:   panelName,
 		HandlerType: "handler",
 		Path:        path,
 	}
-	Client.registerHandler(hkey, handlerFn)
+	hfn := func(req *PanelRequest) (interface{}, error) {
+		err := handlerFn(req)
+		return nil, err
+	}
+	globalClient.registerHandler(hkey, hfn)
 }
 
-func RegisterPanelData(panelName string, path string, handlerFn func(*PanelRequest) error, opts ...HandlerOpt) {
+func RegisterPanelData(panelName string, path string, handlerFn func(*PanelRequest) (interface{}, error)) {
 	hkey := &dashproto.HandlerKey{
 		PanelName:   panelName,
 		HandlerType: "data",
 		Path:        path,
 	}
-	Client.registerHandler(hkey, handlerFn)
+	globalClient.registerHandler(hkey, handlerFn)
 }
