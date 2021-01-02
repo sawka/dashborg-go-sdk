@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
+	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/connectivity"
@@ -31,6 +32,8 @@ const EC_BADCONNID = "BADCONNID"
 const EC_ACCACCESS = "ACCACCESS"
 const EC_NOHANDLER = "NOHANDLER"
 const EC_UNAVAILABLE = "UNAVAILABLE"
+
+const CLIENT_VERSION = "go-0.0.1"
 
 var globalClient *procClient
 
@@ -61,7 +64,7 @@ type procClient struct {
 func newProcClient() *procClient {
 	rtn := &procClient{}
 	rtn.CVar = sync.NewCond(&sync.Mutex{})
-	rtn.StartTs = Ts()
+	rtn.StartTs = dashutil.Ts()
 	rtn.ProcRunId = uuid.New().String()
 	rtn.HandlerMap = make(map[handlerKey]handlerVal)
 	rtn.ConnId = &atomic.Value{}
@@ -156,7 +159,7 @@ func marshalJson(val interface{}) (string, error) {
 
 func (pc *procClient) sendRequestResponse(req *PanelRequest, done bool) error {
 	m := &dashproto.SendResponseMessage{
-		Ts:           Ts(),
+		Ts:           dashutil.Ts(),
 		ReqId:        req.ReqId,
 		PanelName:    req.PanelName,
 		FeClientId:   req.FeClientId,
@@ -254,16 +257,17 @@ func (pc *procClient) sendProcMessage() error {
 	}
 	hkeys := pc.copyHandlerKeys()
 	m := &dashproto.ProcMessage{
-		Ts:        Ts(),
-		ProcRunId: pc.ProcRunId,
-		AccId:     pc.Config.AccId,
-		ZoneName:  pc.Config.ZoneName,
-		AnonAcc:   pc.Config.AnonAcc,
-		ProcName:  pc.Config.ProcName,
-		ProcTags:  pc.Config.ProcTags,
-		HostData:  hostData,
-		StartTs:   pc.StartTs,
-		Handlers:  hkeys,
+		Ts:            dashutil.Ts(),
+		ProcRunId:     pc.ProcRunId,
+		AccId:         pc.Config.AccId,
+		ZoneName:      pc.Config.ZoneName,
+		AnonAcc:       pc.Config.AnonAcc,
+		ProcName:      pc.Config.ProcName,
+		ProcTags:      pc.Config.ProcTags,
+		HostData:      hostData,
+		StartTs:       pc.StartTs,
+		Handlers:      hkeys,
+		ClientVersion: CLIENT_VERSION,
 	}
 	resp, err := pc.DBService.Proc(pc.ctxWithMd(), m)
 	if err != nil {
@@ -372,7 +376,7 @@ func (pc *procClient) runRequestStreamLoop() {
 }
 
 func (pc *procClient) runRequestStream() (bool, string) {
-	m := &dashproto.RequestStreamMessage{Ts: Ts()}
+	m := &dashproto.RequestStreamMessage{Ts: dashutil.Ts()}
 	log.Printf("gRPC RequestStream starting\n")
 	reqStreamClient, err := pc.DBService.RequestStream(pc.ctxWithMd(), m)
 	if err != nil {
@@ -439,7 +443,7 @@ func (pc *procClient) registerHandler(protoHkey *dashproto.HandlerKey, handlerFn
 		return
 	}
 	msg := &dashproto.RegisterHandlerMessage{
-		Ts:       Ts(),
+		Ts:       dashutil.Ts(),
 		Handlers: []*dashproto.HandlerKey{protoHkey},
 	}
 	resp, err := globalClient.DBService.RegisterHandler(pc.ctxWithMd(), msg)

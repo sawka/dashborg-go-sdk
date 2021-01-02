@@ -14,7 +14,7 @@ enum ErrorCode {
 
 message RRAction {
     int64 Ts = 1;
-    string ActionType = 2;  // "setdata", "event", "invalidate", "panel"
+    string ActionType = 2;  // "setdata", "event", "invalidate", "panel", "auth"
     string Selector = 3;    // path, selector, controlid
     string JsonData = 4;
     string EventType = 5;   // only set for "event" ActionType
@@ -35,28 +35,25 @@ message SendResponseMessage {
 message RequestMessage {
     int64 Ts = 1;
     string AccId = 2;
-    string ReqId = 3;
-    string RequestType = 4; // "data", "handler", "streamopen", "streamclose", "panel"
-    string ZoneName = 5;
-    string PanelName = 6;
-    string FeClientId = 7;
-    string ControlId = 8;
-    string Path = 9;
+    string ZoneName = 3;
+    string PanelName = 4;
+    string RequestType = 5; // "data", "handler", "streamopen", "streamclose", "panel", "servermessage"
+    string Path = 6;
+    string ReqId = 7;
+    string FeClientId = 8;
+    string ControlId = 9;
     string JsonData = 10;
-    string Err = 11;        // only used for server-side errors
-    ErrorCode ErrCode = 12;    // only used for server-side errors
-    int64 TimeoutMs = 13;
-    repeated string DataPaths = 14;
-}
-
-message HandlerOpt {
+    string AuthData = 11;
+    string Err = 12;           // only used for server-side errors
+    ErrorCode ErrCode = 13;    // only used for server-side errors
+    int64 TimeoutMs = 14;
+    repeated string DataPaths = 15;
 }
 
 message HandlerKey {
     string PanelName = 1;
     string HandlerType = 2; // "data", "handler", "stream", "panel"
     string Path = 3;
-    repeated HandlerOpt Opts = 4;
 }    
 
 message RegisterHandlerMessage {
@@ -81,6 +78,7 @@ message ProcMessage {
     map<string,string> HostData = 8;
     int64 StartTs = 9;
     repeated HandlerKey Handlers = 10;
+    string ClientVersion = 11;
 }
 
 message ProcResponse {
@@ -90,7 +88,6 @@ message ProcResponse {
     string ConnId = 4;
 }
 
-// placeholder
 message RequestStreamMessage {
     int64 Ts = 1;
 }

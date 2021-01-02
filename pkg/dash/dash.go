@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
+	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
 type Config struct {
@@ -62,12 +63,8 @@ type PanelRequest struct {
 	IsDone     bool
 }
 
-func Ts() int64 {
-	return time.Now().UnixNano() / 1000000
-}
-
 func DefinePanel(panelName string, html string) error {
-	ts := Ts()
+	ts := dashutil.Ts()
 	runFn := func(req *PanelRequest) (interface{}, error) {
 		htmlAction := &dashproto.RRAction{
 			Ts:         ts,
@@ -115,7 +112,7 @@ func DefinePanelFromFile(panelName string, fileName string, pollTime time.Durati
 	}
 	log.Printf("DefinePanel loaded panel:%s from file:%s len:%d\n", panelName, fileName, len(html))
 	runFn := func(req *PanelRequest) (interface{}, error) {
-		ts := Ts()
+		ts := dashutil.Ts()
 		htmlAction := &dashproto.RRAction{
 			Ts:         ts,
 			ActionType: "panel",
@@ -176,7 +173,7 @@ func (req *PanelRequest) SetData(path string, data interface{}) error {
 		return fmt.Errorf("Error marshaling json for SetData, path:%s, err:%v\n", path, err)
 	}
 	rrAction := &dashproto.RRAction{
-		Ts:         Ts(),
+		Ts:         dashutil.Ts(),
 		ActionType: "setdata",
 		Selector:   path,
 		JsonData:   jsonData,
@@ -194,7 +191,7 @@ func (req *PanelRequest) sendEvent(selector string, eventType string, data inter
 		return fmt.Errorf("Error marshaling json for SendEvent, selector:%s, event:%s, err:%v\n", selector, eventType, err)
 	}
 	rrAction := &dashproto.RRAction{
-		Ts:         Ts(),
+		Ts:         dashutil.Ts(),
 		ActionType: "event",
 		Selector:   selector,
 		EventType:  eventType,
