@@ -73,7 +73,7 @@ func (c *Config) setDefaults() {
 	}
 }
 
-func (c *Config) SetupForProcClient() {
+func (c *Config) setupForProcClient() {
 	c.setDefaults()
 	c.loadKeys()
 }

@@ -88,7 +88,7 @@ func (pc *procClient) copyHandlerKeys() []*dashproto.HandlerKey {
 }
 
 func StartProcClient(config *Config) {
-	config.SetupForProcClient()
+	config.setupForProcClient()
 	client := newProcClient()
 	client.Config = config
 	// TODO keepalive
