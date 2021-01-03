@@ -58,6 +58,7 @@ type PanelRequest struct {
 	FeClientId string
 	Path       string
 	Data       interface{}
+	Model      interface{}
 	RRActions  []*dashproto.RRAction
 	Err        error
 	IsDone     bool
@@ -80,6 +81,7 @@ func DefinePanel(panelName string, html string) error {
 		Path:        "",
 	}
 	globalClient.registerHandler(hkey, runFn)
+	log.Printf("DefinePanel panel:%s link: %s\n", panelName, panelLink(panelName))
 	return nil
 }
 
@@ -105,12 +107,24 @@ func readConditionally(fileName string, finfo os.FileInfo) (string, os.FileInfo,
 	return string(htmlBytes), newFinfo, false, nil
 }
 
+func panelLink(panelName string) string {
+	var hostName string
+	if globalClient.Config.Env == "dev" {
+		hostName = "http://console-dashborg.localdev:8080"
+	} else {
+		hostName = "https://console.dashborg.net"
+	}
+	accId := globalClient.Config.AccId
+	zoneName := globalClient.Config.ZoneName
+	return fmt.Sprintf("%s/acc/%s/%s/%s", hostName, accId, zoneName, panelName)
+}
+
 func DefinePanelFromFile(panelName string, fileName string, pollTime time.Duration) error {
 	html, finfo, _, err := readConditionally(fileName, nil)
 	if err != nil {
 		return err
 	}
-	log.Printf("DefinePanel loaded panel:%s from file:%s len:%d\n", panelName, fileName, len(html))
+	log.Printf("DefinePanel loaded panel:%s from file:%s link: %s\n", panelName, fileName, panelLink(panelName))
 	runFn := func(req *PanelRequest) (interface{}, error) {
 		ts := dashutil.Ts()
 		htmlAction := &dashproto.RRAction{
