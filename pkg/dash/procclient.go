@@ -229,6 +229,7 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 		preq.Done()
 		return
 	}
+
 	var data interface{}
 	if reqMsg.JsonData != "" {
 		err := json.Unmarshal([]byte(reqMsg.JsonData), &data)
@@ -239,6 +240,18 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 		}
 	}
 	preq.Data = data
+
+	var model interface{}
+	if reqMsg.ModelData != "" {
+		err := json.Unmarshal([]byte(reqMsg.ModelData), &model)
+		if err != nil {
+			fmt.Printf("WTF ERR %v\n", err)
+			preq.Err = fmt.Errorf("Cannot unmarshal ModelData: %v", err)
+			preq.Done()
+			return
+		}
+	}
+	preq.Model = model
 
 	// TODO catch error
 	defer preq.Done()

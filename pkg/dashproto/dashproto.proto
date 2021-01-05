@@ -44,10 +44,11 @@ message RequestMessage {
     string ControlId = 9;
     string JsonData = 10;
     string AuthData = 11;
-    string Err = 12;           // only used for server-side errors
-    ErrorCode ErrCode = 13;    // only used for server-side errors
-    int64 TimeoutMs = 14;
-    repeated string DataPaths = 15;
+    string ModelData = 12;
+    string Err = 13;           // only used for server-side errors
+    ErrorCode ErrCode = 14;    // only used for server-side errors
+    int64 TimeoutMs = 15;
+    repeated string DataPaths = 16;
 }
 
 message HandlerKey {
