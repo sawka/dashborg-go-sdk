@@ -64,112 +64,16 @@ type PanelRequest struct {
 	IsDone     bool
 }
 
-func DefinePanel(panelName string, html string) error {
-	ts := dashutil.Ts()
-	runFn := func(req *PanelRequest) (interface{}, error) {
-		htmlAction := &dashproto.RRAction{
-			Ts:         ts,
-			ActionType: "panel",
-			Html:       html,
-		}
-		req.appendRR(htmlAction)
-		return nil, nil
-	}
-	hkey := &dashproto.HandlerKey{
-		PanelName:   panelName,
-		HandlerType: "panel",
-		Path:        "",
-	}
-	globalClient.registerHandler(hkey, runFn)
-	log.Printf("DefinePanel panel:%s link: %s\n", panelName, panelLink(panelName))
-	return nil
-}
-
-// returns contents, fileinfo, use-cached, err
-func readConditionally(fileName string, finfo os.FileInfo) (string, os.FileInfo, bool, error) {
-	newFinfo, err := os.Stat(fileName)
-	if err != nil {
-		return "", nil, false, err
-	}
-	shouldReload := finfo == nil || finfo.Size() != newFinfo.Size() || finfo.ModTime() != newFinfo.ModTime()
-	if !shouldReload {
-		return "", finfo, true, nil
-	}
-	fd, err := os.Open(fileName)
-	if err != nil {
-		return "", nil, false, err
-	}
-	defer fd.Close()
-	htmlBytes, err := ioutil.ReadAll(fd)
-	if err != nil {
-		return "", nil, false, err
-	}
-	return string(htmlBytes), newFinfo, false, nil
-}
-
 func panelLink(panelName string) string {
-	var hostName string
-	if globalClient.Config.Env == "dev" {
-		hostName = "http://console-dashborg.localdev:8080"
-	} else {
-		hostName = "https://console.dashborg.net"
-	}
 	accId := globalClient.Config.AccId
 	zoneName := globalClient.Config.ZoneName
+	var hostName string
+	if globalClient.Config.Env == "dev" {
+		hostName = fmt.Sprintf("http://acc-%s.console-dashborg.localdev:8080", accId)
+		return fmt.Sprintf("%s/zone/%s/%s", hostName, zoneName, panelName)
+	}
+	hostName = "https://console.dashborg.net"
 	return fmt.Sprintf("%s/acc/%s/%s/%s", hostName, accId, zoneName, panelName)
-}
-
-func DefinePanelFromFile(panelName string, fileName string, pollTime time.Duration) error {
-	html, finfo, _, err := readConditionally(fileName, nil)
-	if err != nil {
-		return err
-	}
-	log.Printf("DefinePanel loaded panel:%s from file:%s link: %s\n", panelName, fileName, panelLink(panelName))
-	runFn := func(req *PanelRequest) (interface{}, error) {
-		ts := dashutil.Ts()
-		htmlAction := &dashproto.RRAction{
-			Ts:         ts,
-			ActionType: "panel",
-			Html:       html,
-		}
-		req.appendRR(htmlAction)
-		return nil, nil
-	}
-	hkey := &dashproto.HandlerKey{
-		PanelName:   panelName,
-		HandlerType: "panel",
-		Path:        "",
-	}
-	globalClient.registerHandler(hkey, runFn)
-	if pollTime > 0 {
-		if pollTime < 200*time.Millisecond {
-			pollTime = 200 * time.Millisecond
-		}
-		go func() {
-			ticker := time.NewTicker(pollTime)
-			var lastError error
-			for {
-				select {
-				case <-ticker.C:
-				}
-				newHtml, newFinfo, cached, err := readConditionally(fileName, finfo)
-				if err != nil && lastError == nil {
-					lastError = err
-					log.Printf("Error polling panel:%s file:%s for changes: %v\n", panelName, fileName, err)
-					continue
-				}
-				if cached {
-					continue
-				}
-				finfo = newFinfo
-				if html != newHtml {
-					html = newHtml
-					log.Printf("DefinePanel reloaded panel:%s file:%s len:%d\n", panelName, fileName, len(html))
-				}
-			}
-		}()
-	}
-	return nil
 }
 
 func (req *PanelRequest) appendRR(rrAction *dashproto.RRAction) {
@@ -193,6 +97,64 @@ func (req *PanelRequest) SetData(path string, data interface{}) error {
 		JsonData:   jsonData,
 	}
 	req.appendRR(rrAction)
+	return nil
+}
+
+func (req *PanelRequest) SetHtml(html string) error {
+	ts := dashutil.Ts()
+	htmlAction := &dashproto.RRAction{
+		Ts:         ts,
+		ActionType: "html",
+		Html:       html,
+	}
+	req.appendRR(htmlAction)
+	return nil
+}
+
+func (req *PanelRequest) SetHtmlFromFile(fileName string) error {
+	fd, err := os.Open(fileName)
+	if err != nil {
+		return err
+	}
+	defer fd.Close()
+	htmlBytes, err := ioutil.ReadAll(fd)
+	if err != nil {
+		return err
+	}
+	ts := dashutil.Ts()
+	htmlAction := &dashproto.RRAction{
+		Ts:         ts,
+		ActionType: "html",
+		Html:       string(htmlBytes),
+	}
+	req.appendRR(htmlAction)
+	return nil
+}
+
+type AuthType interface {
+	AuthRRAction() *dashproto.RRAction
+	CheckAuth(req *PanelRequest) error
+}
+
+type authNoAuth struct{}
+
+func (authNoAuth) AuthRRAction() *dashproto.RRAction {
+	return nil
+}
+
+func (authNoAuth) CheckAuth(req *PanelRequest) error {
+	return nil
+}
+
+func NoAuth() AuthType {
+	return authNoAuth{}
+}
+
+func (req *PanelRequest) SetAuth(auth ...AuthType) error {
+	return nil
+}
+
+func (req *PanelRequest) CheckAuth() error {
 	return nil
 }
 
@@ -240,6 +202,9 @@ func RegisterPanelHandler(panelName string, path string, handlerFn func(*PanelRe
 		return nil, err
 	}
 	globalClient.registerHandler(hkey, hfn)
+	if path == "/" {
+		log.Printf("Dashborg Define Panel [%s] link: %s\n", panelName, panelLink(panelName))
+	}
 }
 
 func RegisterPanelData(panelName string, path string, handlerFn func(*PanelRequest) (interface{}, error)) {
