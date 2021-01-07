@@ -51,17 +51,18 @@ type Config struct {
 }
 
 type PanelRequest struct {
-	Ctx        context.Context
-	Lock       *sync.Mutex // synchronizes RRActions
-	PanelName  string
-	ReqId      string
-	FeClientId string
-	Path       string
-	Data       interface{}
-	Model      interface{}
-	RRActions  []*dashproto.RRAction
-	Err        error
-	IsDone     bool
+	Ctx         context.Context
+	Lock        *sync.Mutex // synchronizes RRActions
+	PanelName   string
+	ReqId       string
+	RequestType string
+	FeClientId  string
+	Path        string
+	Data        interface{}
+	Model       interface{}
+	RRActions   []*dashproto.RRAction
+	Err         error
+	IsDone      bool
 }
 
 func panelLink(panelName string) string {
@@ -188,7 +189,9 @@ func (req *PanelRequest) Done() error {
 	if req.IsDone {
 		return nil
 	}
-	return globalClient.sendRequestResponse(req, true)
+	err := globalClient.sendRequestResponse(req, true)
+	log.Printf("Dashborg ERROR sending handler response: %v\n", err)
+	return err
 }
 
 func RegisterPanelHandler(panelName string, path string, handlerFn func(*PanelRequest) error) {
@@ -207,9 +210,8 @@ func RegisterPanelHandler(panelName string, path string, handlerFn func(*PanelRe
 	}
 }
 
-func RegisterPanelData(panelName string, path string, handlerFn func(*PanelRequest) (interface{}, error)) {
+func RegisterDataHandler(path string, handlerFn func(*PanelRequest) (interface{}, error)) {
 	hkey := &dashproto.HandlerKey{
-		PanelName:   panelName,
 		HandlerType: "data",
 		Path:        path,
 	}

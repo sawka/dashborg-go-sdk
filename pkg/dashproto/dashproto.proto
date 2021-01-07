@@ -25,11 +25,12 @@ message RRAction {
 message SendResponseMessage {
     int64 Ts = 1;
     string ReqId = 2;
-    string PanelName = 3;
-    string FeClientId = 4;
-    bool ResponseDone = 5;
-    repeated RRAction Actions = 6;
-    string Err = 7;
+    string RequestType = 3;
+    string PanelName = 4;
+    string FeClientId = 5;
+    bool ResponseDone = 6;
+    repeated RRAction Actions = 7;
+    string Err = 8;
 }
 
 message RequestMessage {

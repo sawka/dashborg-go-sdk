@@ -161,6 +161,7 @@ func (pc *procClient) sendRequestResponse(req *PanelRequest, done bool) error {
 	m := &dashproto.SendResponseMessage{
 		Ts:           dashutil.Ts(),
 		ReqId:        req.ReqId,
+		RequestType:  req.RequestType,
 		PanelName:    req.PanelName,
 		FeClientId:   req.FeClientId,
 		ResponseDone: done,
@@ -194,12 +195,13 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	}
 	log.Printf("gRPC got request: panel=%s, type=%s, path=%s\n", reqMsg.PanelName, reqMsg.RequestType, reqMsg.Path)
 	preq := &PanelRequest{
-		Ctx:        ctx,
-		Lock:       &sync.Mutex{},
-		PanelName:  reqMsg.PanelName,
-		ReqId:      reqMsg.ReqId,
-		FeClientId: reqMsg.FeClientId,
-		Path:       reqMsg.Path,
+		Ctx:         ctx,
+		Lock:        &sync.Mutex{},
+		PanelName:   reqMsg.PanelName,
+		ReqId:       reqMsg.ReqId,
+		RequestType: reqMsg.RequestType,
+		FeClientId:  reqMsg.FeClientId,
+		Path:        reqMsg.Path,
 	}
 	hkey := handlerKey{
 		PanelName: reqMsg.PanelName,
@@ -245,7 +247,6 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	if reqMsg.ModelData != "" {
 		err := json.Unmarshal([]byte(reqMsg.ModelData), &model)
 		if err != nil {
-			fmt.Printf("WTF ERR %v\n", err)
 			preq.Err = fmt.Errorf("Cannot unmarshal ModelData: %v", err)
 			preq.Done()
 			return
@@ -253,9 +254,29 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	}
 	preq.Model = model
 
-	// TODO catch error
-	defer preq.Done()
-	_, preq.Err = hval.HandlerFn(preq)
+	defer func() {
+		if panicErr := recover(); panicErr != nil {
+			log.Printf("PANIC in Handler %v | %v\n", hkey, panicErr)
+			preq.Err = fmt.Errorf("PANIC in handler %v", panicErr)
+		}
+		preq.Done()
+	}()
+	var dataResult interface{}
+	dataResult, preq.Err = hval.HandlerFn(preq)
+	if hkey.HandlerType == "data" {
+		fmt.Printf("DATA HANDLER, rtn = %v\n", dataResult)
+		jsonData, err := marshalJson(dataResult)
+		if err != nil {
+			preq.Err = err
+			return
+		}
+		rrAction := &dashproto.RRAction{
+			Ts:         dashutil.Ts(),
+			ActionType: "setdata",
+			JsonData:   jsonData,
+		}
+		preq.appendRR(rrAction)
+	}
 }
 
 // TODO sync, only one procmessage allowed at a time
