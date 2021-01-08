@@ -190,7 +190,9 @@ func (req *PanelRequest) Done() error {
 		return nil
 	}
 	err := globalClient.sendRequestResponse(req, true)
-	log.Printf("Dashborg ERROR sending handler response: %v\n", err)
+	if err != nil {
+		log.Printf("Dashborg ERROR sending handler response: %v\n", err)
+	}
 	return err
 }
 
