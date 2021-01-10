@@ -1,0 +1,51 @@
+<panel panelName="demo2">
+  <h1>Demo 2</h1>
+  <box class="row">
+    <d-button handler="/acc/refresh-accounts">Refresh Accounts</d-button>
+    <d-button handler="/acc/open-create-account-modal">Create Account</d-button>
+    <box grow/>
+    <d-button handler="/acc/regen-acclist">Regenerate Test Accounts</d-button>
+  </box>
+  <box class="row" grow>
+    <box class="col s3" bgcolor="#eee" padding=10px>
+      <h2>Accounts</h2>
+      <d-data query="/accounts/list" bindvalue="$.data.acclist"/>
+      <d-list selection keyexpr=".AccId" bind="data.acclist" bindvalue="state.selaccid" marginleft=8px>
+        <box class="row" size=16px marginbottom=6px alignitems=center lineheight=22px>
+          <d-text bind=".AccName"/>
+          <box if="*.IsPaid" uilabel uicolor="blue" uisize=tiny marginleft=5px inline>Paid</box>
+        </box>
+      </d-list>
+    </box>
+    <d-data query="/accounts/get" querydata="$.state.selaccid" bindvalue="$.data.accdetail2"/>
+    <box class="col" grow bgcolor="#eee" padding=10px>
+      <h2>Account Detail</h2>
+      <box if="*." class="col" size=16px datacontext="data.accdetail2">
+        <d-def namewidth="100px" name="Acc Id" value="*.AccId"/>
+        <d-def namewidth="100px" name="Name" value="*.AccName"/>
+        <d-def namewidth="100px" name="Paid Acc"><d-text bind=".IsPaid"/></d-def>
+        <d-def namewidth="100px" name="Email" value="*.Email"/>
+        <box class="row">
+          <d-button if="*.IsPaid" handler="/acc/downgrade" handlerdata=".AccId">Downgrade</d-button>
+          <d-button if="*.IsNotPaid" handler="/acc/upgrade" handlerdata=".AccId">Upgrade</d-button>
+          <d-button handler="/acc/remove" handlerdata=".AccId">Remove Account</d-button>
+        </box>
+      </box>
+    </box>
+  </box>
+  <d-dataview scroll height=200px bgcolor=black color=white bind="."/>
+  <d-modal name="createAccountModal" closeondocumentclick clearonclose="state.create" modaltitle="Create Account">
+    <div class="content">
+      <box class="col">
+        <d-input inputlabel="Name" bindvalue="state.create.name" binderrorvalue="state.create.errors.name"/>
+        <d-input inputlabel="Email" bindvalue="state.create.email" binderrorvalue="state.create.errors.email"/>
+      </box>
+    </div>
+    <div class="actions">
+      <box class="row">
+        <d-button uiprimary handler="/acc/create-account">Create Account</d-button>
+        <d-button handler="/acc/close-modal">Cancel</d-button>
+      </box>
+    </div>
+  </d-modal>
+</panel>
