@@ -29,7 +29,7 @@ func CreateKeyPair(keyFileName string, certFileName string, accId string) error 
 }
 
 func CreatePrivateKey(keyFileName string) (*ecdsa.PrivateKey, error) {
-	curve := elliptic.P384()
+	curve := elliptic.P384() // secp384r1
 	privateKey, err := ecdsa.GenerateKey(curve, rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("Error generating P-384 key err:%w", err)

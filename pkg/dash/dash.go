@@ -159,6 +159,19 @@ func (req *PanelRequest) CheckAuth() error {
 	return nil
 }
 
+func (req *PanelRequest) InvalidateData(path string) error {
+	if req.IsDone {
+		return fmt.Errorf("Cannot call InvalidateData(), path=%s, PanelRequest is already done", path)
+	}
+	rrAction := &dashproto.RRAction{
+		Ts:         dashutil.Ts(),
+		ActionType: "invalidate",
+		Selector:   path,
+	}
+	req.appendRR(rrAction)
+	return nil
+}
+
 func (req *PanelRequest) sendEvent(selector string, eventType string, data interface{}) error {
 	if req.IsDone {
 		return fmt.Errorf("Cannot call SendEvent(), selector=%s, event=%s, PanelRequest is already done", selector, eventType)
