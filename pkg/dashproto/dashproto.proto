@@ -14,7 +14,7 @@ enum ErrorCode {
 
 message RRAction {
     int64 Ts = 1;
-    string ActionType = 2;  // "setdata", "event", "invalidate", "html", "auth", "authchallenge", "error"
+    string ActionType = 2;  // "setdata", "event", "invalidate", "html", "panelauth", "panelauthchallenge", "error"
     string Selector = 3;    // path, selector, controlid
     string JsonData = 4;
     string EventType = 5;   // only set for "event" ActionType

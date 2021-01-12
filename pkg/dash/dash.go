@@ -62,7 +62,7 @@ type PanelRequest struct {
 	Path        string
 	Data        interface{}
 	Model       interface{}
-	AuthData    interface{}
+	AuthData    []*authAtom
 	RRActions   []*dashproto.RRAction
 	Err         error
 	IsDone      bool
@@ -150,6 +150,16 @@ type authData struct {
 	Data   interface{} `json:"data,omitempty"`
 }
 
+type authAtom struct {
+	Scope string      `json:"scope"`
+	Type  string      `json:"type"`
+	Auto  bool        `json:"auto,omitempty"`
+	Ts    int64       `json:"ts,omitempty"`
+	Id    string      `json:"id,omitempty"`
+	Role  string      `json:"role"`
+	Data  interface{} `json:"data,omitempty"`
+}
+
 type challengeField struct {
 	Label string `json:"label"`
 	Name  string `json:"name"`
@@ -163,54 +173,64 @@ type authChallenge struct {
 	ChallengeFields  []challengeField `json:"challengefields"`
 }
 
-func (req *PanelRequest) appendAuthRRAction(authType string, role string) {
-	data := authData{
-		Type:   authType,
-		Auto:   true,
-		AutoTs: dashutil.Ts() + (24 * 60 * 60 * 1000),
-		Role:   role,
+func (req *PanelRequest) appendPanelAuthRRAction(authType string, role string) {
+	data := authAtom{
+		Type: authType,
+		Auto: true,
+		Ts:   dashutil.Ts() + (24 * 60 * 60 * 1000),
+		Role: role,
 	}
 	jsonData, _ := json.Marshal(data)
 	rr := &dashproto.RRAction{
 		Ts:         dashutil.Ts(),
-		ActionType: "auth",
+		ActionType: "panelauth",
 		JsonData:   string(jsonData),
 	}
 	req.appendRR(rr)
 }
 
-func (req *PanelRequest) appendAuthChallenge(ch authChallenge) {
+func (req *PanelRequest) appendPanelAuthChallenge(ch authChallenge) {
 	challengeJson, _ := json.Marshal(ch)
 	req.appendRR(&dashproto.RRAction{
 		Ts:         dashutil.Ts(),
-		ActionType: "authchallenge",
+		ActionType: "panelauthchallenge",
 		JsonData:   string(challengeJson),
 	})
 	return
 }
 
-func (req *PanelRequest) getAuthData() *authData {
+func (req *PanelRequest) getRawAuthData() []*authAtom {
 	if req.AuthData == nil {
 		return nil
 	}
-	var auth authData
-	err := mapstructure.Decode(req.AuthData, &auth)
+	var rawAuth []*authAtom
+	err := mapstructure.Decode(req.AuthData, &rawAuth)
 	if err != nil {
 		return nil
 	}
+	rtn := make([]*authAtom, 0)
 	now := dashutil.Ts()
-	if auth.Ts < now && auth.AutoTs < now {
-		return nil
+	for _, aa := range rawAuth {
+		if aa.Ts < now {
+			continue
+		}
+		rtn = append(rtn, aa)
 	}
-	return &auth
+	return rtn
+}
+
+func (req *PanelRequest) isAuthenticated() bool {
+	rawAuth := req.getRawAuthData()
+	return len(rawAuth) > 0
+}
+
+func (req *PanelRequest) hasPanelAuth(authType string) {
 }
 
 func (req *PanelRequest) NoAuth() {
 	req.AuthImpl = true
-	auth := req.getAuthData()
-	if auth == nil {
-		req.appendAuthRRAction("noauth", "user")
-		return
+	if !req.isAuthenticated() {
+		req.appendPanelAuthRRAction("noauth", "user")
 	}
 }
 
@@ -220,16 +240,14 @@ type challengeData struct {
 
 func (req *PanelRequest) PasswordAuth(pw string) (bool, error) {
 	req.AuthImpl = true
-	auth := req.getAuthData()
-	// already authenticated
-	if auth != nil && (auth.Type == "password" || auth.Type == "dashborg") {
+	if req.isAuthenticated() {
 		return true, nil
 	}
 	// check challenge
 	var challengeData challengeData
 	err := mapstructure.Decode(req.Data, &challengeData)
 	if err == nil && challengeData.ChallengeData["password"] == pw {
-		req.appendAuthRRAction("password", "user")
+		req.appendPanelAuthRRAction("password", "user")
 		return true, nil
 	}
 	// send challenge
@@ -248,22 +266,21 @@ func (req *PanelRequest) PasswordAuth(pw string) (bool, error) {
 			ch.ChallengeError = "Invalid password"
 		}
 	}
-	req.appendAuthChallenge(ch)
+	req.appendPanelAuthChallenge(ch)
 	return false, fmt.Errorf("Not Authorized | Sending Password Challenge")
 }
 
-func (req *PanelRequest) DashborgAuth() error {
+func (req *PanelRequest) DashborgAuth() (bool, error) {
 	req.AuthImpl = true
-	auth := req.getAuthData()
-	if auth != nil && auth.Type == "dashborg" {
-		return nil
+	if req.isAuthenticated() {
+		return true, nil
 	}
 	// send challenge
 	ch := authChallenge{
 		AllowedAuth: "dashborg",
 	}
-	req.appendAuthChallenge(ch)
-	return fmt.Errorf("Not Authorized | Dashborg Auth")
+	req.appendPanelAuthChallenge(ch)
+	return false, fmt.Errorf("Not Authorized | Dashborg Auth")
 }
 
 func (req *PanelRequest) InvalidateData(path string) error {

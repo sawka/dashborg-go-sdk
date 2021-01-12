@@ -254,7 +254,7 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	}
 	preq.Model = model
 
-	var authData interface{}
+	var authData []*authAtom
 	if reqMsg.AuthData != "" {
 		err := json.Unmarshal([]byte(reqMsg.AuthData), &authData)
 		if err != nil {
@@ -267,8 +267,7 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 
 	// check-auth
 	if !preq.isRootReq() {
-		auth := preq.getAuthData()
-		if auth == nil {
+		if !preq.isAuthenticated() {
 			preq.Err = fmt.Errorf("Request is not authenticated")
 			preq.Done()
 			return
