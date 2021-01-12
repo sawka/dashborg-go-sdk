@@ -254,6 +254,27 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	}
 	preq.Model = model
 
+	var authData interface{}
+	if reqMsg.AuthData != "" {
+		err := json.Unmarshal([]byte(reqMsg.AuthData), &authData)
+		if err != nil {
+			preq.Err = fmt.Errorf("Cannot unmarshal AuthData: %v", err)
+			preq.Done()
+			return
+		}
+	}
+	preq.AuthData = authData
+
+	// check-auth
+	if !preq.isRootReq() {
+		auth := preq.getAuthData()
+		if auth == nil {
+			preq.Err = fmt.Errorf("Request is not authenticated")
+			preq.Done()
+			return
+		}
+	}
+
 	defer func() {
 		if panicErr := recover(); panicErr != nil {
 			log.Printf("PANIC in Handler %v | %v\n", hkey, panicErr)
@@ -264,7 +285,6 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	var dataResult interface{}
 	dataResult, preq.Err = hval.HandlerFn(preq)
 	if hkey.HandlerType == "data" {
-		fmt.Printf("DATA HANDLER, rtn = %v\n", dataResult)
 		jsonData, err := marshalJson(dataResult)
 		if err != nil {
 			preq.Err = err
@@ -423,7 +443,7 @@ func (pc *procClient) runRequestStream() (bool, string) {
 	var endingErrCode string
 	for {
 		reqMsg, err := reqStreamClient.Recv()
-		log.Printf("rtn from req-stream %v | %v\n", reqMsg, err)
+		// log.Printf("rtn from req-stream %v | %v\n", reqMsg, err)
 		if err == io.EOF {
 			log.Printf("gRPC RequestStream done: EOF\n")
 			endingErrCode = EC_EOF

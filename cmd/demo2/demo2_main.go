@@ -176,6 +176,11 @@ func main() {
 
 	Model = MakeAccModel()
 	dash.RegisterPanelHandler("demo2", "/", func(req *dash.PanelRequest) error {
+		// req.NoAuth()
+		auth, _ := req.PasswordAuth("hello")
+		if !auth {
+			return nil
+		}
 		err := req.SetHtmlFromFile("cmd/demo2/demo2.html")
 		if err != nil {
 			return err
@@ -247,16 +252,19 @@ func main() {
 		req.InvalidateData("/accounts/.*")
 		return nil
 	})
-	dash.RegisterDataHandler("/accounts/get", func(req *dash.PanelRequest) (interface{}, error) {
+	dash.RegisterDataHandler("demo2", "/accounts/get", func(req *dash.PanelRequest) (interface{}, error) {
 		accId, ok := req.Data.(string)
 		if !ok {
 			return nil, nil
 		}
 		acc := Model.AccById(accId)
+		if acc == nil {
+			return nil, nil
+		}
 		acc.IsNotPaid = !acc.IsPaid
 		return acc, nil
 	})
-	dash.RegisterDataHandler("/accounts/list", func(req *dash.PanelRequest) (interface{}, error) {
+	dash.RegisterDataHandler("demo2", "/accounts/list", func(req *dash.PanelRequest) (interface{}, error) {
 		accList := Model.CopyAccList()
 		return accList, nil
 	})
