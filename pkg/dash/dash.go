@@ -140,16 +140,6 @@ func (req *PanelRequest) isRootReq() bool {
 	return req.RequestType == "handler" && req.PanelName != "" && req.Path == "/"
 }
 
-type authData struct {
-	Type   string      `json:"type"`
-	Auto   bool        `json:"auto,omitempty"`
-	Ts     int64       `json:"ts,omitempty"`
-	AutoTs int64       `json:"autots,omitempty"`
-	Id     string      `json:"id,omitempty"`
-	Role   string      `json:"role"`
-	Data   interface{} `json:"data,omitempty"`
-}
-
 type authAtom struct {
 	Scope string      `json:"scope"`
 	Type  string      `json:"type"`
@@ -208,15 +198,7 @@ func (req *PanelRequest) getRawAuthData() []*authAtom {
 	if err != nil {
 		return nil
 	}
-	rtn := make([]*authAtom, 0)
-	now := dashutil.Ts()
-	for _, aa := range rawAuth {
-		if aa.Ts < now {
-			continue
-		}
-		rtn = append(rtn, aa)
-	}
-	return rtn
+	return rawAuth
 }
 
 func (req *PanelRequest) isAuthenticated() bool {
