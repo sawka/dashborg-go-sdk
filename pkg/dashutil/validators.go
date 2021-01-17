@@ -18,6 +18,7 @@ const (
 	DATAPATH_MAX      = 200
 	PATH_MAX          = 100
 	TAG_MAX           = 50
+	ROLE_MAX          = 12
 	CLIENTVERSION_MAX = 20
 	PROCTAGVAL_MAX    = 200
 	HOSTDATAVAL_MAX   = 100
@@ -37,6 +38,7 @@ var (
 	SIMPLEFILENAME_RE = regexp.MustCompile("^[a-zA-Z0-9._-]+$")
 	PATH_RE           = regexp.MustCompile("^/[a-zA-Z0-9._/-]*$")
 	TAG_RE            = regexp.MustCompile("^[a-zA-Z0-9._:/-]+$")
+	ROLE_RE           = regexp.MustCompile("^(\\*|[a-z][a-z0-9-]+)$")
 	CLIENTVERSION_RE  = regexp.MustCompile("^[a-z0-9_]+-\\d+\\.\\d+\\.\\d+$")
 
 	// https://www.w3.org/TR/2016/REC-html51-20161101/sec-forms.html#email-state-typeemali
@@ -166,6 +168,13 @@ func IsTagValid(s string) bool {
 		return false
 	}
 	return TAG_RE.MatchString(s)
+}
+
+func IsRoleValid(s string) bool {
+	if len(s) == 0 || len(s) > ROLE_MAX {
+		return false
+	}
+	return ROLE_RE.MatchString(s)
 }
 
 func IsClientVersionValid(s string) bool {
