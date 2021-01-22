@@ -10,6 +10,7 @@ const (
 	FILENAME_MAX      = 80
 	EMAIL_MAX         = 80
 	PASSWORD_MAX      = 80
+	PASSWORD_MIN      = 8
 	MIMETYPE_MAX      = 80
 	SHA256_HEX_LEN    = 64
 	SHA256_B64_LEN    = 44
@@ -143,6 +144,9 @@ func IsEmailValid(s string) bool {
 
 func IsPasswordValid(s string) bool {
 	if len(s) == 0 || len(s) > PASSWORD_MAX {
+		return false
+	}
+	if len(s) < PASSWORD_MIN {
 		return false
 	}
 	return true
