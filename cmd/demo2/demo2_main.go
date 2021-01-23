@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"regexp"
 	"strconv"
@@ -14,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 	"github.com/sawka/dashborg-go-sdk/pkg/dash"
-	"github.com/sawka/dashborg-go-sdk/pkg/dashtmpl"
 )
 
 var FruitStrs = []string{"Apple", "Banana", "Guava", "Orange", "Blackberry", "Mango", "Kiwi", "Raspberry", "Pineapple", "Avacado", "Onion", "Lettuce", "Cheese"}
@@ -30,6 +28,8 @@ type AccType struct {
 	AccName string
 	IsPaid  bool
 	Email   string
+
+	IsNotPaid bool // just for transport :/
 }
 
 type AccModel struct {
@@ -139,58 +139,11 @@ func MakeRandomAcc() *AccType {
 	}
 }
 
-func RenderAccDetail(cw *dash.ContextWriter, req *dash.PanelRequest) error {
-	logger := req.Panel.LookupControl("log", "log")
-	accId, ok := req.Data.(string)
-	logger.LogText("ShowAccDetail accId:%s", accId)
-	if !ok {
-		cw.Revert()
-		return nil
-	}
-	defer cw.Flush()
-	acc := Model.AccById(accId)
-	if acc == nil {
-		return dashtmpl.PrintTemplate(cw, DBTemplates, "ctx-accdetail/no-account", map[string]string{"AccId": accId})
-	}
-	return dashtmpl.PrintTemplate(cw, DBTemplates, "ctx-accdetail", acc)
-}
-
-func RenderCreateAccountModal(cw *dash.ContextWriter, req *dash.PanelRequest) error {
-	var errs map[string]string
-	req.DecodeData(&errs)
-	modal := req.LookupContext("modal")
-	err := dashtmpl.PrintTemplate(modal, DBTemplates, "modal", errs)
-	if err != nil {
-		return err
-	}
-	modal.Flush()
-	return nil
-}
-
-func AccListData(req *dash.PanelRequest) (interface{}, error) {
-	logger := req.Panel.LookupControl("log", "log")
-	logger.LogText("Refresh Accounts (ctx-request)")
-	return Model.CopyAccList(), nil
-}
-
-func RenderAccList(cw *dash.ContextWriter, req *dash.PanelRequest) error {
-	logger := req.Panel.LookupControl("log", "log")
-	Model.Lock.Lock()
-	defer Model.Lock.Unlock()
-	logger.LogText("Refresh Accounts (ctx-request)")
-	err := dashtmpl.PrintTemplate(cw, DBTemplates, "ctx-acclist", Model.Accs)
-	if err != nil {
-		return err
-	}
-	cw.Flush()
-	return nil
-}
-
 var EmailRe = regexp.MustCompile("^[a-zA-Z0-9.-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
 
 type CreateAccountFormData struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	Name  string `json:"name" mapstructure:"name"`
+	Email string `json:"email" mapstructure:"email"`
 }
 
 func (d CreateAccountFormData) Validate() map[string]string {
@@ -210,105 +163,111 @@ func (d CreateAccountFormData) Validate() map[string]string {
 	return errors
 }
 
-func Setup() {
-	panel, _ := dash.LookupPanel("demo2")
-	logger := panel.LookupControl("log", "log")
-	logger.LogText("Starting Demo2")
-
-	// panel.LookupControl("context", "ctx-acclist").OnContextRequest(RenderAccList)
-	dashtmpl.RenderContextTemplate(panel, "ctx-acclist", AccListData, DBTemplates)
-	panel.LookupControl("context", "ctx-accdetail").OnContextRequest(RenderAccDetail)
-	panel.LookupControl("context", "modal").OnContextRequest(RenderCreateAccountModal)
-
-	panel.OnRequest("/acc/upgrade", func(req *dash.PanelRequest) error {
-		accId := req.Data.(string)
-		ok := Model.Upgrade(accId)
-		if !ok {
-			logger.LogText("Account not found id:%s", accId)
-			return nil
-		}
-		logger.LogText("Upgrade Account id:%s", accId)
-		req.TriggerContext("ctx-acclist", nil)
-		req.TriggerContext("ctx-accdetail", accId)
-		return nil
-	})
-	panel.OnRequest("/acc/downgrade", func(req *dash.PanelRequest) error {
-		accId := req.Data.(string)
-		ok := Model.Downgrade(accId)
-		if !ok {
-			logger.LogText("Account not found id:%s", accId)
-			return nil
-		}
-		logger.LogText("Downgrade Account id:%s", accId)
-		req.TriggerContext("ctx-acclist", nil)
-		req.TriggerContext("ctx-accdetail", accId)
-		return nil
-	})
-	panel.OnRequest("/acc/remove", func(req *dash.PanelRequest) error {
-		accId := req.Data.(string)
-		ok := Model.RemoveAcc(accId)
-		if !ok {
-			logger.LogText("Account not found id:%s", accId)
-			return nil
-		}
-		req.TriggerContext("ctx-acclist", nil)
-		req.TriggerContext("ctx-accdetail", nil)
-		return nil
-	})
-	panel.OnRequest("/acc/regen-acclist", func(req *dash.PanelRequest) error {
-		logger.LogText("Regen Account List")
-		Model.RegenAccounts()
-		req.TriggerContext("ctx-acclist", nil)
-		req.TriggerContext("ctx-accdetail", nil)
-		return nil
-	})
-	panel.OnRequest("/acc/create-account", func(req *dash.PanelRequest) error {
-		logger.LogText(fmt.Sprintf("Create Account, data:%#v", req.Data))
-		var formData CreateAccountFormData
-		err := mapstructure.Decode(req.Data, &formData)
-		if err != nil {
-			logger.LogText(fmt.Sprintf("Error decoding form data %v", err))
-			return nil
-		}
-		errors := formData.Validate()
-		if len(errors) > 0 {
-			req.TriggerContext("modal", errors)
-			return nil
-		}
-		accId := Model.CreateAcc(formData.Name, formData.Email)
-		logger.LogText("Account created id:%s", accId)
-		req.TriggerContext("ctx-acclist", nil)
-		req.TriggerContext("ctx-accdetail", accId)
-		req.LookupContext("modal").Revert()
-		return nil
-	})
+type PanelModel struct {
+	SelectedAccId string
+	CreateData    CreateAccountFormData `json:"create" mapstructure:"create"`
 }
 
 func main() {
 	rand.Seed(time.Now().Unix())
 	cfg := &dash.Config{ProcName: "demo2", AnonAcc: true, AutoKeygen: true}
-	defer dash.StartProcClient(cfg).WaitForClear()
+	dash.StartProcClient(cfg)
+	defer dash.WaitForClear()
 
 	Model = MakeAccModel()
-	DBTemplates = dashtmpl.NewTemplate("demo2-panel")
-	_, err := DBTemplates.ParseFiles("cmd/demo2/demo2-panel.txt")
-	if err != nil {
-		fmt.Printf("Error parsing template demo2-panel.txt, err:%v\n", err)
-		return
-	}
-	demo2Panel, err := dashtmpl.DefinePanelFromTemplate("demo2", DBTemplates, "panel", nil)
-	if err != nil {
-		log.Printf("ERROR Defining Panel: %v\n", err)
-		return
-	}
-	quitCh := make(chan bool)
-	stopButton := demo2Panel.LookupControl("button", "btn-stop")
-	stopButton.OnClick(func() error {
-		logger := demo2Panel.LookupControl("log", "log")
-		logger.LogText("Stop Button Clicked")
-		close(quitCh)
+	dash.RegisterPanelHandler("demo2", "/", func(req *dash.PanelRequest) error {
+		// req.NoAuth()
+		auth, _ := req.PasswordAuth("hello")
+		if !auth {
+			return nil
+		}
+		err := req.SetHtmlFromFile("cmd/demo2/demo2.html")
+		if err != nil {
+			return err
+		}
 		return nil
 	})
-	Setup()
+	dash.RegisterPanelHandler("demo2", "/acc/upgrade", func(req *dash.PanelRequest) error {
+		accId, ok := req.Data.(string)
+		if !ok {
+			return fmt.Errorf("No AccountId Selected")
+		}
+		Model.Upgrade(accId)
+		req.InvalidateData("/accounts/.*")
+		return nil
+	})
+	dash.RegisterPanelHandler("demo2", "/acc/downgrade", func(req *dash.PanelRequest) error {
+		accId, ok := req.Data.(string)
+		if !ok {
+			return fmt.Errorf("No AccountId Selected")
+		}
+		Model.Downgrade(accId)
+		req.InvalidateData("/accounts/.*")
+		return nil
+	})
+	dash.RegisterPanelHandler("demo2", "/acc/refresh-accounts", func(req *dash.PanelRequest) error {
+		req.SetData("state.selaccid", nil)
+		req.InvalidateData("/accounts/.*")
+		return nil
+	})
+	dash.RegisterPanelHandler("demo2", "/acc/regen-acclist", func(req *dash.PanelRequest) error {
+		Model.RegenAccounts()
+		req.SetData("state.selaccid", nil)
+		req.InvalidateData("/accounts/.*")
+		return nil
+	})
+	dash.RegisterPanelHandler("demo2", "/acc/remove", func(req *dash.PanelRequest) error {
+		accId, ok := req.Data.(string)
+		if !ok {
+			return fmt.Errorf("No AccountId Selected")
+		}
+		Model.RemoveAcc(accId)
+		req.InvalidateData("/accounts/.*")
+		req.SetData("state.selaccid", nil)
+		return nil
+	})
+	dash.RegisterPanelHandler("demo2", "/acc/open-create-account-modal", func(req *dash.PanelRequest) error {
+		req.SetData("state.createAccountModal.open", true)
+		return nil
+	})
+	dash.RegisterPanelHandler("demo2", "/acc/close-modal", func(req *dash.PanelRequest) error {
+		req.SetData("state.createAccountModal.open", false)
+		return nil
+	})
+	dash.RegisterPanelHandler("demo2", "/acc/create-account", func(req *dash.PanelRequest) error {
+		var panelModel PanelModel
+		err := mapstructure.Decode(req.Model, &panelModel)
+		if err != nil {
+			return err
+		}
+		errors := panelModel.CreateData.Validate()
+		if len(errors) > 0 {
+			req.SetData("state.create.errors", errors)
+			return nil
+		}
+		req.SetData("state.create.errors", nil)
+		newAccId := Model.CreateAcc(panelModel.CreateData.Name, panelModel.CreateData.Email)
+		req.SetData("state.createAccountModal.open", false)
+		req.SetData("state.selaccid", newAccId)
+		req.InvalidateData("/accounts/.*")
+		return nil
+	})
+	dash.RegisterDataHandler("demo2", "/accounts/get", func(req *dash.PanelRequest) (interface{}, error) {
+		accId, ok := req.Data.(string)
+		if !ok {
+			return nil, nil
+		}
+		acc := Model.AccById(accId)
+		if acc == nil {
+			return nil, nil
+		}
+		acc.IsNotPaid = !acc.IsPaid
+		return acc, nil
+	})
+	dash.RegisterDataHandler("demo2", "/accounts/list", func(req *dash.PanelRequest) (interface{}, error) {
+		accList := Model.CopyAccList()
+		return accList, nil
+	})
+	quitCh := make(chan bool)
 	<-quitCh
 }

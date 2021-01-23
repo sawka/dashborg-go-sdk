@@ -42,7 +42,7 @@ func (c *Config) setDefaults() {
 	c.ZoneName = defaultString(c.ZoneName, os.Getenv("DASHBORG_ZONE"), DEFAULT_ZONENAME)
 	c.Env = defaultString(c.Env, os.Getenv("DASHBORG_ENV"), "prod")
 	if c.Env == "prod" {
-		c.DashborgSrvHost = defaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "proc.api.dashborg.net")
+		c.DashborgSrvHost = defaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "grpc.api.dashborg.net")
 	} else {
 		c.DashborgSrvHost = defaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "localhost")
 	}
@@ -55,7 +55,7 @@ func (c *Config) setDefaults() {
 			}
 		}
 		if c.DashborgSrvPort == 0 {
-			c.DashborgSrvPort = 7533
+			c.DashborgSrvPort = 7632
 		}
 	}
 	var cmdName string
@@ -71,23 +71,9 @@ func (c *Config) setDefaults() {
 	if c.MinClearTimeout == 0 {
 		c.MinClearTimeout = 1 * time.Second
 	}
-	if c.PanelCacheTime == 0 {
-		panelCacheStr := os.Getenv("DASHBORG_PANELCACHEMS")
-		if panelCacheStr != "" {
-			pcVal, err := strconv.Atoi(panelCacheStr)
-			if err != nil {
-				log.Printf("Invalid DASHBORG_PANELCACHEMS value[%s] defaulting to 1 minute", panelCacheStr)
-				c.PanelCacheTime = time.Minute
-			} else {
-				c.PanelCacheTime = time.Duration(pcVal) * time.Millisecond
-			}
-		} else {
-			c.PanelCacheTime = time.Minute
-		}
-	}
 }
 
-func (c *Config) SetupForProcClient() {
+func (c *Config) setupForProcClient() {
 	c.setDefaults()
 	c.loadKeys()
 }
@@ -135,7 +121,7 @@ func (c *Config) maybeMakeKeys(accId string) error {
 	if err != nil {
 		return fmt.Errorf("Cannot create keypair err:%v", err)
 	}
-	log.Printf("Dashborg Created new self-signed keypair key:%s cert:%s for new accountid:%s\n", c.KeyFileName, c.CertFileName, accId)
+	log.Printf("Dashborg created new self-signed keypair key:%s cert:%s for new accountid:%s\n", c.KeyFileName, c.CertFileName, accId)
 	return nil
 }
 

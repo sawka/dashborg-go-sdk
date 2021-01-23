@@ -1,0 +1,110 @@
+syntax = "proto3";
+package dashborg.rpc1;
+option go_package = "github.com/sawka/dashborg-go-sdk/pkg/dashproto";
+
+enum ErrorCode {
+    EC_NONE = 0;
+    EC_EOF = 1;
+    EC_UNKNOWN = 2;
+    EC_BADCONNID = 3;
+    EC_ACCACCESS = 4;
+    EC_NOHANDLER = 5;
+    EC_UNAVAILABLE = 6;
+}
+
+message RRAction {
+    int64 Ts = 1;
+    string ActionType = 2;  // "setdata", "event", "invalidate", "html", "panelauth", "panelauthchallenge", "error"
+    string Selector = 3;    // path, selector, controlid
+    string JsonData = 4;
+    string EventType = 5;   // only set for "event" ActionType
+    string Html = 6;        // for "panel" ActionType
+    string Err = 7;
+}
+
+message SendResponseMessage {
+    int64 Ts = 1;
+    string ReqId = 2;
+    string RequestType = 3;
+    string PanelName = 4;
+    string FeClientId = 5;
+    bool ResponseDone = 6;
+    repeated RRAction Actions = 7;
+    string Err = 8;
+}
+
+message RequestMessage {
+    int64 Ts = 1;
+    string AccId = 2;
+    string ZoneName = 3;
+    string PanelName = 4;
+    string RequestType = 5; // "data", "handler", "streamopen", "streamclose", "panel", "servermessage"
+    string Path = 6;
+    string ReqId = 7;
+    string FeClientId = 8;
+    string ControlId = 9;
+    string JsonData = 10;
+    string AuthData = 11;
+    string ModelData = 12;
+    string Err = 13;           // only used for server-side errors
+    ErrorCode ErrCode = 14;    // only used for server-side errors
+    int64 TimeoutMs = 15;
+    repeated string DataPaths = 16;
+}
+
+message HandlerKey {
+    string PanelName = 1;
+    string HandlerType = 2; // "data", "handler", "stream", "panel"
+    string Path = 3;
+}    
+
+message RegisterHandlerMessage {
+    int64 Ts = 1;
+    repeated HandlerKey Handlers = 2;
+}
+
+message RegisterHandlerResponse {
+    bool Success = 1;
+    string Err = 2;
+    ErrorCode ErrCode = 3;
+}
+
+message ProcMessage {
+    int64 Ts = 1;
+    string ProcRunId = 2;
+    string AccId = 3;
+    string ZoneName = 4;
+    bool AnonAcc = 5;
+    string ProcName = 6;
+    map<string,string> ProcTags = 7;
+    map<string,string> HostData = 8;
+    int64 StartTs = 9;
+    repeated HandlerKey Handlers = 10;
+    string ClientVersion = 11;
+}
+
+message ProcResponse {
+    bool Success = 1;
+    string Err = 2;
+    ErrorCode ErrCode = 3;
+    string ConnId = 4;
+}
+
+message RequestStreamMessage {
+    int64 Ts = 1;
+}
+
+message SendResponseResponse {
+    bool Success = 1;
+    string Err = 2;
+    ErrorCode ErrCode = 3;
+}
+
+service DashborgService {
+    rpc Proc(ProcMessage) returns (ProcResponse) {}
+    rpc SendResponse(SendResponseMessage) returns (SendResponseResponse) {}
+    rpc RegisterHandler(RegisterHandlerMessage) returns (RegisterHandlerResponse) {}
+    
+    // this is backwards since the server sends requests, and the client responds to them
+    rpc RequestStream(RequestStreamMessage) returns (stream RequestMessage) {}
+}

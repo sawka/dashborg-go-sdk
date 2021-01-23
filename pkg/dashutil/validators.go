@@ -3,26 +3,33 @@ package dashutil
 import "regexp"
 
 const (
-	ZONENAME_MAX    = 20
-	CONTROLNAME_MAX = 30
-	PANELNAME_MAX   = 20
-	PROCNAME_MAX    = 20
-	FILENAME_MAX    = 80
-	EMAIL_MAX       = 80
-	PASSWORD_MAX    = 80
-	MIMETYPE_MAX    = 80
-	SHA256_HEX_LEN  = 64
-	SHA256_B64_LEN  = 44
-	UUID_LEN        = 36
-	HANDLERPATH_MAX = 100
-	DATAPATH_MAX    = 200
+	ZONENAME_MAX      = 20
+	CONTROLNAME_MAX   = 30
+	PANELNAME_MAX     = 20
+	PROCNAME_MAX      = 20
+	FILENAME_MAX      = 80
+	EMAIL_MAX         = 80
+	PASSWORD_MAX      = 80
+	PASSWORD_MIN      = 8
+	MIMETYPE_MAX      = 80
+	SHA256_HEX_LEN    = 64
+	SHA256_B64_LEN    = 44
+	UUID_LEN          = 36
+	HANDLERPATH_MAX   = 100
+	DATAPATH_MAX      = 200
+	PATH_MAX          = 100
+	TAG_MAX           = 50
+	ROLE_MAX          = 12
+	CLIENTVERSION_MAX = 20
+	PROCTAGVAL_MAX    = 200
+	HOSTDATAVAL_MAX   = 100
 )
 
 var (
 	ZONENAME_RE       = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
 	CONTROLNAME_RE    = regexp.MustCompile("^[a-zA-Z0-9_.:#/-]+$")
 	PANELNAME_RE      = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
-	PROCNAME_RE       = regexp.MustCompile("^[a-zA-Z0-9_.]+$")
+	PROCNAME_RE       = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
 	UUID_RE           = regexp.MustCompile("^[a-fA-F0-9-]{36}$")
 	HANDLER_RE        = regexp.MustCompile("^/[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$")
 	BASE64_RE         = regexp.MustCompile("^[a-zA-Z0-9/+=]+$")
@@ -30,12 +37,19 @@ var (
 	IMAGE_MIMETYPE_RE = regexp.MustCompile("^image/[a-z0-9.-]+$")
 	MIMETYPE_RE       = regexp.MustCompile("^[a-z0-9.-]+/[a-z0-9.-]+$")
 	SIMPLEFILENAME_RE = regexp.MustCompile("^[a-zA-Z0-9._-]+$")
+	PATH_RE           = regexp.MustCompile("^/[a-zA-Z0-9._/-]*$")
+	TAG_RE            = regexp.MustCompile("^[a-zA-Z0-9._:/-]+$")
+	ROLE_RE           = regexp.MustCompile("^(\\*|[a-z][a-z0-9-]+)$")
+	CLIENTVERSION_RE  = regexp.MustCompile("^[a-z0-9_]+-\\d+\\.\\d+\\.\\d+$")
 
 	// https://www.w3.org/TR/2016/REC-html51-20161101/sec-forms.html#email-state-typeemali
 	EMAIL_RE = regexp.MustCompile("^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
 
 	PASSWORD_RE = regexp.MustCompile("^[a-zA-Z0-9]+$")
 )
+
+var ValidHandlerType = map[string]bool{"data": true, "handler": true, "stream": true, "panel": true}
+var ValidActionType = map[string]bool{"setdata": true, "event": true, "invalidate": true, "html": true, "panelauth": true, "panelauthchallenge": true, "error": true}
 
 func IsZoneNameValid(zoneName string) bool {
 	if len(zoneName) > ZONENAME_MAX {
@@ -132,5 +146,44 @@ func IsPasswordValid(s string) bool {
 	if len(s) == 0 || len(s) > PASSWORD_MAX {
 		return false
 	}
+	if len(s) < PASSWORD_MIN {
+		return false
+	}
 	return true
+}
+
+func IsPathValid(s string) bool {
+	if len(s) == 0 || len(s) > PATH_MAX {
+		return false
+	}
+	return PATH_RE.MatchString(s)
+}
+
+func IsHandlerTypeValid(s string) bool {
+	return ValidHandlerType[s]
+}
+
+func IsActionTypeValid(s string) bool {
+	return ValidActionType[s]
+}
+
+func IsTagValid(s string) bool {
+	if len(s) == 0 || len(s) > TAG_MAX {
+		return false
+	}
+	return TAG_RE.MatchString(s)
+}
+
+func IsRoleValid(s string) bool {
+	if len(s) == 0 || len(s) > ROLE_MAX {
+		return false
+	}
+	return ROLE_RE.MatchString(s)
+}
+
+func IsClientVersionValid(s string) bool {
+	if len(s) == 0 || len(s) > CLIENTVERSION_MAX {
+		return false
+	}
+	return CLIENTVERSION_RE.MatchString(s)
 }
