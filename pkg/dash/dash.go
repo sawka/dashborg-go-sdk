@@ -344,7 +344,7 @@ func RegisterPanelHandler(panelName string, path string, handlerFn func(*PanelRe
 	}
 	globalClient.registerHandler(hkey, hfn)
 	if path == "/" {
-		log.Printf("Dashborg Define Panel [%s] link: %s\n", panelName, panelLink(panelName))
+		log.Printf("Dashborg Panel Link [%s]: %s\n", panelName, panelLink(panelName))
 	}
 }
 
