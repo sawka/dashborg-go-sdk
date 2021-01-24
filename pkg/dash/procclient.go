@@ -91,13 +91,11 @@ func StartProcClient(config *Config) {
 	config.setupForProcClient()
 	client := newProcClient()
 	client.Config = config
-	// TODO keepalive
 	err := client.connectGrpc()
 	if err != nil {
-		log.Printf("ERROR connecting gRPC client: %v\n", err)
+		log.Printf("Dashborg ERROR connecting gRPC client: %v\n", err)
 	}
 	log.Printf("Dashborg Initialized Client AccId:%s Zone:%s ProcName:%s ProcRunId:%s\n", config.AccId, config.ZoneName, config.ProcName, client.ProcRunId)
-	// TODO error handling, run async, and hold other requests until this is done
 	client.sendProcMessage()
 	go client.runRequestStreamLoop()
 	globalClient = client
@@ -190,10 +188,10 @@ func (pc *procClient) sendRequestResponse(req *PanelRequest, done bool) error {
 
 func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) {
 	if reqMsg.Err != "" {
-		log.Printf("gRPC got error request: err=%s\n", reqMsg.Err)
+		logV("Dashborg gRPC got error request: err=%s\n", reqMsg.Err)
 		return
 	}
-	log.Printf("gRPC got request: panel=%s, type=%s, path=%s\n", reqMsg.PanelName, reqMsg.RequestType, reqMsg.Path)
+	logV("Dashborg gRPC got request: panel=%s, type=%s, path=%s\n", reqMsg.PanelName, reqMsg.RequestType, reqMsg.Path)
 	preq := &PanelRequest{
 		Ctx:         ctx,
 		Lock:        &sync.Mutex{},
@@ -276,7 +274,7 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 
 	defer func() {
 		if panicErr := recover(); panicErr != nil {
-			log.Printf("PANIC in Handler %v | %v\n", hkey, panicErr)
+			log.Printf("Dashborg PANIC in Handler %v | %v\n", hkey, panicErr)
 			preq.Err = fmt.Errorf("PANIC in handler %v", panicErr)
 		}
 		preq.Done()
@@ -298,8 +296,8 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	}
 }
 
-// TODO sync, only one procmessage allowed at a time
 func (pc *procClient) sendProcMessage() error {
+	// only allow one proc message at a time (synchronize)
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostname = "unknown"
@@ -324,17 +322,19 @@ func (pc *procClient) sendProcMessage() error {
 	}
 	resp, err := pc.DBService.Proc(pc.ctxWithMd(), m)
 	if err != nil {
-		log.Printf("procclient sendProcMessage error: %v\n", err)
+		log.Printf("Dashborg procclient sendProcMessage error: %v\n", err)
 		pc.ConnId.Store("")
 		return err
 	}
 	if !resp.Success {
-		log.Printf("procclient sendProcMessage error: %s\n", resp.Err)
+		log.Printf("Dashborg procclient sendProcMessage error: %s\n", resp.Err)
 		pc.ConnId.Store("")
 		return errors.New(resp.Err)
 	}
 	pc.ConnId.Store(resp.ConnId)
-	log.Printf("procclient sendProcMessage success connid:%s\n", resp.ConnId)
+	if pc.Config.Verbose {
+		log.Printf("procclient sendProcMessage success connid:%s\n", resp.ConnId)
+	}
 	return nil
 }
 
@@ -384,7 +384,7 @@ func (w *expoWait) Wait() bool {
 		rtnOk = true
 	}
 	if rtnOk {
-		log.Printf("procclient RunRequestStreamLoop trying to connect (%0.1fs) %d\n", float64(msWait)/1000, w.WaitTimes)
+		log.Printf("Dashborg procclient RunRequestStreamLoop trying to connect (%0.1fs) %d\n", float64(msWait)/1000, w.WaitTimes)
 	}
 	return rtnOk
 }
@@ -398,7 +398,7 @@ func (pc *procClient) runRequestStreamLoop() {
 	for {
 		state := pc.Conn.GetState()
 		if state == connectivity.Shutdown {
-			log.Printf("procclient RunRequestStreamLoop exiting -- Conn Shutdown\n")
+			logV("Dashborg procclient RunRequestStreamLoop exiting -- Conn Shutdown\n")
 			break
 		}
 		if state == connectivity.Connecting || state == connectivity.TransientFailure {
@@ -430,11 +430,10 @@ func (pc *procClient) runRequestStreamLoop() {
 
 func (pc *procClient) runRequestStream() (bool, string) {
 	m := &dashproto.RequestStreamMessage{Ts: dashutil.Ts()}
-	log.Printf("gRPC RequestStream starting\n")
+	logV("Dashborg gRPC RequestStream starting\n")
 	reqStreamClient, err := pc.DBService.RequestStream(pc.ctxWithMd(), m)
 	if err != nil {
-		// TODO retry
-		log.Printf("Error setting up gRPC RequestStream: %v\n", err)
+		log.Printf("Dashborg Error setting up gRPC RequestStream: %v\n", err)
 		return false, EC_UNKNOWN
 	}
 	startTime := time.Now()
@@ -442,19 +441,18 @@ func (pc *procClient) runRequestStream() (bool, string) {
 	var endingErrCode string
 	for {
 		reqMsg, err := reqStreamClient.Recv()
-		// log.Printf("rtn from req-stream %v | %v\n", reqMsg, err)
 		if err == io.EOF {
-			log.Printf("gRPC RequestStream done: EOF\n")
+			logV("Dashborg gRPC RequestStream done: EOF\n")
 			endingErrCode = EC_EOF
 			break
 		}
 		if err != nil {
-			log.Printf("gRPC RequestStream ERROR: %v\n", err)
+			logV("Dashborg gRPC RequestStream ERROR: %v\n", err)
 			endingErrCode = EC_UNKNOWN
 			break
 		}
 		if reqMsg.ErrCode == dashproto.ErrorCode_EC_BADCONNID {
-			log.Printf("gRPC RequestStream BADCONNID\n")
+			logV("Dashborg gRPC RequestStream BADCONNID\n")
 			endingErrCode = EC_BADCONNID
 			break
 		}
@@ -473,11 +471,13 @@ func (pc *procClient) runRequestStream() (bool, string) {
 	return (elapsed >= 5*time.Second), endingErrCode
 }
 
+// WaitForClear closes the gRPC connection to the server and shuts down the Dashborg client.
+//   Usually called at the end of main() using defer.
 func WaitForClear() {
 	time.Sleep(globalClient.Config.MinClearTimeout)
 	err := globalClient.Conn.Close()
 	if err != nil {
-		log.Printf("ERROR closing gRPC connection: %v\n", err)
+		logV("Dashborg ERROR closing gRPC connection: %v\n", err)
 	}
 }
 
@@ -489,9 +489,6 @@ func (pc *procClient) registerHandler(protoHkey *dashproto.HandlerKey, handlerFn
 		Path:        protoHkey.Path,
 	}
 	pc.registerHandlerFn(hkey, protoHkey, handlerFn)
-
-	// TODO what to do on error?
-	// TODO retry/flag errors
 	if pc.ConnId.Load().(string) == "" {
 		return
 	}
@@ -501,12 +498,12 @@ func (pc *procClient) registerHandler(protoHkey *dashproto.HandlerKey, handlerFn
 	}
 	resp, err := globalClient.DBService.RegisterHandler(pc.ctxWithMd(), msg)
 	if err != nil {
-		log.Printf("RegisterHandler ERROR-rpc %v\n", err)
+		log.Printf("Dashborg RegisterHandler ERROR-rpc %v\n", err)
 		return
 	}
 	if resp.Err != "" {
-		log.Printf("RegisterHandler ERROR %v\n", resp.Err)
+		log.Printf("Dashborg RegisterHandler ERROR %v\n", resp.Err)
 		return
 	}
-	log.Printf("RegisterHandler %v success\n", hkey)
+	logV("Dashborg RegisterHandler %v success\n", hkey)
 }

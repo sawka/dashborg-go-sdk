@@ -32,11 +32,11 @@ type Config struct {
 	ProcName string // DASHBORG_PROCNAME (set from executable filename if not set)
 	ProcTags map[string]string
 
-	KeyFileName  string // DASHBORG_KEYFILE private key file
-	CertFileName string // DASHBORG_CERTFILE certificate file, CN must be set to your Dashborg Account Id.
+	KeyFileName  string // DASHBORG_KEYFILE private key file (defaults to dashborg-client.key)
+	CertFileName string // DASHBORG_CERTFILE certificate file, CN must be set to your Dashborg Account Id.  (defaults to dashborg-client.crt)
 
 	// Create a self-signed key/cert if they do not exist.  This will also create a random Account Id.
-	// Should only be used with AnonAcc is true, and AccId is not set
+	// Should only be used with AnonAcc is true.  If AccId is set, will create a key with that AccId
 	AutoKeygen bool
 
 	// The minimum amount of time to wait for all events to complete processing before shutting down after calling WaitForClear()
@@ -52,21 +52,25 @@ type Config struct {
 	DashborgSrvPort int    // DASHBORG_PROCPORT
 }
 
+// PanelRequest encapsulates all the data about a Dashborg request.  Normally the only
+//   fields that a handler needs to access are "Data" and "Model" in order to read
+//   the parameters and UI state associated with this request.  The other fields are
+//   exported, but subject to change and should not be used except in advanced use cases.
 type PanelRequest struct {
-	Ctx         context.Context
-	Lock        *sync.Mutex // synchronizes RRActions
+	Ctx         context.Context // gRPC context
+	Lock        *sync.Mutex     // synchronizes RRActions
 	PanelName   string
-	ReqId       string
-	RequestType string
-	FeClientId  string
-	Path        string
-	Data        interface{}
-	Model       interface{}
-	AuthData    []*authAtom
-	RRActions   []*dashproto.RRAction
-	Err         error
-	IsDone      bool
-	AuthImpl    bool // if not set, will default NoAuth() on Done()
+	ReqId       string                // unique request id
+	RequestType string                // "data" or "handler"
+	FeClientId  string                // unique id for client (not set for normal requests)
+	Path        string                // handler or data path
+	Data        interface{}           // json-unmarshaled data attached to this request
+	Model       interface{}           // json-unmarshaled model for this request
+	AuthData    []*authAtom           // authentication tokens associated with this request
+	RRActions   []*dashproto.RRAction // output, these are the actions that will be returned
+	Err         error                 // set if an error occured (when set, RRActions are not sent)
+	IsDone      bool                  // set after Done() is called and response has been sent to server
+	AuthImpl    bool                  // if not set, will default NoAuth() on Done()
 }
 
 func panelLink(panelName string) string {
@@ -84,6 +88,7 @@ func (req *PanelRequest) appendRR(rrAction *dashproto.RRAction) {
 	req.RRActions = append(req.RRActions, rrAction)
 }
 
+// SetData is used to return data to the client.  Will replace the contents of path with data.
 func (req *PanelRequest) SetData(path string, data interface{}) error {
 	if req.IsDone {
 		return fmt.Errorf("Cannot call SetData(), path=%s, PanelRequest is already done", path)
@@ -102,6 +107,7 @@ func (req *PanelRequest) SetData(path string, data interface{}) error {
 	return nil
 }
 
+// SetHtml returns html to be rendered by the client.  Currently only valid for "/" handler requests.
 func (req *PanelRequest) SetHtml(html string) error {
 	ts := dashutil.Ts()
 	htmlAction := &dashproto.RRAction{
@@ -113,6 +119,7 @@ func (req *PanelRequest) SetHtml(html string) error {
 	return nil
 }
 
+// Convience wrapper over SetHtml that returns the contents of a file.
 func (req *PanelRequest) SetHtmlFromFile(fileName string) error {
 	fd, err := os.Open(fileName)
 	if err != nil {
@@ -206,6 +213,7 @@ func (req *PanelRequest) isAuthenticated() bool {
 func (req *PanelRequest) hasPanelAuth(authType string) {
 }
 
+// call this function in your root handler to mark this panel as not requiring authentication
 func (req *PanelRequest) NoAuth() {
 	req.AuthImpl = true
 	if !req.isAuthenticated() {
@@ -217,6 +225,8 @@ type challengeData struct {
 	ChallengeData map[string]string `json:"challengedata"`
 }
 
+// PasswordAuth sets a password to access this panel.  Note that password auth
+//   also allows dashborg auth to access this panel.
 func (req *PanelRequest) PasswordAuth(pw string) (bool, error) {
 	req.AuthImpl = true
 	if req.isAuthenticated() {
@@ -249,6 +259,7 @@ func (req *PanelRequest) PasswordAuth(pw string) (bool, error) {
 	return false, fmt.Errorf("Not Authorized | Sending Password Challenge")
 }
 
+// DashborgAuth requires a valid dashborg user account to access this panel.
 func (req *PanelRequest) DashborgAuth() (bool, error) {
 	req.AuthImpl = true
 	if req.isAuthenticated() {
@@ -262,6 +273,8 @@ func (req *PanelRequest) DashborgAuth() (bool, error) {
 	return false, fmt.Errorf("Not Authorized | Dashborg Auth")
 }
 
+// Call from a handler to force the client to invalidate and re-pull data that matches path.
+//   Path is a regular expression.
 func (req *PanelRequest) InvalidateData(path string) error {
 	if req.IsDone {
 		return fmt.Errorf("Cannot call InvalidateData(), path=%s, PanelRequest is already done", path)
@@ -301,6 +314,9 @@ func (req *PanelRequest) flush() error {
 	return globalClient.sendRequestResponse(req, false)
 }
 
+// Done() ends a request and sends the results back to the client.  It is automatically called after
+//   a handler/data-handler is run.  Only needs to be called explicitly if you'd like to return
+//   your result earlier.
 func (req *PanelRequest) Done() error {
 	if req.IsDone {
 		return nil
@@ -310,11 +326,12 @@ func (req *PanelRequest) Done() error {
 	}
 	err := globalClient.sendRequestResponse(req, true)
 	if err != nil {
-		log.Printf("Dashborg ERROR sending handler response: %v\n", err)
+		logV("Dashborg ERROR sending handler response: %v\n", err)
 	}
 	return err
 }
 
+// RegisterPanelHandler registers a panel handler.  All panels require a root "/" handler.
 func RegisterPanelHandler(panelName string, path string, handlerFn func(*PanelRequest) error) {
 	hkey := &dashproto.HandlerKey{
 		PanelName:   panelName,
@@ -331,6 +348,7 @@ func RegisterPanelHandler(panelName string, path string, handlerFn func(*PanelRe
 	}
 }
 
+// RegisterDataHandler registers a data handler.
 func RegisterDataHandler(panelName string, path string, handlerFn func(*PanelRequest) (interface{}, error)) {
 	hkey := &dashproto.HandlerKey{
 		PanelName:   panelName,
@@ -338,4 +356,10 @@ func RegisterDataHandler(panelName string, path string, handlerFn func(*PanelReq
 		Path:        path,
 	}
 	globalClient.registerHandler(hkey, handlerFn)
+}
+
+func logV(fmtStr string, args ...interface{}) {
+	if globalClient != nil && globalClient.Config.Verbose {
+		log.Printf(fmtStr, args...)
+	}
 }
