@@ -130,14 +130,7 @@ func (req *PanelRequest) SetHtmlFromFile(fileName string) error {
 	if err != nil {
 		return err
 	}
-	ts := dashutil.Ts()
-	htmlAction := &dashproto.RRAction{
-		Ts:         ts,
-		ActionType: "html",
-		Html:       string(htmlBytes),
-	}
-	req.appendRR(htmlAction)
-	return nil
+	return req.SetHtml(string(htmlBytes))
 }
 
 func (req *PanelRequest) isRootReq() bool {

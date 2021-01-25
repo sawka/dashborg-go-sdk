@@ -1,0 +1,16 @@
+<panel>
+  <h1>Dashborg Playground</h1>
+  <box class="row" grow>
+    <box class="col" shrink=0 minwidth=600px borderright="1px solid black" paddingright=10px>
+      <h3 style="margin-bottom:0">HTML</h3>
+      <d-input type="textarea" height="50%" bindvalue="$.model.html"/>
+      <h3 style="margin-bottom:0">Data (JSON)</h3>
+      <d-input type="textarea" height="30%" bindvalue="$.model.jsondata"/>
+      <d-error bind="$.submiterrors"/>
+      <d-button handler="/submit">Submit</d-button>
+    </box>
+    <box class="col">
+      <d-dyn bind="$.html"/>
+    </box>
+  </box>
+</panel>
