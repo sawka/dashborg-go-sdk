@@ -10,14 +10,14 @@
     <box class="col s3" bgcolor="#eee" padding=10px>
       <h2>Accounts</h2>
       <d-data query="/accounts/list" bindvalue="$.data.acclist"/>
-      <d-list selection keyexpr=".AccId" bind="data.acclist" bindvalue="state.selaccid" marginleft=8px>
+      <d-list selection keyexpr=".AccId" bind="data.acclist" bindvalue="model.selaccid" marginleft=8px>
         <box class="row" size=16px marginbottom=6px alignitems=center lineheight=22px>
           <d-text bind=".AccName"/>
           <box if="*.IsPaid" uilabel uicolor="blue" uisize=tiny marginleft=5px inline>Paid</box>
         </box>
       </d-list>
     </box>
-    <d-data query="/accounts/get" querydata="$.state.selaccid" bindvalue="$.data.accdetail2"/>
+    <d-data query="/accounts/get" querydata="$.model.selaccid" bindvalue="$.data.accdetail2"/>
     <box class="col" grow bgcolor="#eee" padding=10px>
       <h2>Account Detail</h2>
       <box if="*." class="col" size=16px datacontext="data.accdetail2">
@@ -34,11 +34,11 @@
     </box>
   </box>
   <d-dataview scroll height=200px bgcolor=black color=white bind="."/>
-  <d-modal name="createAccountModal" closeondocumentclick clearonclose="state.create" modaltitle="Create Account">
+  <d-modal name="createAccountModal" closeondocumentclick clearonclose="model.create" modaltitle="Create Account">
     <div class="content">
       <box class="col">
-        <d-input inputlabel="Name" bindvalue="state.create.name" binderrorvalue="state.create.errors.name"/>
-        <d-input inputlabel="Email" bindvalue="state.create.email" binderrorvalue="state.create.errors.email"/>
+        <d-input inputlabel="Name" bindvalue="model.create.name" binderrorvalue="model.create.errors.name"/>
+        <d-input inputlabel="Email" bindvalue="model.create.email" binderrorvalue="model.create.errors.email"/>
       </box>
     </div>
     <div class="actions">
