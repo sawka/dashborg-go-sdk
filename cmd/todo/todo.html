@@ -1,24 +1,27 @@
 <panel>
   <h1>Todo App</h1>
   <box class="row">
-    <d-input width="300px" bindvalue="$.model.newtodo"/>
-
-    <d-button handler="/add-todo">Add Todo Item</d-button>
+    <d-input width="300px" bindvalue="$.state.newtodo"/>
+    <d-button handler="/AddTodo">Add Todo Item</d-button>
   </box>
+  <d-data query="/GetTodoList" bindvalue="$.todos"/>
   <d-table bind="$.todos">
+    <d-col width="50px" label="Id">
+      <d-text bind=".Id"/>
+    </d-col>
     <d-col width="50%" label="Item">
       <d-text bind=".Item"/>
     </d-col>
     <d-col width="100px" label="Done">
       <box if="*.Done" color="green" bold size=18px><i class="check square outline icon"/></box>
       <box notif="*.Done" size=18px>
-        <a onclickhandler="/mark-todo-done" onclickhandlerdata=".Id" href="#" color="black">
+        <a onclickhandler="/MarkTodoDone" onclickhandlerdata=".Id" href="#" color="black">
           <i class="square outline icon"/>
         </a>
       </box>
     </d-col>
-    <d-col width="100px" label="Remove">
-      <d-button handler="/remove-todo" handlerdata=".Id">Remove</d-button>
+    <d-col width="100px" label="Actions">
+      <d-button handler="/RemoveTodo" handlerdata=".Id">Remove</d-button>
     </d-col>
   </d-table>
   <box grow/>
