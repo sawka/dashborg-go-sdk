@@ -52,14 +52,14 @@ func main() {
 		req.SetHtmlFromFile("cmd/playground/playground.html")
 		html := strings.TrimSpace(INITIAL_HTML)
 		jsonData := strings.TrimSpace(INITIAL_DATA)
-		req.SetData("$.model.html", html)
-		req.SetData("$.model.jsondata", jsonData)
+		req.SetData("$.state.html", html)
+		req.SetData("$.state.jsondata", jsonData)
 		processModel(req, &PlaygroundModel{Html: html, JsonData: jsonData})
 		return nil
 	})
 	dash.RegisterPanelHandler("playground", "/submit", func(req *dash.PanelRequest) error {
 		var model PlaygroundModel
-		mapstructure.Decode(req.Model, &model)
+		mapstructure.Decode(req.PanelState, &model)
 		processModel(req, &model)
 		return nil
 	})

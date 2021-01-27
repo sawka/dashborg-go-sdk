@@ -45,7 +45,7 @@ message RequestMessage {
     string ControlId = 9;
     string JsonData = 10;
     string AuthData = 11;
-    string ModelData = 12;
+    string PanelStateData = 12;
     string Err = 13;           // only used for server-side errors
     ErrorCode ErrCode = 14;    // only used for server-side errors
     int64 TimeoutMs = 15;

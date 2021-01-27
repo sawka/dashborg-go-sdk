@@ -206,13 +206,13 @@ func main() {
 		return nil
 	})
 	dash.RegisterPanelHandler("demo2", "/acc/refresh-accounts", func(req *dash.PanelRequest) error {
-		req.SetData("model.selaccid", nil)
+		req.SetData("state.selaccid", nil)
 		req.InvalidateData("/accounts/.*")
 		return nil
 	})
 	dash.RegisterPanelHandler("demo2", "/acc/regen-acclist", func(req *dash.PanelRequest) error {
 		Model.RegenAccounts()
-		req.SetData("model.selaccid", nil)
+		req.SetData("state.selaccid", nil)
 		req.InvalidateData("/accounts/.*")
 		return nil
 	})
@@ -223,32 +223,32 @@ func main() {
 		}
 		Model.RemoveAcc(accId)
 		req.InvalidateData("/accounts/.*")
-		req.SetData("model.selaccid", nil)
+		req.SetData("state.selaccid", nil)
 		return nil
 	})
 	dash.RegisterPanelHandler("demo2", "/acc/open-create-account-modal", func(req *dash.PanelRequest) error {
-		req.SetData("model.createAccountModal.open", true)
+		req.SetData("state.createAccountModal.open", true)
 		return nil
 	})
 	dash.RegisterPanelHandler("demo2", "/acc/close-modal", func(req *dash.PanelRequest) error {
-		req.SetData("model.createAccountModal.open", false)
+		req.SetData("state.createAccountModal.open", false)
 		return nil
 	})
 	dash.RegisterPanelHandler("demo2", "/acc/create-account", func(req *dash.PanelRequest) error {
 		var panelModel PanelModel
-		err := mapstructure.Decode(req.Model, &panelModel)
+		err := mapstructure.Decode(req.PanelState, &panelModel)
 		if err != nil {
 			return err
 		}
 		errors := panelModel.CreateData.Validate()
 		if len(errors) > 0 {
-			req.SetData("model.create.errors", errors)
+			req.SetData("state.create.errors", errors)
 			return nil
 		}
-		req.SetData("model.create.errors", nil)
+		req.SetData("state.create.errors", nil)
 		newAccId := Model.CreateAcc(panelModel.CreateData.Name, panelModel.CreateData.Email)
-		req.SetData("model.createAccountModal.open", false)
-		req.SetData("model.selaccid", newAccId)
+		req.SetData("state.createAccountModal.open", false)
+		req.SetData("state.selaccid", newAccId)
 		req.InvalidateData("/accounts/.*")
 		return nil
 	})

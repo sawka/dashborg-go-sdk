@@ -7,6 +7,7 @@ Cut out the overhead of configuring and hosting a web stack, and stop wrestling 
 
 * GoDoc (godoc.org): https://godoc.org/github.com/sawka/dashborg-go-sdk/pkg/dash
 * GoDoc (pkg.go.dev): https://pkg.go.dev/github.com/sawka/dashborg-go-sdk/pkg/dash
+* Playground: https://console.dashborg.net/acc/0eb2cc25-ba5b-47b3-b376-33dcdeec3619/default/playground
 
 ## Key Features
 

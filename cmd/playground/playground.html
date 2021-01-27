@@ -3,9 +3,9 @@
   <box class="row" grow>
     <box class="col" shrink=0 minwidth=600px borderright="1px solid black" paddingright=10px>
       <h3 style="margin-bottom:0">HTML</h3>
-      <d-input type="textarea" height="50%" bindvalue="$.model.html"/>
+      <d-input type="textarea" height="50%" bindvalue="$.state.html"/>
       <h3 style="margin-bottom:0">Data (JSON)</h3>
-      <d-input type="textarea" height="30%" bindvalue="$.model.jsondata"/>
+      <d-input type="textarea" height="30%" bindvalue="$.state.jsondata"/>
       <d-error bind="$.submiterrors"/>
       <d-button handler="/submit">Submit</d-button>
     </box>

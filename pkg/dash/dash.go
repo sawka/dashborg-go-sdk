@@ -53,7 +53,7 @@ type Config struct {
 }
 
 // PanelRequest encapsulates all the data about a Dashborg request.  Normally the only
-//   fields that a handler needs to access are "Data" and "Model" in order to read
+//   fields that a handler needs to access are "Data" and "PanelState" in order to read
 //   the parameters and UI state associated with this request.  The other fields are
 //   exported, but subject to change and should not be used except in advanced use cases.
 type PanelRequest struct {
@@ -65,12 +65,15 @@ type PanelRequest struct {
 	FeClientId  string                // unique id for client (not set for normal requests)
 	Path        string                // handler or data path
 	Data        interface{}           // json-unmarshaled data attached to this request
-	Model       interface{}           // json-unmarshaled model for this request
+	PanelState  interface{}           // json-unmarshaled panel state for this request
 	AuthData    []*authAtom           // authentication tokens associated with this request
 	RRActions   []*dashproto.RRAction // output, these are the actions that will be returned
 	Err         error                 // set if an error occured (when set, RRActions are not sent)
 	IsDone      bool                  // set after Done() is called and response has been sent to server
 	AuthImpl    bool                  // if not set, will default NoAuth() on Done()
+
+	PanelStateJson string
+	DataJson       string
 }
 
 func panelLink(panelName string) string {

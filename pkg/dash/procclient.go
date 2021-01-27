@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -240,17 +241,19 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 		}
 	}
 	preq.Data = data
+	preq.DataJson = reqMsg.JsonData
 
-	var model interface{}
-	if reqMsg.ModelData != "" {
-		err := json.Unmarshal([]byte(reqMsg.ModelData), &model)
+	var pstate interface{}
+	if reqMsg.PanelStateData != "" {
+		err := json.Unmarshal([]byte(reqMsg.PanelStateData), &pstate)
 		if err != nil {
-			preq.Err = fmt.Errorf("Cannot unmarshal ModelData: %v", err)
+			preq.Err = fmt.Errorf("Cannot unmarshal PanelStateData: %v", err)
 			preq.Done()
 			return
 		}
 	}
-	preq.Model = model
+	preq.PanelState = pstate
+	preq.PanelStateJson = reqMsg.PanelStateData
 
 	var authData []*authAtom
 	if reqMsg.AuthData != "" {
@@ -276,6 +279,7 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 		if panicErr := recover(); panicErr != nil {
 			log.Printf("Dashborg PANIC in Handler %v | %v\n", hkey, panicErr)
 			preq.Err = fmt.Errorf("PANIC in handler %v", panicErr)
+			debug.PrintStack()
 		}
 		preq.Done()
 	}()
