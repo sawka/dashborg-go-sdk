@@ -462,12 +462,12 @@ func (pc *procClient) runRequestStream() (bool, string) {
 		}
 		go func() {
 			reqCounter++
-			ctx := context.Background()
-			if reqMsg.TimeoutMs > 0 {
-				var cancel context.CancelFunc
-				ctx, cancel = context.WithTimeout(ctx, time.Duration(reqMsg.TimeoutMs)*time.Millisecond)
-				defer cancel()
+			timeoutMs := reqMsg.TimeoutMs
+			if timeoutMs == 0 || timeoutMs > 60000 {
+				timeoutMs = 60000
 			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(reqMsg.TimeoutMs)*time.Millisecond)
+			defer cancel()
 			pc.dispatchRequest(ctx, reqMsg)
 		}()
 	}
