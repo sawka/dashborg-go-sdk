@@ -1,11 +1,11 @@
 <panel>
   <h1>Dashborg Playground</h1>
-  <box class="row" grow>
-    <box class="col" shrink=0 minwidth=600px borderright="1px solid black" paddingright=10px>
+  <box class="row" style="grow">
+    <box class="col" style="noshrink; min-width: 600px; border-right: 1px solid black; padding-right: 10px;">
       <h3 style="margin-bottom:0">HTML</h3>
-      <d-input type="textarea" height="50%" bindvalue="$.state.html"/>
+      <d-input type="textarea" style="height: 50%" bindvalue="$.state.html"/>
       <h3 style="margin-bottom:0">Data (JSON)</h3>
-      <d-input type="textarea" height="30%" bindvalue="$.state.jsondata"/>
+      <d-input type="textarea" style="height: 30%" bindvalue="$.state.jsondata"/>
       <d-error bind="$.submiterrors"/>
       <d-button handler="/submit">Submit</d-button>
     </box>

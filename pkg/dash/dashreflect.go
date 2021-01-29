@@ -133,7 +133,6 @@ func registerPanelMethod(panelName string, modelStruct interface{}, m reflect.Me
 	}
 	mType := m.Type
 	if checkPanelHandlerMethod(mType, stateType) {
-		fmt.Printf("register panel handler method path:%s -> %#v\n", path, m)
 		RegisterPanelHandler(panelName, path, func(req *PanelRequest) error {
 			args, err := makeCallArgs(mType, req, modelStruct, stateType)
 			if err != nil {
@@ -146,7 +145,6 @@ func registerPanelMethod(panelName string, modelStruct interface{}, m reflect.Me
 			return rtnVals[0].Interface().(error)
 		})
 	} else if checkDataHandlerMethod(mType, stateType) {
-		fmt.Printf("register data handler method path:%s -> %#v\n", path, m)
 		RegisterDataHandler(panelName, path, func(req *PanelRequest) (interface{}, error) {
 			args, err := makeCallArgs(mType, req, modelStruct, stateType)
 			if err != nil {

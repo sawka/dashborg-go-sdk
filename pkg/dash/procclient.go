@@ -509,5 +509,5 @@ func (pc *procClient) registerHandler(protoHkey *dashproto.HandlerKey, handlerFn
 		log.Printf("Dashborg RegisterHandler ERROR %v\n", resp.Err)
 		return
 	}
-	logV("Dashborg RegisterHandler %v success\n", hkey)
+	logV("Dashborg RegisterHandler %v\n", hkey)
 }
