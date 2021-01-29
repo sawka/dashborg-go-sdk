@@ -1,51 +1,51 @@
 <panel>
   <h1>Demo 2</h1>
-  <box class="row">
+  <div class="row">
     <d-button handler="/acc/refresh-accounts">Refresh Accounts</d-button>
     <d-button handler="/acc/open-create-account-modal">Create Account</d-button>
     <box style="grow"/>
     <d-button handler="/acc/regen-acclist">Regenerate Test Accounts</d-button>
-  </box>
-  <box class="row" style="grow">
-    <box class="col s3" style="background-color: #eee; padding: 10px">
+  </div>
+  <div class="row" style="grow">
+    <div class="col s3" style="background-color: #eee; padding: 10px">
       <h2>Accounts</h2>
       <d-data query="/accounts/list" bindvalue="$.data.acclist"/>
       <d-list selection keyexpr=".AccId" bind="data.acclist" bindvalue="state.selaccid" marginleft=8px>
-        <box class="row" style="font-size: 16px; margin-bottom: 6px; align-items: center; line-height: 22px;">
+        <div class="row" style="font-size: 16px; margin-bottom: 6px; align-items: center; line-height: 22px;">
           <d-text bind=".AccName"/>
-          <box if="*.IsPaid" class="ui label blue tiny inline" style="margin-left: 5px">Paid</box>
-        </box>
+          <div if="*.IsPaid" class="ui label blue tiny inline" style="margin-left: 5px">Paid</div>
+        </div>
       </d-list>
-    </box>
+    </div>
     <d-data query="/accounts/get" querydata="$.state.selaccid" bindvalue="$.data.accdetail2"/>
-    <box class="col" style="grow; background-color: #eee; padding: 10px;">
+    <div class="col" style="grow; background-color: #eee; padding: 10px;">
       <h2>Account Detail</h2>
-      <box if="*." class="col" style="font-size: 16px" datacontext="data.accdetail2">
+      <div if="*." class="col" style="font-size: 16px" datacontext="data.accdetail2">
         <d-def style-name="width: 100px" name="Acc Id" value="*.AccId"/>
         <d-def style-name="width: 100px" name="Name" value="*.AccName"/>
         <d-def style-name="width: 100px" name="Paid Acc"><d-text bind=".IsPaid"/></d-def>
         <d-def style-name="width: 100px" name="Email" value="*.Email"/>
-        <box class="row">
+        <div class="row">
           <d-button if="*.IsPaid" handler="/acc/downgrade" handlerdata=".AccId">Downgrade</d-button>
           <d-button notif="*.IsPaid" handler="/acc/upgrade" handlerdata=".AccId">Upgrade</d-button>
           <d-button handler="/acc/remove" handlerdata=".AccId">Remove Account</d-button>
-        </box>
-      </box>
-    </box>
-  </box>
+        </div>
+      </div>
+    </div>
+  </div>
   <d-dataview class="dark" style="scroll; height: 200px;" bind="."/>
   <d-modal name="createAccountModal" closeondocumentclick clearonclose="state.create" modaltitle="Create Account">
     <div class="content">
-      <box class="col">
+      <div class="col">
         <d-input inputlabel="Name" bindvalue="state.create.name" binderrorvalue="state.create.errors.name"/>
         <d-input inputlabel="Email" bindvalue="state.create.email" binderrorvalue="state.create.errors.email"/>
-      </box>
+      </div>
     </div>
     <div class="actions">
-      <box class="row">
+      <div class="row">
         <d-button class-button="primary" handler="/acc/create-account">Create Account</d-button>
         <d-button handler="/acc/close-modal">Cancel</d-button>
-      </box>
+      </div>
     </div>
   </d-modal>
 </panel>

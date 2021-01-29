@@ -10,12 +10,12 @@ import (
 
 const INITIAL_HTML = `
 <h1>Test Output</h1>
-<box class="row" style="xcenter;">
+<div class="row" style="xcenter;">
   <d-button>Test Button</d-button>
-  <d-box style="color: *$.data.color;">
+  <div style="color: *$.data.color;">
     <d-text bind="$.data.text"/>
-  </d-box>
-</box>
+  </div>
+</div>
 `
 
 const INITIAL_DATA = `
