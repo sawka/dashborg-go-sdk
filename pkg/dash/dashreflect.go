@@ -6,12 +6,9 @@ import (
 	"reflect"
 )
 
-type anyTypeStruct struct{}
-
 var errType = reflect.TypeOf((*error)(nil)).Elem()
 var interfaceType = reflect.TypeOf((*interface{})(nil)).Elem()
 var panelReqType = reflect.TypeOf(&PanelRequest{})
-var anyType = reflect.TypeOf(anyTypeStruct{})
 
 func checkOutput(mType reflect.Type, outputTypes ...reflect.Type) bool {
 	if mType.NumOut() != len(outputTypes) {
