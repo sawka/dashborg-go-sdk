@@ -158,6 +158,7 @@ func registerPanelMethod(panelName string, modelStruct interface{}, m reflect.Me
 	}
 }
 
+// RegisterPanelModel registers a struct as a set of handlers for a panel using reflection.
 func RegisterPanelModel(panelName string, modelStruct interface{}, stateStruct interface{}, nameMapping map[string]string) {
 	modelType := reflect.ValueOf(modelStruct).Type()
 	numMethods := modelType.NumMethod()

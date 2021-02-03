@@ -88,6 +88,7 @@ func (pc *procClient) copyHandlerKeys() []*dashproto.HandlerKey {
 	return rtn
 }
 
+// Starts the Dashborg Client
 func StartProcClient(config *Config) {
 	config.setupForProcClient()
 	client := newProcClient()
@@ -476,7 +477,7 @@ func (pc *procClient) runRequestStream() (bool, string) {
 }
 
 // WaitForClear closes the gRPC connection to the server and shuts down the Dashborg client.
-//   Usually called at the end of main() using defer.
+// Usually called at the end of main() using defer.
 func WaitForClear() {
 	time.Sleep(globalClient.Config.MinClearTimeout)
 	err := globalClient.Conn.Close()

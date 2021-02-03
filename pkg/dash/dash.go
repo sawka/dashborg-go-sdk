@@ -53,27 +53,28 @@ type Config struct {
 }
 
 // PanelRequest encapsulates all the data about a Dashborg request.  Normally the only
-//   fields that a handler needs to access are "Data" and "PanelState" in order to read
-//   the parameters and UI state associated with this request.  The other fields are
-//   exported, but subject to change and should not be used except in advanced use cases.
+// fields that a handler needs to access are "Data" and "PanelState" in order to read
+// the parameters and UI state associated with this request.  The other fields are
+// exported, but subject to change and should not be used except in advanced use cases.
 type PanelRequest struct {
-	Ctx         context.Context // gRPC context
-	Lock        *sync.Mutex     // synchronizes RRActions
-	PanelName   string
-	ReqId       string                // unique request id
-	RequestType string                // "data" or "handler"
-	FeClientId  string                // unique id for client (not set for normal requests)
-	Path        string                // handler or data path
-	Data        interface{}           // json-unmarshaled data attached to this request
-	PanelState  interface{}           // json-unmarshaled panel state for this request
-	AuthData    []*authAtom           // authentication tokens associated with this request
-	RRActions   []*dashproto.RRAction // output, these are the actions that will be returned
-	Err         error                 // set if an error occured (when set, RRActions are not sent)
-	IsDone      bool                  // set after Done() is called and response has been sent to server
-	AuthImpl    bool                  // if not set, will default NoAuth() on Done()
+	PanelName      string      // panel name
+	ReqId          string      // unique request id
+	RequestType    string      // "data" or "handler"
+	Path           string      // handler or data path
+	Data           interface{} // json-unmarshaled data attached to this request
+	PanelState     interface{} // json-unmarshaled panel state for this request
+	PanelStateJson string      // Raw JSON for PanelState (used for manual unmarshalling into custom struct)
+	DataJson       string      // Raw JSON for Data (used for manual unmarshalling into custom struct)
 
-	PanelStateJson string
-	DataJson       string
+	// The following fields are internal and subject to change.  Not for normal client usage.
+	Ctx        context.Context       // gRPC context
+	FeClientId string                // unique id for client (currently unused)
+	Lock       *sync.Mutex           // synchronizes RRActions
+	AuthData   []*authAtom           // authentication tokens associated with this request
+	RRActions  []*dashproto.RRAction // output, these are the actions that will be returned
+	Err        error                 // set if an error occured (when set, RRActions are not sent)
+	IsDone     bool                  // set after Done() is called and response has been sent to server
+	AuthImpl   bool                  // if not set, will default NoAuth() on Done()
 }
 
 func panelLink(panelName string) string {
@@ -110,7 +111,7 @@ func (req *PanelRequest) SetData(path string, data interface{}) error {
 	return nil
 }
 
-// SetHtml returns html to be rendered by the client.  Currently only valid for "/" handler requests.
+// SetHtml returns html to be rendered by the client.  Only valid for root handler requests (path = "/")
 func (req *PanelRequest) SetHtml(html string) error {
 	ts := dashutil.Ts()
 	htmlAction := &dashproto.RRAction{
@@ -209,7 +210,7 @@ func (req *PanelRequest) isAuthenticated() bool {
 func (req *PanelRequest) hasPanelAuth(authType string) {
 }
 
-// call this function in your root handler to mark this panel as not requiring authentication
+// Call this function in your root handler to mark this panel as not requiring authentication
 func (req *PanelRequest) NoAuth() {
 	req.AuthImpl = true
 	if !req.isAuthenticated() {
@@ -222,7 +223,7 @@ type challengeData struct {
 }
 
 // PasswordAuth sets a password to access this panel.  Note that password auth
-//   also allows dashborg auth to access this panel.
+// also allows dashborg auth to access this panel.
 func (req *PanelRequest) PasswordAuth(pw string) (bool, error) {
 	req.AuthImpl = true
 	if req.isAuthenticated() {
@@ -270,7 +271,7 @@ func (req *PanelRequest) DashborgAuth() (bool, error) {
 }
 
 // Call from a handler to force the client to invalidate and re-pull data that matches path.
-//   Path is a regular expression.
+// Path is a regular expression.
 func (req *PanelRequest) InvalidateData(path string) error {
 	if req.IsDone {
 		return fmt.Errorf("Cannot call InvalidateData(), path=%s, PanelRequest is already done", path)
@@ -311,8 +312,8 @@ func (req *PanelRequest) flush() error {
 }
 
 // Done() ends a request and sends the results back to the client.  It is automatically called after
-//   a handler/data-handler is run.  Only needs to be called explicitly if you'd like to return
-//   your result earlier.
+// a handler/data-handler is run.  Only needs to be called explicitly if you'd like to return
+// your result earlier.
 func (req *PanelRequest) Done() error {
 	if req.IsDone {
 		return nil
@@ -327,7 +328,7 @@ func (req *PanelRequest) Done() error {
 	return err
 }
 
-// RegisterPanelHandler registers a panel handler.  All panels require a root "/" handler.
+// RegisterPanelHandler registers a panel handler.  All panels require a root handler (path = "/").
 func RegisterPanelHandler(panelName string, path string, handlerFn func(*PanelRequest) error) {
 	hkey := &dashproto.HandlerKey{
 		PanelName:   panelName,
