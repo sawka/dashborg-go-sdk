@@ -32,22 +32,22 @@ func (m *ServerTodoModel) AddTodo(req *dash.PanelRequest, state *TodoPanelState)
 	}
 	m.TodoList = append(m.TodoList, &TodoItem{Id: m.NextId, Item: state.NewTodo})
 	m.NextId++
-	req.InvalidateData("/GetTodoList")
+	req.InvalidateData("/get-todo-list")
 	req.SetData("$.state.newtodo", "")
 	return nil
 }
 
-func (m *ServerTodoModel) MarkTodoDone(req *dash.PanelRequest, todoId int) error {
+func (m *ServerTodoModel) MarkTodoDone(req *dash.PanelRequest, state interface{}, todoId int) error {
 	for _, todoItem := range m.TodoList {
 		if todoItem.Id == todoId {
 			todoItem.Done = true
 		}
 	}
-	req.InvalidateData("/GetTodoList")
+	req.InvalidateData("/get-todo-list")
 	return nil
 }
 
-func (m *ServerTodoModel) RemoveTodo(req *dash.PanelRequest, todoId int) error {
+func (m *ServerTodoModel) RemoveTodo(req *dash.PanelRequest, state interface{}, todoId int) error {
 	newList := make([]*TodoItem, 0)
 	for _, todoItem := range m.TodoList {
 		if todoItem.Id == todoId {
@@ -56,7 +56,7 @@ func (m *ServerTodoModel) RemoveTodo(req *dash.PanelRequest, todoId int) error {
 		newList = append(newList, todoItem)
 	}
 	m.TodoList = newList
-	req.InvalidateData("/GetTodoList")
+	req.InvalidateData("/get-todo-list")
 	return nil
 }
 
@@ -69,6 +69,10 @@ func main() {
 	dash.StartProcClient(cfg)
 	defer dash.WaitForClear()
 	tm := &ServerTodoModel{NextId: 1}
-	dash.RegisterPanelModel("todo", tm, &TodoPanelState{}, nil)
+	dash.RegisterPanelHandlerEx("todo", "/", tm.RootHandler)
+	dash.RegisterPanelHandlerEx("todo", "/add-todo", tm.AddTodo)
+	dash.RegisterPanelHandlerEx("todo", "/mark-todo-done", tm.MarkTodoDone)
+	dash.RegisterPanelHandlerEx("todo", "/remove-todo", tm.RemoveTodo)
+	dash.RegisterDataHandlerEx("todo", "/get-todo-list", tm.GetTodoList)
 	select {}
 }

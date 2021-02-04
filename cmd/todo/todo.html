@@ -2,9 +2,9 @@
   <h1>Todo App</h1>
   <div class="row">
     <d-input style="width: 300px" bindvalue="$.state.newtodo"/>
-    <d-button handler="/AddTodo">Add Todo Item</d-button>
+    <d-button handler="/add-todo">Add Todo Item</d-button>
   </div>
-  <d-data query="/GetTodoList" bindvalue="$.todos"/>
+  <d-data query="/get-todo-list" bindvalue="$.todos"/>
   <d-table bind="$.todos" style="max-width: 1000px">
     <d-col width="50px" label="Id">
       <d-text bind=".Id"/>
@@ -13,10 +13,10 @@
       <d-text bind=".Item"/>
     </d-col>
     <d-col width="100px" label="Done">
-      <d-checkbox readonly bindvalue=".Done" onchangehandler="/MarkTodoDone" onchangehandlerdata=".Id" />
+      <d-checkbox readonly bindvalue=".Done" onchangehandler="/mark-todo-done" onchangehandlerdata=".Id" />
     </d-col>
     <d-col width="200px" label="Actions">
-      <d-button handler="/RemoveTodo" handlerdata=".Id">Remove</d-button>
+      <d-button handler="/remove-todo" handlerdata=".Id">Remove</d-button>
     </d-col>
   </d-table>
   <div style="grow;"/>

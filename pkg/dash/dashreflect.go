@@ -22,77 +22,25 @@ func checkOutput(mType reflect.Type, outputTypes ...reflect.Type) bool {
 	return true
 }
 
-func checkInput(mType reflect.Type, inputTypes ...reflect.Type) bool {
-	if mType.NumIn() != len(inputTypes) {
-		return false
-	}
-	for idx, t := range inputTypes {
-		if t == nil {
-			continue
-		}
-		if !t.AssignableTo(mType.In(idx)) {
-			return false
-		}
-	}
-	return true
-}
-
-func checkPanelHandlerMethod(mType reflect.Type, stateType reflect.Type) bool {
-	if !checkOutput(mType, errType) {
-		return false
-	}
-	return checkInput(mType, nil, panelReqType) ||
-		checkInput(mType, nil, panelReqType, stateType) ||
-		checkInput(mType, nil, panelReqType, nil) ||
-		checkInput(mType, nil, panelReqType, stateType, nil)
-}
-
-func checkDataHandlerMethod(mType reflect.Type, stateType reflect.Type) bool {
-	if !checkOutput(mType, interfaceType, errType) {
-		return false
-	}
-	return checkInput(mType, nil, panelReqType) ||
-		checkInput(mType, nil, panelReqType, stateType) ||
-		checkInput(mType, nil, panelReqType, nil) ||
-		checkInput(mType, nil, panelReqType, stateType, nil)
-}
-
-func makeCallArgs(mType reflect.Type, req *PanelRequest, model interface{}, stateType reflect.Type) ([]reflect.Value, error) {
-	rtn := []reflect.Value{
-		reflect.ValueOf(model),
-		reflect.ValueOf(req),
-	}
-	if checkInput(mType, nil, panelReqType) {
-		return rtn, nil
-	} else if checkInput(mType, nil, panelReqType, stateType) {
-		stateV, err := unmarshalToType(req.PanelStateJson, stateType)
+func makeCallArgs(hType reflect.Type, req *PanelRequest) ([]reflect.Value, error) {
+	rtn := make([]reflect.Value, hType.NumIn())
+	rtn[0] = reflect.ValueOf(req)
+	if len(rtn) >= 2 {
+		// state-type
+		stateV, err := unmarshalToType(req.PanelStateJson, hType.In(1))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("Cannot unmarshal PanelStateJson to type:%v err:%v", hType.In(1), err)
 		}
-		rtn = append(rtn, stateV)
-		return rtn, nil
-	} else if checkInput(mType, nil, panelReqType, nil) {
-		dataV, err := unmarshalToType(req.DataJson, mType.In(2))
-		if err != nil {
-			return nil, err
-		}
-		rtn = append(rtn, dataV)
-		return rtn, nil
-	} else if checkInput(mType, nil, panelReqType, stateType, nil) {
-		stateV, err := unmarshalToType(req.PanelStateJson, stateType)
-		if err != nil {
-			return nil, err
-		}
-		rtn = append(rtn, stateV)
-		dataV, err := unmarshalToType(req.DataJson, mType.In(3))
-		if err != nil {
-			return nil, err
-		}
-		rtn = append(rtn, dataV)
-		return rtn, nil
-	} else {
-		return nil, fmt.Errorf("Bad Handler Arguments (reflect)")
+		rtn[1] = stateV
 	}
+	if len(rtn) >= 3 {
+		dataV, err := unmarshalToType(req.DataJson, hType.In(2))
+		if err != nil {
+			return nil, fmt.Errorf("Cannot unmarshal DataJson to type:%v err:%v", hType.In(2), err)
+		}
+		rtn[2] = dataV
+	}
+	return rtn, nil
 }
 
 func unmarshalToType(jsonData string, rtnType reflect.Type) (reflect.Value, error) {
@@ -117,61 +65,64 @@ func unmarshalToType(jsonData string, rtnType reflect.Type) (reflect.Value, erro
 	return reflect.Zero(rtnType), nil
 }
 
-func registerPanelMethod(panelName string, modelStruct interface{}, m reflect.Method, stateType reflect.Type, nameMapping map[string]string) {
-	var path string
-	if m.Name == "RootHandler" {
-		path = "/"
-	} else {
-		if newName, ok := nameMapping[m.Name]; ok {
-			path = newName
-		} else {
-			path = "/" + m.Name
+// RegisterPanelHandlerEx registers a panel handler using reflection. The handler function
+// must return exactly one error value.  It must also take between 1-3 arguments.
+// The first parameter must be a *dash.PanelRequest.  The second (optional)
+// parameter is PanelState, and the third (optional) parameter is Data.  Dashborg will attempt to
+// unmarshal the raw JSON of PanelState and Data to the types in the handler signature using
+// the standard Go json.Unmarshal() function.  If an error occurs during unmarshalling it will
+// be returned to the Dashborg service (and your handler function will never run).
+func RegisterPanelHandlerEx(panelName string, path string, handlerFn interface{}) error {
+	hType := reflect.TypeOf(handlerFn)
+	if !checkOutput(hType, errType) {
+		return fmt.Errorf("Dashborg Panel Handler must return one error value")
+	}
+	paramsOk := (hType.NumIn() >= 1 && hType.NumIn() <= 3) && hType.In(0) == panelReqType
+	if !paramsOk {
+		return fmt.Errorf("Dashborg Panel Handler must have 1-3 arguments (*dash.PanelRequest, stateType, dataType)")
+	}
+	hVal := reflect.ValueOf(handlerFn)
+	RegisterPanelHandler(panelName, path, func(req *PanelRequest) error {
+		args, err := makeCallArgs(hType, req)
+		if err != nil {
+			return err
 		}
-	}
-	mType := m.Type
-	if checkPanelHandlerMethod(mType, stateType) {
-		RegisterPanelHandler(panelName, path, func(req *PanelRequest) error {
-			args, err := makeCallArgs(mType, req, modelStruct, stateType)
-			if err != nil {
-				return err
-			}
-			rtnVals := m.Func.Call(args)
-			if rtnVals[0].IsNil() {
-				return nil
-			}
-			return rtnVals[0].Interface().(error)
-		})
-	} else if checkDataHandlerMethod(mType, stateType) {
-		RegisterDataHandler(panelName, path, func(req *PanelRequest) (interface{}, error) {
-			args, err := makeCallArgs(mType, req, modelStruct, stateType)
-			if err != nil {
-				return nil, err
-			}
-			rtnVals := m.Func.Call(args)
-			if rtnVals[1].IsNil() {
-				return rtnVals[0].Interface(), nil
-			}
-			return rtnVals[0].Interface(), rtnVals[1].Interface().(error)
-		})
-	} else {
-		fmt.Printf("skipping method with strange sig %#v\n", m)
-	}
+		rtnVals := hVal.Call(args)
+		if rtnVals[0].IsNil() {
+			return nil
+		}
+		return rtnVals[0].Interface().(error)
+	})
+	return nil
 }
 
-// RegisterPanelModel registers a struct as a set of handlers for a panel using reflection.
-func RegisterPanelModel(panelName string, modelStruct interface{}, stateStruct interface{}, nameMapping map[string]string) {
-	modelType := reflect.ValueOf(modelStruct).Type()
-	numMethods := modelType.NumMethod()
-	var stateType reflect.Type
-	if stateStruct == nil {
-		stateType = reflect.TypeOf((*interface{})(nil)).Elem()
-	} else {
-		stateType = reflect.TypeOf(stateStruct)
+// RegisterPanelDataEx registers a panel handler using reflection.  The handler function must
+// return exactly two values (interface{}, error).  It must also take between 1-3 arguments.
+// The first parameter must be a *dash.PanelRequest.  The second (optional)
+// parameter is PanelState, and the third (optional) parameter is Data.  Dashborg will attempt to
+// unmarshal the raw JSON of PanelState and Data to the types in the handler signature using
+// the standard Go json.Unmarshal() function.  If an error occurs during unmarshalling it will
+// be returned to the Dashborg service (and your handler function will never run).
+func RegisterDataHandlerEx(panelName string, path string, handlerFn interface{}) error {
+	hType := reflect.TypeOf(handlerFn)
+	if !checkOutput(hType, interfaceType, errType) {
+		return fmt.Errorf("Dashborg Data Handler must return two values (interface{}, error)")
 	}
-	for i := 0; i < numMethods; i++ {
-		m := modelType.Method(i)
-		if m.Type.NumIn() >= 2 && panelReqType.AssignableTo(m.Type.In(1)) {
-			registerPanelMethod(panelName, modelStruct, m, stateType, nameMapping)
+	paramsOk := (hType.NumIn() >= 1 && hType.NumIn() <= 3) && hType.In(0) == panelReqType
+	if !paramsOk {
+		return fmt.Errorf("Dashborg Panel Handler must have 1-3 arguments (*dash.PanelRequest, stateType, dataType)")
+	}
+	hVal := reflect.ValueOf(handlerFn)
+	RegisterDataHandler(panelName, path, func(req *PanelRequest) (interface{}, error) {
+		args, err := makeCallArgs(hType, req)
+		if err != nil {
+			return nil, err
 		}
-	}
+		rtnVals := hVal.Call(args)
+		if rtnVals[1].IsNil() {
+			return rtnVals[0].Interface(), nil
+		}
+		return rtnVals[0].Interface(), rtnVals[1].Interface().(error)
+	})
+	return nil
 }
