@@ -269,7 +269,7 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 
 	// check-auth
 	if !preq.isRootReq() {
-		if !preq.isAuthenticated() {
+		if !preq.IsAuthenticated() {
 			preq.Err = fmt.Errorf("Request is not authenticated")
 			preq.Done()
 			return

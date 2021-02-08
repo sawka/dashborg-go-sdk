@@ -2,7 +2,6 @@ package dash
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -10,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mitchellh/mapstructure"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
@@ -75,6 +73,7 @@ type PanelRequest struct {
 	Err        error                 // set if an error occured (when set, RRActions are not sent)
 	IsDone     bool                  // set after Done() is called and response has been sent to server
 	AuthImpl   bool                  // if not set, will default NoAuth() on Done()
+	Info       []string              // debugging information
 }
 
 func panelLink(panelName string) string {
@@ -141,135 +140,6 @@ func (req *PanelRequest) isRootReq() bool {
 	return req.RequestType == "handler" && req.PanelName != "" && req.Path == "/"
 }
 
-type authAtom struct {
-	Scope string      `json:"scope"`
-	Type  string      `json:"type"`
-	Auto  bool        `json:"auto,omitempty"`
-	Ts    int64       `json:"ts,omitempty"`
-	Id    string      `json:"id,omitempty"`
-	Role  string      `json:"role"`
-	Data  interface{} `json:"data,omitempty"`
-}
-
-type challengeField struct {
-	Label string `json:"label"`
-	Name  string `json:"name"`
-	Type  string `json:"type"`
-}
-
-type authChallenge struct {
-	AllowedAuth      string           `json:"allowedauth"` // challenge,dashborg
-	ChallengeMessage string           `json:"challengemessage"`
-	ChallengeError   string           `json:"challengeerror"`
-	ChallengeFields  []challengeField `json:"challengefields"`
-}
-
-func (req *PanelRequest) appendPanelAuthRRAction(authType string, role string) {
-	data := authAtom{
-		Type: authType,
-		Auto: true,
-		Ts:   dashutil.Ts() + (24 * 60 * 60 * 1000),
-		Role: role,
-	}
-	jsonData, _ := json.Marshal(data)
-	rr := &dashproto.RRAction{
-		Ts:         dashutil.Ts(),
-		ActionType: "panelauth",
-		JsonData:   string(jsonData),
-	}
-	req.appendRR(rr)
-}
-
-func (req *PanelRequest) appendPanelAuthChallenge(ch authChallenge) {
-	challengeJson, _ := json.Marshal(ch)
-	req.appendRR(&dashproto.RRAction{
-		Ts:         dashutil.Ts(),
-		ActionType: "panelauthchallenge",
-		JsonData:   string(challengeJson),
-	})
-	return
-}
-
-func (req *PanelRequest) getRawAuthData() []*authAtom {
-	if req.AuthData == nil {
-		return nil
-	}
-	var rawAuth []*authAtom
-	err := mapstructure.Decode(req.AuthData, &rawAuth)
-	if err != nil {
-		return nil
-	}
-	return rawAuth
-}
-
-func (req *PanelRequest) isAuthenticated() bool {
-	rawAuth := req.getRawAuthData()
-	return len(rawAuth) > 0
-}
-
-func (req *PanelRequest) hasPanelAuth(authType string) {
-}
-
-// Call this function in your root handler to mark this panel as not requiring authentication
-func (req *PanelRequest) NoAuth() {
-	req.AuthImpl = true
-	if !req.isAuthenticated() {
-		req.appendPanelAuthRRAction("noauth", "user")
-	}
-}
-
-type challengeData struct {
-	ChallengeData map[string]string `json:"challengedata"`
-}
-
-// PasswordAuth sets a password to access this panel.  Note that password auth
-// also allows dashborg auth to access this panel.
-func (req *PanelRequest) PasswordAuth(pw string) (bool, error) {
-	req.AuthImpl = true
-	if req.isAuthenticated() {
-		return true, nil
-	}
-	// check challenge
-	var challengeData challengeData
-	err := mapstructure.Decode(req.Data, &challengeData)
-	if err == nil && challengeData.ChallengeData["password"] == pw {
-		req.appendPanelAuthRRAction("password", "user")
-		return true, nil
-	}
-	// send challenge
-	ch := authChallenge{
-		AllowedAuth: "challenge,dashborg",
-		ChallengeFields: []challengeField{challengeField{
-			Label: "Panel Password",
-			Name:  "password",
-			Type:  "password",
-		}},
-	}
-	if challengeData.ChallengeData["submitted"] == "1" {
-		if challengeData.ChallengeData["password"] == "" {
-			ch.ChallengeError = "Password cannot be blank"
-		} else {
-			ch.ChallengeError = "Invalid password"
-		}
-	}
-	req.appendPanelAuthChallenge(ch)
-	return false, fmt.Errorf("Not Authorized | Sending Password Challenge")
-}
-
-// DashborgAuth requires a valid dashborg user account to access this panel.
-func (req *PanelRequest) DashborgAuth() (bool, error) {
-	req.AuthImpl = true
-	if req.isAuthenticated() {
-		return true, nil
-	}
-	// send challenge
-	ch := authChallenge{
-		AllowedAuth: "dashborg",
-	}
-	req.appendPanelAuthChallenge(ch)
-	return false, fmt.Errorf("Not Authorized | Dashborg Auth")
-}
-
 // Call from a handler to force the client to invalidate and re-pull data that matches path.
 // Path is a regular expression.
 func (req *PanelRequest) InvalidateData(path string) error {
@@ -319,7 +189,7 @@ func (req *PanelRequest) Done() error {
 		return nil
 	}
 	if !req.AuthImpl && req.isRootReq() {
-		req.NoAuth()
+		AuthNone{}.checkAuth(req)
 	}
 	err := globalClient.sendRequestResponse(req, true)
 	if err != nil {

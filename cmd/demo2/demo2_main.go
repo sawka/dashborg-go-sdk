@@ -176,9 +176,7 @@ func main() {
 
 	Model = MakeAccModel()
 	dash.RegisterPanelHandler("demo2", "/", func(req *dash.PanelRequest) error {
-		// req.NoAuth()
-		auth, _ := req.PasswordAuth("hello")
-		if !auth {
+		if !req.CheckAuth(dash.AuthPassword{"hello"}, dash.AuthDashborg{}) {
 			return nil
 		}
 		err := req.SetHtmlFromFile("cmd/demo2/demo2.html")
