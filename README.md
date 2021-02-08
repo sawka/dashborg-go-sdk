@@ -23,7 +23,7 @@ Dashborg was built to be the simplest way to create secure web-based internal to
 * **No Frontend Hosting** - You get a secure, internet accessible frontend out of the box.  No web server configuration, domain name, load balancer, or WAF setup and configuration required.
 * **No Shared Passwords** - No incoming connections to your infrastructure.  Dashborg does not require or store your database passwords or API keys.  It does not access any 3rd party service on your behalf.
 * **Built For Real Developers** - Use the editor, libraries, and frameworks that you already use to write your tools -- no 3rd-party GUI tools to learn, or typing code into text boxes on a website.  Easy to get started, but powerful enough to build complex tools and interactions.
-* **Secure** - All connections are secured using SSL public/private key encryption with client auth.  HTTPS on the frontend.  Secure your dashboards with a simple password or user accounts.  SSO coming soon.
+* **Secure** - All backend connections are secured using SSL public/private key encryption with client auth.  HTTPS on the frontend.  Secure your dashboards with a simple password or user accounts.  SSO coming soon.
 * **Control** - Dashborg panels are 100% defined from your backend code.  That means you can version them in your own code repository, and run and test them in your current dev, staging, and production environments.
 * **Modern Frontend Controls** - Tables, Lists, Forms, Inputs, and Buttons all out of the box, with more to come!  No Javascript or CSS frameworks required.  All styled to look good and work together.
 
@@ -54,7 +54,6 @@ func main() {
 	dash.StartProcClient(cfg)
 	defer dash.WaitForClear()
 	dash.RegisterPanelHandler("default", "/", func(req *dash.PanelRequest) error {
-		req.NoAuth()
 		req.SetHtml(PANEL_HTML)
 		return nil
 	})
