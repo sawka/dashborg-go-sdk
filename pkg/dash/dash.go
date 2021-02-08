@@ -188,7 +188,7 @@ func (req *PanelRequest) Done() error {
 	if req.IsDone {
 		return nil
 	}
-	if !req.AuthImpl && req.isRootReq() {
+	if !req.AuthImpl && req.isRootReq() && req.Err == nil {
 		AuthNone{}.checkAuth(req)
 	}
 	err := globalClient.sendRequestResponse(req, true)
