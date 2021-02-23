@@ -2,6 +2,7 @@ package dash
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/mitchellh/mapstructure"
@@ -12,26 +13,27 @@ import (
 const MAX_AUTH_EXP = 24 * time.Hour
 
 type authAtom struct {
-	Scope string      `json:"scope"`
-	Type  string      `json:"type"`
-	Auto  bool        `json:"auto,omitempty"`
-	Ts    int64       `json:"ts,omitempty"`
+	Scope string      `json:"scope"`        // scope of this atom (panel:[zone]:[panel], zone:[zone], or acc)
+	Type  string      `json:"type"`         // auth type (password, noauth, dashborg, deauth, or user-defined)
+	Ts    int64       `json:"ts,omitempty"` // expiration Ts (ms) of this auth atom
 	Id    string      `json:"id,omitempty"`
 	Role  string      `json:"role"`
 	Data  interface{} `json:"data,omitempty"`
 }
 
 type challengeField struct {
-	Label string `json:"label"`
-	Name  string `json:"name"`
-	Type  string `json:"type"`
+	Label string `json:"label"` // label for challenge field in UI
+	Name  string `json:"name"`  // key for field (returned in challengedata)
+	Type  string `json:"type"`  // "password" or "text"
 }
 
 type authChallenge struct {
-	AllowedAuth      string           `json:"allowedauth"`
-	ChallengeMessage string           `json:"challengemessage"`
-	ChallengeError   string           `json:"challengeerror"`
-	ChallengeFields  []challengeField `json:"challengefields"`
+	AllowedAuth string `json:"allowedauth"` // "dashborg" or "challenge"
+
+	// These fields only apply when AllowedAuth = "challenge"
+	ChallengeMessage string           `json:"challengemessage"` // message to show user for this auth
+	ChallengeError   string           `json:"challengeerror"`   // error message to show
+	ChallengeFields  []challengeField `json:"challengefields"`  // array of challenge fields
 }
 
 type challengeData struct {
@@ -51,7 +53,7 @@ type AuthSimpleJwt struct {
 }
 
 type AllowedAuth interface {
-	checkAuth(*PanelRequest) (bool, error) // calls setAuthData if returns true
+	checkAuth(*PanelRequest) (bool, error) // should call setAuthData if returns true
 }
 
 type challengeAuth interface {
@@ -59,7 +61,10 @@ type challengeAuth interface {
 }
 
 func (AuthNone) checkAuth(req *PanelRequest) (bool, error) {
-	req.setAuthData("noauth", "user", MAX_AUTH_EXP, nil)
+	req.setAuthData(authAtom{
+		Type: "noauth",
+		Role: "user",
+	})
 	return true, nil
 }
 
@@ -71,7 +76,10 @@ func (auth AuthPassword) checkAuth(req *PanelRequest) (bool, error) {
 	var challengeData challengeData
 	err := mapstructure.Decode(req.Data, &challengeData)
 	if err == nil && challengeData.ChallengeData["password"] == auth.Password {
-		req.setAuthData("password", "user", MAX_AUTH_EXP, nil)
+		req.setAuthData(authAtom{
+			Type: "password",
+			Role: "user",
+		})
 		return true, nil
 	}
 	return false, nil
@@ -104,16 +112,24 @@ func (auth AuthPassword) returnChallenge(req *PanelRequest) *authChallenge {
 	return ch
 }
 
-func (req *PanelRequest) setAuthData(authType string, role string, exp time.Duration, data interface{}) {
-	if exp > MAX_AUTH_EXP {
-		exp = MAX_AUTH_EXP
+func (req *PanelRequest) getAuthAtom(aType string) *authAtom {
+	for _, aa := range req.AuthData {
+		if aa.Type == aType {
+			return aa
+		}
 	}
-	aa := authAtom{
-		Type: authType,
-		Auto: true,
-		Ts:   dashutil.Ts() + int64(exp/time.Millisecond),
-		Role: role,
-		Data: data,
+	return nil
+}
+
+func (req *PanelRequest) setAuthData(aa authAtom) {
+	if aa.Scope == "" {
+		aa.Scope = fmt.Sprintf("panel:%s:%s", globalClient.Config.ZoneName, req.PanelName)
+	}
+	if aa.Ts == 0 {
+		aa.Ts = dashutil.Ts() + int64(MAX_AUTH_EXP/time.Millisecond)
+	}
+	if aa.Type == "" {
+		panic(fmt.Sprintf("Dashborg Invalid AuthAtom, no Type specified"))
 	}
 	jsonAa, _ := json.Marshal(aa)
 	rr := &dashproto.RRAction{
