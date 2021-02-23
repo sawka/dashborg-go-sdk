@@ -3,6 +3,7 @@ package dash
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -12,6 +13,9 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
+
+// must be divisible by 3 (for base64 encoding)
+const BLOB_READ_SIZE = 3 * 340 * 1024
 
 type Config struct {
 	// DASHBORG_ACCID, set to force an AccountId (must match certificate).  If not set, AccountId is set from certificate file.
@@ -89,6 +93,59 @@ func (req *PanelRequest) appendRR(rrAction *dashproto.RRAction) {
 	req.Lock.Lock()
 	defer req.Lock.Unlock()
 	req.RRActions = append(req.RRActions, rrAction)
+}
+
+func (req *PanelRequest) SetBlobData(path string, mimeType string, reader io.Reader) error {
+	if req.IsDone {
+		return fmt.Errorf("Cannot call SetBlobData(), path=%s, PanelRequest is already done", path)
+	}
+	if !dashutil.IsMimeTypeValid(mimeType) {
+		return fmt.Errorf("Invalid Mime-Type passed to SetBlobData mime-type=%s", mimeType)
+	}
+	first := true
+	for {
+		buffer := make([]byte, BLOB_READ_SIZE)
+		n, err := io.ReadFull(reader, buffer)
+		if err == io.EOF {
+			break
+		}
+		if (err == nil || err == io.ErrUnexpectedEOF) && n > 0 {
+			// write
+			rrAction := &dashproto.RRAction{
+				Ts:        dashutil.Ts(),
+				Selector:  path,
+				BlobBytes: buffer[0:n],
+			}
+			if first {
+				rrAction.ActionType = "blob"
+				rrAction.BlobMimeType = mimeType
+				first = false
+			} else {
+				rrAction.ActionType = "blobext"
+			}
+			req.appendRR(rrAction)
+			flushErr := req.flush()
+			if flushErr != nil {
+				return flushErr
+			}
+		}
+		if err == io.ErrUnexpectedEOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (req *PanelRequest) SetBlobDataFromFile(path string, mimeType string, fileName string) error {
+	fd, err := os.Open(fileName)
+	if err != nil {
+		return err
+	}
+	defer fd.Close()
+	return req.SetBlobData(path, mimeType, fd)
 }
 
 // SetData is used to return data to the client.  Will replace the contents of path with data.

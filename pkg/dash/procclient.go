@@ -34,7 +34,7 @@ const EC_ACCACCESS = "ACCACCESS"
 const EC_NOHANDLER = "NOHANDLER"
 const EC_UNAVAILABLE = "UNAVAILABLE"
 
-const CLIENT_VERSION = "go-0.0.1"
+const CLIENT_VERSION = "go-0.0.2"
 
 var globalClient *procClient
 

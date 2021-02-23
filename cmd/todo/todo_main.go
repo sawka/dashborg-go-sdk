@@ -20,7 +20,6 @@ type TodoPanelState struct {
 }
 
 func (m *ServerTodoModel) RootHandler(req *dash.PanelRequest) error {
-	req.NoAuth()
 	req.SetHtmlFromFile("cmd/todo/todo.html")
 	return nil
 }

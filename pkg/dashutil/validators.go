@@ -49,7 +49,7 @@ var (
 )
 
 var ValidHandlerType = map[string]bool{"data": true, "handler": true, "stream": true, "panel": true}
-var ValidActionType = map[string]bool{"setdata": true, "event": true, "invalidate": true, "html": true, "panelauth": true, "panelauthchallenge": true, "error": true}
+var ValidActionType = map[string]bool{"setdata": true, "event": true, "invalidate": true, "html": true, "panelauth": true, "panelauthchallenge": true, "error": true, "blob": true, "blobext": true}
 
 func IsZoneNameValid(zoneName string) bool {
 	if len(zoneName) > ZONENAME_MAX {

@@ -14,12 +14,14 @@ enum ErrorCode {
 
 message RRAction {
     int64 Ts = 1;
-    string ActionType = 2;  // "setdata", "event", "invalidate", "html", "panelauth", "panelauthchallenge", "error"
+    string ActionType = 2;  // "setdata", "event", "invalidate", "html", "panelauth", "panelauthchallenge", "error", "blob", "blobext"
     string Selector = 3;    // path, selector, controlid
     string JsonData = 4;
     string EventType = 5;   // only set for "event" ActionType
     string Html = 6;        // for "panel" ActionType
     string Err = 7;
+    bytes BlobBytes = 8;        // for "blob" / "blobext" ActionType
+    string BlobMimeType = 9;    // for "blob" ActionType
 }
 
 message SendResponseMessage {
