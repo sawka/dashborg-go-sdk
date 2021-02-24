@@ -48,7 +48,6 @@ func main() {
 	dash.StartProcClient(cfg)
 	defer dash.WaitForClear()
 	dash.RegisterPanelHandler("playground", "/", func(req *dash.PanelRequest) error {
-		req.NoAuth()
 		req.SetHtmlFromFile("cmd/playground/playground.html")
 		html := strings.TrimSpace(INITIAL_HTML)
 		jsonData := strings.TrimSpace(INITIAL_DATA)

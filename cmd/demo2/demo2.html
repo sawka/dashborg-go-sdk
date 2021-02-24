@@ -13,7 +13,7 @@
       <d-list selection keyexpr=".AccId" bind="data.acclist" bindvalue="state.selaccid" marginleft=8px>
         <div class="row" style="font-size: 16px; margin-bottom: 6px; align-items: center; line-height: 22px;">
           <d-text bind=".AccName"/>
-          <div if="*.IsPaid" class="ui label blue tiny inline" style="margin-left: 5px">Paid</div>
+          <d-label if="*.IsPaid" class="blue tiny" style="margin-left: 5px">Paid</d-label>
         </div>
       </d-list>
     </div>
