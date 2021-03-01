@@ -2,11 +2,14 @@ package dash
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -41,6 +44,9 @@ type Config struct {
 	// Should only be used with AnonAcc is true.  If AccId is set, will create a key with that AccId
 	AutoKeygen bool
 
+	// Set to true to allow other backends in the same zone to call data functions using dash.CallDataHandler
+	AllowBackendCalls bool
+
 	// The minimum amount of time to wait for all events to complete processing before shutting down after calling WaitForClear()
 	// Defaults to 1 second.
 	MinClearTimeout time.Duration
@@ -59,25 +65,52 @@ type Config struct {
 // the parameters and UI state associated with this request.  The other fields are
 // exported, but subject to change and should not be used except in advanced use cases.
 type PanelRequest struct {
+	StartTime      time.Time
 	PanelName      string      // panel name
 	ReqId          string      // unique request id
-	RequestType    string      // "data" or "handler"
+	RequestType    string      // "data", "handler", or "stream"
 	Path           string      // handler or data path
 	Data           interface{} // json-unmarshaled data attached to this request
+	DataJson       string      // Raw JSON for Data (used for manual unmarshalling into custom struct)
 	PanelState     interface{} // json-unmarshaled panel state for this request
 	PanelStateJson string      // Raw JSON for PanelState (used for manual unmarshalling into custom struct)
-	DataJson       string      // Raw JSON for Data (used for manual unmarshalling into custom struct)
 
 	// The following fields are internal and subject to change.  Not for normal client usage.
-	Ctx        context.Context       // gRPC context
-	FeClientId string                // unique id for client (currently unused)
-	Lock       *sync.Mutex           // synchronizes RRActions
-	AuthData   []*authAtom           // authentication tokens associated with this request
-	RRActions  []*dashproto.RRAction // output, these are the actions that will be returned
-	Err        error                 // set if an error occured (when set, RRActions are not sent)
-	IsDone     bool                  // set after Done() is called and response has been sent to server
-	AuthImpl   bool                  // if not set, will default NoAuth() on Done()
-	Info       []string              // debugging information
+	Ctx           context.Context       // gRPC context / streaming context
+	FeClientId    string                // unique id for client (currently unused)
+	Lock          *sync.Mutex           // synchronizes RRActions
+	AuthData      []*authAtom           // authentication tokens associated with this request
+	RRActions     []*dashproto.RRAction // output, these are the actions that will be returned
+	Err           error                 // set if an error occured (when set, RRActions are not sent)
+	IsDone        bool                  // set after Done() is called and response has been sent to server
+	AuthImpl      bool                  // if not set, will default NoAuth() on Done()
+	Info          []string              // debugging information
+	IsStream      bool                  // true if this is a streaming request
+	IsBackendCall bool                  // true if this request originated from a backend data call
+}
+
+type ZoneReflection struct {
+	AccId    string                     `json:"accid"`
+	ZoneName string                     `json:"zonename"`
+	Procs    map[string]ProcReflection  `json:"procs"`
+	Panels   map[string]PanelReflection `json:"panels"`
+}
+
+type PanelReflection struct {
+	PanelName     string                       `json:"panelname"`
+	PanelHandlers map[string]HandlerReflection `json:"panelhandlers"`
+	DataHandlers  map[string]HandlerReflection `json:"datahandlers"`
+}
+
+type ProcReflection struct {
+	StartTs   int64             `json:"startts"`
+	ProcName  string            `json:"procname"`
+	ProcTags  map[string]string `json:"proctags"`
+	ProcRunId string            `json:"procrunid"`
+}
+
+type HandlerReflection struct {
+	ProcRunIds []string `json:"procrunids"`
 }
 
 func panelLink(panelName string) string {
@@ -95,6 +128,62 @@ func (req *PanelRequest) appendRR(rrAction *dashproto.RRAction) {
 	req.RRActions = append(req.RRActions, rrAction)
 }
 
+// StartStream creates a new streaming request that can send data to the original request's client.
+// streamId is used to control whether a new stream will be created or if the client will attach to
+// an existing stream.  The streamFn gets passed a context that is used for cancelation.
+// Note that StartStream will flush any pending actions to the server.
+func (req *PanelRequest) StartStream(streamId string, controlPath string, streamFn func(ctx context.Context, req *PanelRequest)) error {
+	if !dashutil.IsTagValid(streamId) {
+		return fmt.Errorf("Invalid StreamId")
+	}
+	if !dashutil.IsUUIDValid(req.FeClientId) {
+		return fmt.Errorf("No FeClientId, client does not support streaming")
+	}
+	if req.IsDone {
+		return fmt.Errorf("Cannot call StartStream(), path=%s, PanelRequest is already done", controlPath)
+	}
+	if req.IsStream {
+		return fmt.Errorf("Cannot call StartStream(), path=%s, PanelRequest is already streaming", controlPath)
+	}
+	streamReqId, ctx, err := globalClient.startStream(req.PanelName, streamId, req.FeClientId)
+	if err != nil {
+		return err
+	}
+	jsonData, _ := marshalJson(map[string]interface{}{"reqid": streamReqId})
+	rrAction := &dashproto.RRAction{
+		Ts:         dashutil.Ts(),
+		ActionType: "streamopen",
+		Selector:   controlPath,
+		JsonData:   jsonData,
+	}
+	req.appendRR(rrAction)
+	req.Flush() // TODO flush error
+	if ctx != nil {
+		streamReq := &PanelRequest{
+			StartTime:   time.Now(),
+			Ctx:         ctx,
+			Lock:        &sync.Mutex{},
+			PanelName:   req.PanelName,
+			ReqId:       streamReqId,
+			RequestType: "stream",
+			Path:        streamId,
+			IsStream:    true,
+		}
+		go func() {
+			defer func() {
+				if panicErr := recover(); panicErr != nil {
+					log.Printf("PANIC streamFn %v\n", panicErr)
+					log.Printf("%s\n", string(debug.Stack()))
+				}
+			}()
+			streamFn(ctx, streamReq)
+		}()
+	}
+	return nil
+}
+
+// SetBlobData sends blob data to the server.
+// Note that SetBlobData will flush any pending actions to the server
 func (req *PanelRequest) SetBlobData(path string, mimeType string, reader io.Reader) error {
 	if req.IsDone {
 		return fmt.Errorf("Cannot call SetBlobData(), path=%s, PanelRequest is already done", path)
@@ -124,7 +213,7 @@ func (req *PanelRequest) SetBlobData(path string, mimeType string, reader io.Rea
 				rrAction.ActionType = "blobext"
 			}
 			req.appendRR(rrAction)
-			flushErr := req.flush()
+			flushErr := req.Flush()
 			if flushErr != nil {
 				return flushErr
 			}
@@ -231,11 +320,16 @@ func (req *PanelRequest) sendEvent(selector string, eventType string, data inter
 	return nil
 }
 
-func (req *PanelRequest) flush() error {
+func (req *PanelRequest) Flush() error {
 	if req.IsDone {
 		return fmt.Errorf("Cannot Flush(), PanelRequest is already done")
 	}
-	return globalClient.sendRequestResponse(req, false)
+	err := globalClient.sendRequestResponse(req, false)
+	if err != nil && req.IsStream {
+		logV("Dashborg Flush() stream error %v\n", err)
+		globalClient.handleStreamClose(req)
+	}
+	return err
 }
 
 // Done() ends a request and sends the results back to the client.  It is automatically called after
@@ -286,4 +380,74 @@ func logV(fmtStr string, args ...interface{}) {
 	if globalClient != nil && globalClient.Config.Verbose {
 		log.Printf(fmtStr, args...)
 	}
+}
+
+func CallDataHandler(panelName string, path string, data interface{}) (interface{}, error) {
+	jsonData, err := marshalJson(data)
+	if err != nil {
+		return nil, err
+	}
+	m := &dashproto.CallDataHandlerMessage{
+		Ts:        dashutil.Ts(),
+		PanelName: panelName,
+		Path:      path,
+		JsonData:  jsonData,
+	}
+	resp, err := globalClient.DBService.CallDataHandler(globalClient.ctxWithMd(), m)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Err != "" {
+		return nil, errors.New(resp.Err)
+	}
+	if !resp.Success {
+		return nil, errors.New("Error calling CallDataHandler()")
+	}
+	var rtn interface{}
+	if resp.JsonData != "" {
+		err = json.Unmarshal([]byte(resp.JsonData), &rtn)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return rtn, nil
+}
+
+func BackendPush(panelName string, path string) error {
+	m := &dashproto.BackendPushMessage{
+		Ts:        dashutil.Ts(),
+		PanelName: panelName,
+		Path:      path,
+	}
+	resp, err := globalClient.DBService.BackendPush(globalClient.ctxWithMd(), m)
+	if err != nil {
+		return err
+	}
+	if resp.Err != "" {
+		return errors.New(resp.Err)
+	}
+	if !resp.Success {
+		return errors.New("Error calling BackendPush()")
+	}
+	return nil
+}
+
+func ReflectZone() (*ZoneReflection, error) {
+	m := &dashproto.ReflectZoneMessage{Ts: dashutil.Ts()}
+	resp, err := globalClient.DBService.ReflectZone(globalClient.ctxWithMd(), m)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Err != "" {
+		return nil, errors.New(resp.Err)
+	}
+	if !resp.Success {
+		return nil, errors.New("Error calling ReflectZone()")
+	}
+	var rtn ZoneReflection
+	err = json.Unmarshal([]byte(resp.JsonData), &rtn)
+	if err != nil {
+		return nil, err
+	}
+	return &rtn, nil
 }

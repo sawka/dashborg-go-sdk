@@ -51,15 +51,30 @@ type handlerVal struct {
 	HandlerFn handlerFuncType
 }
 
+type streamControl struct {
+	PanelName string
+	StreamId  string
+	ReqId     string
+	Ctx       context.Context
+	CancelFn  context.CancelFunc
+}
+
+type streamKey struct {
+	PanelName string
+	StreamId  string
+}
+
 type procClient struct {
-	CVar       *sync.Cond
-	StartTs    int64
-	ProcRunId  string
-	Config     *Config
-	Conn       *grpc.ClientConn
-	DBService  dashproto.DashborgServiceClient
-	HandlerMap map[handlerKey]handlerVal
-	ConnId     *atomic.Value
+	CVar         *sync.Cond
+	StartTs      int64
+	ProcRunId    string
+	Config       *Config
+	Conn         *grpc.ClientConn
+	DBService    dashproto.DashborgServiceClient
+	HandlerMap   map[handlerKey]handlerVal
+	ConnId       *atomic.Value
+	StreamMap    map[streamKey]streamControl // map streamKey -> streamControl
+	StreamKeyMap map[string]streamKey        // map reqid -> streamKey
 }
 
 func newProcClient() *procClient {
@@ -70,6 +85,8 @@ func newProcClient() *procClient {
 	rtn.HandlerMap = make(map[handlerKey]handlerVal)
 	rtn.ConnId = &atomic.Value{}
 	rtn.ConnId.Store("")
+	rtn.StreamMap = make(map[streamKey]streamControl)
+	rtn.StreamKeyMap = make(map[string]streamKey)
 	return rtn
 }
 
@@ -188,6 +205,69 @@ func (pc *procClient) sendRequestResponse(req *PanelRequest, done bool) error {
 	return nil
 }
 
+// returns a context (reqid, ctx, nil) if SDK should start a new stream.
+// returns reqid, nil, nil if successfully hooked this client up to the existing streaming function.
+// returns "", nil, err if there was an error.
+func (pc *procClient) startStream(panelName string, streamId string, feClientId string) (string, context.Context, error) {
+	pc.CVar.L.Lock()
+	defer pc.CVar.L.Unlock()
+	skey := streamKey{PanelName: panelName, StreamId: streamId}
+	sc, ok := pc.StreamMap[skey]
+	if !ok {
+		sc = streamControl{
+			PanelName: panelName,
+			StreamId:  streamId,
+			ReqId:     "",
+		}
+	}
+	m := &dashproto.StartStreamMessage{
+		Ts:            dashutil.Ts(),
+		PanelName:     panelName,
+		FeClientId:    feClientId,
+		ExistingReqId: sc.ReqId,
+	}
+	resp, err := pc.DBService.StartStream(pc.ctxWithMd(), m)
+	log.Printf("DBSRV START STREAM %v | %v | err:%v\n", m, resp, err)
+	if err != nil {
+		return "", nil, fmt.Errorf("Dashborg procclient startStream error: %w", err)
+	}
+	if !resp.Success {
+		return "", nil, fmt.Errorf("Dashborg procclient startStream error: %s", resp.Err)
+	}
+	if sc.ReqId != "" && sc.ReqId != resp.ReqId {
+		return "", nil, fmt.Errorf("Dashborg procclient startStream returned reqid:%s does not match existing reqid:%s", resp.ReqId, sc.ReqId)
+	}
+	if sc.ReqId != "" {
+		// stream already running
+		return sc.ReqId, nil, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	sc.ReqId = resp.ReqId
+	sc.Ctx = ctx
+	sc.CancelFn = cancel
+	pc.StreamMap[skey] = sc
+	pc.StreamKeyMap[sc.ReqId] = skey
+	return sc.ReqId, sc.Ctx, nil
+}
+
+func (pc *procClient) handleStreamClose(req *PanelRequest) {
+	pc.CVar.L.Lock()
+	defer pc.CVar.L.Unlock()
+	skey, ok := pc.StreamKeyMap[req.ReqId]
+	if !ok {
+		logV("Dashborg got streamclose for unknown reqid:%s", req.ReqId)
+		return
+	}
+	sc, ok := pc.StreamMap[skey]
+	if !ok {
+		logV("No Stream found for key:%v\n", skey)
+		return
+	}
+	sc.CancelFn() // cancel context
+	delete(pc.StreamKeyMap, req.ReqId)
+	delete(pc.StreamMap, skey)
+}
+
 func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) {
 	if reqMsg.Err != "" {
 		logV("Dashborg gRPC got error request: err=%s\n", reqMsg.Err)
@@ -195,13 +275,15 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	}
 	logV("Dashborg gRPC got request: panel=%s, type=%s, path=%s\n", reqMsg.PanelName, reqMsg.RequestType, reqMsg.Path)
 	preq := &PanelRequest{
-		Ctx:         ctx,
-		Lock:        &sync.Mutex{},
-		PanelName:   reqMsg.PanelName,
-		ReqId:       reqMsg.ReqId,
-		RequestType: reqMsg.RequestType,
-		FeClientId:  reqMsg.FeClientId,
-		Path:        reqMsg.Path,
+		StartTime:     time.Now(),
+		Ctx:           ctx,
+		Lock:          &sync.Mutex{},
+		PanelName:     reqMsg.PanelName,
+		ReqId:         reqMsg.ReqId,
+		RequestType:   reqMsg.RequestType,
+		FeClientId:    reqMsg.FeClientId,
+		Path:          reqMsg.Path,
+		IsBackendCall: reqMsg.IsBackendCall,
 	}
 	hkey := handlerKey{
 		PanelName: reqMsg.PanelName,
@@ -212,12 +294,10 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 		hkey.HandlerType = "data"
 	case "handler":
 		hkey.HandlerType = "handler"
-	case "panel":
-		hkey.HandlerType = "panel"
-	case "streamopen":
-		fallthrough
 	case "streamclose":
-		hkey.HandlerType = "stream"
+		pc.handleStreamClose(preq)
+		// no response for streamclose
+		return
 	default:
 		preq.Err = fmt.Errorf("Invalid RequestMessage.RequestType [%s]", reqMsg.RequestType)
 		preq.Done()
@@ -267,8 +347,10 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	}
 	preq.AuthData = authData
 
+	isAllowedBackendCall := preq.IsBackendCall && preq.RequestType == "data" && pc.Config.AllowBackendCalls
+
 	// check-auth
-	if !preq.isRootReq() {
+	if !isAllowedBackendCall && !preq.isRootReq() {
 		if !preq.IsAuthenticated() {
 			preq.Err = fmt.Errorf("Request is not authenticated")
 			preq.Done()

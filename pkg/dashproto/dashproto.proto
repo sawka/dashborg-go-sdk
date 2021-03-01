@@ -14,11 +14,11 @@ enum ErrorCode {
 
 message RRAction {
     int64 Ts = 1;
-    string ActionType = 2;  // "setdata", "event", "invalidate", "html", "panelauth", "panelauthchallenge", "error", "blob", "blobext"
+    string ActionType = 2;  // "setdata", "event", "invalidate", "html", "panelauth", "panelauthchallenge", "error", "blob", "blobext", "streamopen", "triggerdata", "backendpush"
     string Selector = 3;    // path, selector, controlid
     string JsonData = 4;
     string EventType = 5;   // only set for "event" ActionType
-    string Html = 6;        // for "panel" ActionType
+    string Html = 6;        // for "handler" ActionType
     string Err = 7;
     bytes BlobBytes = 8;        // for "blob" / "blobext" ActionType
     string BlobMimeType = 9;    // for "blob" ActionType
@@ -27,7 +27,7 @@ message RRAction {
 message SendResponseMessage {
     int64 Ts = 1;
     string ReqId = 2;
-    string RequestType = 3;
+    string RequestType = 3; // "data", "handler", "stream"
     string PanelName = 4;
     string FeClientId = 5;
     bool ResponseDone = 6;
@@ -40,7 +40,7 @@ message RequestMessage {
     string AccId = 2;
     string ZoneName = 3;
     string PanelName = 4;
-    string RequestType = 5; // "data", "handler", "streamopen", "streamclose", "panel", "servermessage"
+    string RequestType = 5; // "data", "handler", "streamclose", "servermessage"
     string Path = 6;
     string ReqId = 7;
     string FeClientId = 8;
@@ -52,11 +52,12 @@ message RequestMessage {
     ErrorCode ErrCode = 14;    // only used for server-side errors
     int64 TimeoutMs = 15;
     repeated string DataPaths = 16;
+    bool IsBackendCall = 17;
 }
 
 message HandlerKey {
     string PanelName = 1;
-    string HandlerType = 2; // "data", "handler", "stream", "panel"
+    string HandlerType = 2; // "data", "handler"
     string Path = 3;
 }    
 
@@ -102,10 +103,61 @@ message SendResponseResponse {
     ErrorCode ErrCode = 3;
 }
 
+message StartStreamMessage {
+    int64 Ts = 1;
+    string PanelName = 2;
+    string FeClientId = 3;
+    string ExistingReqId = 4;
+}
+
+message StartStreamResponse {
+    bool Success = 1;
+    string Err = 2;
+    string ReqId = 3;
+}
+
+message ReflectZoneMessage {
+    int64 Ts = 1;
+}
+
+message ReflectZoneResponse {
+    bool Success = 1;
+    string Err = 2;
+    string JsonData = 3;
+}
+
+message CallDataHandlerMessage {
+    int64 Ts = 1;
+    string PanelName = 2;
+    string Path = 3;
+    string JsonData = 4;
+}
+
+message CallDataHandlerResponse {
+    bool Success = 1;
+    string Err = 2;
+    string JsonData = 3;
+}
+
+message BackendPushMessage {
+    int64 Ts = 1;
+    string PanelName = 2;
+    string Path = 3;
+}
+
+message BackendPushResponse {
+    bool Success = 1;
+    string Err = 2;
+}
+
 service DashborgService {
     rpc Proc(ProcMessage) returns (ProcResponse) {}
     rpc SendResponse(SendResponseMessage) returns (SendResponseResponse) {}
     rpc RegisterHandler(RegisterHandlerMessage) returns (RegisterHandlerResponse) {}
+    rpc StartStream(StartStreamMessage) returns (StartStreamResponse) {}
+    rpc ReflectZone(ReflectZoneMessage) returns (ReflectZoneResponse) {}
+    rpc CallDataHandler(CallDataHandlerMessage) returns (CallDataHandlerResponse) {}
+    rpc BackendPush(BackendPushMessage) returns (BackendPushResponse) {}
     
     // this is backwards since the server sends requests, and the client responds to them
     rpc RequestStream(RequestStreamMessage) returns (stream RequestMessage) {}
