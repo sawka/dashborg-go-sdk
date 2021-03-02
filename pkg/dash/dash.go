@@ -76,17 +76,18 @@ type PanelRequest struct {
 	PanelStateJson string      // Raw JSON for PanelState (used for manual unmarshalling into custom struct)
 
 	// The following fields are internal and subject to change.  Not for normal client usage.
-	Ctx           context.Context       // gRPC context / streaming context
-	FeClientId    string                // unique id for client (currently unused)
-	Lock          *sync.Mutex           // synchronizes RRActions
-	AuthData      []*authAtom           // authentication tokens associated with this request
-	RRActions     []*dashproto.RRAction // output, these are the actions that will be returned
-	Err           error                 // set if an error occured (when set, RRActions are not sent)
-	IsDone        bool                  // set after Done() is called and response has been sent to server
-	AuthImpl      bool                  // if not set, will default NoAuth() on Done()
-	Info          []string              // debugging information
-	IsStream      bool                  // true if this is a streaming request
-	IsBackendCall bool                  // true if this request originated from a backend data call
+	Ctx        context.Context       // gRPC context / streaming context
+	FeClientId string                // unique id for client (currently unused)
+	Lock       *sync.Mutex           // synchronizes RRActions
+	AuthData   []*authAtom           // authentication tokens associated with this request
+	RRActions  []*dashproto.RRAction // output, these are the actions that will be returned
+	Err        error                 // set if an error occured (when set, RRActions are not sent)
+	AuthImpl   bool                  // if not set, will default NoAuth() on Done()
+	Info       []string              // debugging information
+
+	IsDone        bool // set after Done() is called and response has been sent to server
+	IsStream      bool // true if this is a streaming request
+	IsBackendCall bool // true if this request originated from a backend data call
 }
 
 type ZoneReflection struct {
@@ -175,6 +176,7 @@ func (req *PanelRequest) StartStream(streamId string, controlPath string, stream
 					log.Printf("PANIC streamFn %v\n", panicErr)
 					log.Printf("%s\n", string(debug.Stack()))
 				}
+				streamReq.Done()
 			}()
 			streamFn(ctx, streamReq)
 		}()
@@ -341,6 +343,9 @@ func (req *PanelRequest) Done() error {
 	}
 	if !req.AuthImpl && req.isRootReq() && req.Err == nil {
 		AuthNone{}.checkAuth(req)
+	}
+	if req.IsStream {
+		globalClient.handleStreamClose(req)
 	}
 	err := globalClient.sendRequestResponse(req, true)
 	if err != nil {

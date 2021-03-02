@@ -227,7 +227,6 @@ func (pc *procClient) startStream(panelName string, streamId string, feClientId 
 		ExistingReqId: sc.ReqId,
 	}
 	resp, err := pc.DBService.StartStream(pc.ctxWithMd(), m)
-	log.Printf("DBSRV START STREAM %v | %v | err:%v\n", m, resp, err)
 	if err != nil {
 		return "", nil, fmt.Errorf("Dashborg procclient startStream error: %w", err)
 	}
@@ -255,7 +254,6 @@ func (pc *procClient) handleStreamClose(req *PanelRequest) {
 	defer pc.CVar.L.Unlock()
 	skey, ok := pc.StreamKeyMap[req.ReqId]
 	if !ok {
-		logV("Dashborg got streamclose for unknown reqid:%s", req.ReqId)
 		return
 	}
 	sc, ok := pc.StreamMap[skey]
