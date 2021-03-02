@@ -52,11 +52,12 @@ type handlerVal struct {
 }
 
 type streamControl struct {
-	PanelName string
-	StreamId  string
-	ReqId     string
-	Ctx       context.Context
-	CancelFn  context.CancelFunc
+	PanelName      string
+	StreamOpts     StreamOpts
+	ReqId          string
+	Ctx            context.Context
+	CancelFn       context.CancelFunc
+	HasZeroClients bool
 }
 
 type streamKey struct {
@@ -174,7 +175,15 @@ func marshalJson(val interface{}) (string, error) {
 	return jsonBuf.String(), nil
 }
 
-func (pc *procClient) sendRequestResponse(req *PanelRequest, done bool) error {
+// returns numStreamClients, err
+func (pc *procClient) sendRequestResponse(req *PanelRequest, done bool) (int, error) {
+	if req.IsStream && pc.streamHasZeroClients(req.ReqId) {
+		req.Lock.Lock()
+		req.RRActions = nil
+		req.Lock.Unlock()
+		return 0, nil
+	}
+
 	m := &dashproto.SendResponseMessage{
 		Ts:           dashutil.Ts(),
 		ReqId:        req.ReqId,
@@ -193,31 +202,53 @@ func (pc *procClient) sendRequestResponse(req *PanelRequest, done bool) error {
 	req.Lock.Unlock()
 
 	if pc.ConnId.Load().(string) == "" {
-		return fmt.Errorf("No Active ConnId")
+		return 0, fmt.Errorf("No Active ConnId")
 	}
 	resp, err := pc.DBService.SendResponse(pc.ctxWithMd(), m)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if resp.Err != "" {
-		return errors.New(resp.Err)
+		return 0, errors.New(resp.Err)
 	}
-	return nil
+	return int(resp.NumStreamClients), nil
+}
+
+func (pc *procClient) startBareStream(panelName string, streamOpts StreamOpts) (string, context.Context, error) {
+	pc.CVar.L.Lock()
+	defer pc.CVar.L.Unlock()
+	skey := streamKey{PanelName: panelName, StreamId: streamOpts.StreamId}
+	sc, ok := pc.StreamMap[skey]
+	if ok {
+		return "", nil, fmt.Errorf("Stream already exists")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	sc = streamControl{
+		PanelName:      panelName,
+		StreamOpts:     streamOpts,
+		ReqId:          uuid.New().String(),
+		Ctx:            ctx,
+		CancelFn:       cancel,
+		HasZeroClients: true,
+	}
+	pc.StreamMap[skey] = sc
+	pc.StreamKeyMap[sc.ReqId] = skey
+	return sc.ReqId, sc.Ctx, nil
 }
 
 // returns a context (reqid, ctx, nil) if SDK should start a new stream.
 // returns reqid, nil, nil if successfully hooked this client up to the existing streaming function.
 // returns "", nil, err if there was an error.
-func (pc *procClient) startStream(panelName string, streamId string, feClientId string) (string, context.Context, error) {
+func (pc *procClient) startStream(panelName string, feClientId string, streamOpts StreamOpts) (string, context.Context, error) {
 	pc.CVar.L.Lock()
 	defer pc.CVar.L.Unlock()
-	skey := streamKey{PanelName: panelName, StreamId: streamId}
+	skey := streamKey{PanelName: panelName, StreamId: streamOpts.StreamId}
 	sc, ok := pc.StreamMap[skey]
 	if !ok {
 		sc = streamControl{
-			PanelName: panelName,
-			StreamId:  streamId,
-			ReqId:     "",
+			PanelName:  panelName,
+			StreamOpts: streamOpts,
+			ReqId:      "",
 		}
 	}
 	m := &dashproto.StartStreamMessage{
@@ -236,6 +267,8 @@ func (pc *procClient) startStream(panelName string, streamId string, feClientId 
 	if sc.ReqId != "" && sc.ReqId != resp.ReqId {
 		return "", nil, fmt.Errorf("Dashborg procclient startStream returned reqid:%s does not match existing reqid:%s", resp.ReqId, sc.ReqId)
 	}
+	sc.HasZeroClients = false
+	pc.StreamMap[streamKey{sc.PanelName, sc.StreamOpts.StreamId}] = sc
 	if sc.ReqId != "" {
 		// stream already running
 		return sc.ReqId, nil, nil
@@ -249,10 +282,17 @@ func (pc *procClient) startStream(panelName string, streamId string, feClientId 
 	return sc.ReqId, sc.Ctx, nil
 }
 
-func (pc *procClient) handleStreamClose(req *PanelRequest) {
-	pc.CVar.L.Lock()
-	defer pc.CVar.L.Unlock()
-	skey, ok := pc.StreamKeyMap[req.ReqId]
+func (pc *procClient) lookupStream_nolock(reqId string) (streamControl, bool) {
+	skey, ok := pc.StreamKeyMap[reqId]
+	if !ok {
+		return streamControl{}, false
+	}
+	sc, ok := pc.StreamMap[skey]
+	return sc, ok
+}
+
+func (pc *procClient) deleteAndCancelStream_nolock(reqId string) {
+	skey, ok := pc.StreamKeyMap[reqId]
 	if !ok {
 		return
 	}
@@ -262,8 +302,48 @@ func (pc *procClient) handleStreamClose(req *PanelRequest) {
 		return
 	}
 	sc.CancelFn() // cancel context
-	delete(pc.StreamKeyMap, req.ReqId)
+	delete(pc.StreamKeyMap, reqId)
 	delete(pc.StreamMap, skey)
+}
+
+func (pc *procClient) handleStreamClose(req *PanelRequest, fromServer bool) {
+	pc.CVar.L.Lock()
+	defer pc.CVar.L.Unlock()
+	sc, ok := pc.lookupStream_nolock(req.ReqId)
+	if !ok {
+		return
+	}
+	if fromServer && sc.StreamOpts.NoServerCancel {
+		sc.HasZeroClients = true
+		pc.StreamMap[streamKey{sc.PanelName, sc.StreamOpts.StreamId}] = sc
+		return
+	}
+	pc.deleteAndCancelStream_nolock(req.ReqId)
+}
+
+func (pc *procClient) handleStreamZeroClients(req *PanelRequest) {
+	pc.CVar.L.Lock()
+	defer pc.CVar.L.Unlock()
+	sc, ok := pc.lookupStream_nolock(req.ReqId)
+	if !ok {
+		return
+	}
+	sc.HasZeroClients = true
+	pc.StreamMap[streamKey{sc.PanelName, sc.StreamOpts.StreamId}] = sc
+	if sc.StreamOpts.NoServerCancel {
+		return
+	}
+	pc.deleteAndCancelStream_nolock(req.ReqId)
+}
+
+func (pc *procClient) streamHasZeroClients(reqId string) bool {
+	pc.CVar.L.Lock()
+	defer pc.CVar.L.Unlock()
+	sc, ok := pc.lookupStream_nolock(reqId)
+	if !ok {
+		return true
+	}
+	return sc.HasZeroClients
 }
 
 func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) {
@@ -293,9 +373,8 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	case "handler":
 		hkey.HandlerType = "handler"
 	case "streamclose":
-		pc.handleStreamClose(preq)
-		// no response for streamclose
-		return
+		pc.handleStreamClose(preq, true)
+		return // no response for streamclose
 	default:
 		preq.Err = fmt.Errorf("Invalid RequestMessage.RequestType [%s]", reqMsg.RequestType)
 		preq.Done()

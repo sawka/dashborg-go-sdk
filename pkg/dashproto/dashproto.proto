@@ -101,6 +101,7 @@ message SendResponseResponse {
     bool Success = 1;
     string Err = 2;
     ErrorCode ErrCode = 3;
+    int32 NumStreamClients = 4;
 }
 
 message StartStreamMessage {

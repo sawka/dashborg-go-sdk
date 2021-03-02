@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
@@ -129,32 +130,75 @@ func (req *PanelRequest) appendRR(rrAction *dashproto.RRAction) {
 	req.RRActions = append(req.RRActions, rrAction)
 }
 
+type StreamOpts struct {
+	StreamId       string `json:"streamid"`       // if unset will be set to a random uuid
+	ControlPath    string `json:"controlpath"`    // control path for client cancelation
+	NoServerCancel bool   `json:"noservercancel"` // set to true to keep running the stream, even when there are no clients listening (or on server error)
+}
+
+// Bare streams start with no connected clients.  ControlPath is ignored, and NoServerCancel must be set to true.
+// A future request can attach to the stream by calling req.StartStream() and passing the
+// same StreamId.  An error will be returned if a stream with this StreamId has already started.
+// Unlike StartStream StreamId must be specified ("" will return an error).
+// Caller is responsible for calling req.Done() when the stream is finished.
+func StartBareStream(panelName string, streamOpts StreamOpts) (*PanelRequest, error) {
+	if !streamOpts.NoServerCancel {
+		return nil, fmt.Errorf("BareStreams must have NoServerCancel set in StreamOpts")
+	}
+	if !dashutil.IsTagValid(streamOpts.StreamId) {
+		return nil, fmt.Errorf("Invalid StreamId")
+	}
+	streamReqId, ctx, err := globalClient.startBareStream(panelName, streamOpts)
+	if err != nil {
+		return nil, err
+	}
+	streamReq := &PanelRequest{
+		StartTime:   time.Now(),
+		Ctx:         ctx,
+		Lock:        &sync.Mutex{},
+		PanelName:   panelName,
+		ReqId:       streamReqId,
+		RequestType: "stream",
+		Path:        streamOpts.StreamId,
+		IsStream:    true,
+	}
+	return streamReq, nil
+}
+
 // StartStream creates a new streaming request that can send data to the original request's client.
 // streamId is used to control whether a new stream will be created or if the client will attach to
 // an existing stream.  The streamFn gets passed a context that is used for cancelation.
 // Note that StartStream will flush any pending actions to the server.
-func (req *PanelRequest) StartStream(streamId string, controlPath string, streamFn func(ctx context.Context, req *PanelRequest)) error {
-	if !dashutil.IsTagValid(streamId) {
+// If the stream already exists, the existing StreamOpts will not change (keeps the old NoServerCancel setting).
+// streamFn may be nil (useful if you are intending to attach to an existing stream created with StartBareStream).
+func (req *PanelRequest) StartStream(streamOpts StreamOpts, streamFn func(ctx context.Context, req *PanelRequest)) error {
+	if streamOpts.StreamId == "" {
+		streamOpts.StreamId = uuid.New().String()
+	}
+	if !dashutil.IsTagValid(streamOpts.StreamId) {
 		return fmt.Errorf("Invalid StreamId")
 	}
 	if !dashutil.IsUUIDValid(req.FeClientId) {
 		return fmt.Errorf("No FeClientId, client does not support streaming")
 	}
 	if req.IsDone {
-		return fmt.Errorf("Cannot call StartStream(), path=%s, PanelRequest is already done", controlPath)
+		return fmt.Errorf("Cannot call StartStream(), PanelRequest is already done")
 	}
 	if req.IsStream {
-		return fmt.Errorf("Cannot call StartStream(), path=%s, PanelRequest is already streaming", controlPath)
+		return fmt.Errorf("Cannot call StartStream(), PanelRequest is already streaming")
 	}
-	streamReqId, ctx, err := globalClient.startStream(req.PanelName, streamId, req.FeClientId)
+	streamReqId, ctx, err := globalClient.startStream(req.PanelName, req.FeClientId, streamOpts)
 	if err != nil {
 		return err
 	}
-	jsonData, _ := marshalJson(map[string]interface{}{"reqid": streamReqId})
+	data := map[string]interface{}{
+		"reqid":       streamReqId,
+		"controlpath": streamOpts.ControlPath,
+	}
+	jsonData, _ := marshalJson(data)
 	rrAction := &dashproto.RRAction{
 		Ts:         dashutil.Ts(),
 		ActionType: "streamopen",
-		Selector:   controlPath,
 		JsonData:   jsonData,
 	}
 	req.appendRR(rrAction)
@@ -167,7 +211,7 @@ func (req *PanelRequest) StartStream(streamId string, controlPath string, stream
 			PanelName:   req.PanelName,
 			ReqId:       streamReqId,
 			RequestType: "stream",
-			Path:        streamId,
+			Path:        streamOpts.StreamId,
 			IsStream:    true,
 		}
 		go func() {
@@ -178,7 +222,9 @@ func (req *PanelRequest) StartStream(streamId string, controlPath string, stream
 				}
 				streamReq.Done()
 			}()
-			streamFn(ctx, streamReq)
+			if streamFn != nil {
+				streamFn(ctx, streamReq)
+			}
 		}()
 	}
 	return nil
@@ -326,10 +372,12 @@ func (req *PanelRequest) Flush() error {
 	if req.IsDone {
 		return fmt.Errorf("Cannot Flush(), PanelRequest is already done")
 	}
-	err := globalClient.sendRequestResponse(req, false)
-	if err != nil && req.IsStream {
+	numStreamClients, err := globalClient.sendRequestResponse(req, false)
+	if req.IsStream && err != nil {
 		logV("Dashborg Flush() stream error %v\n", err)
-		globalClient.handleStreamClose(req)
+		globalClient.handleStreamClose(req, true)
+	} else if req.IsStream && numStreamClients == 0 {
+		globalClient.handleStreamZeroClients(req)
 	}
 	return err
 }
@@ -345,9 +393,9 @@ func (req *PanelRequest) Done() error {
 		AuthNone{}.checkAuth(req)
 	}
 	if req.IsStream {
-		globalClient.handleStreamClose(req)
+		globalClient.handleStreamClose(req, false)
 	}
-	err := globalClient.sendRequestResponse(req, true)
+	_, err := globalClient.sendRequestResponse(req, true)
 	if err != nil {
 		logV("Dashborg ERROR sending handler response: %v\n", err)
 	}
