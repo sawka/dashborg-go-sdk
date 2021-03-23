@@ -4,8 +4,8 @@
     <d-input style="width: 300px" bindvalue="$.state.newtodo"/>
     <d-button handler="/add-todo">Add Todo Item</d-button>
   </div>
-  <d-data query="/get-todo-list" bindvalue="$.todos"/>
-  <d-table bind="$.todos" style="max-width: 1000px">
+  <d-data query="/get-todo-list" bindvalue="$.data.todos"/>
+  <d-table bind="$.data.todos" style="max-width: 1000px">
     <d-col width="50px" label="Id">
       <d-text bind=".Id"/>
     </d-col>

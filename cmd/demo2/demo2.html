@@ -10,7 +10,7 @@
     <div class="col s3" style="background-color: #eee; padding: 10px">
       <h2>Accounts</h2>
       <d-data query="/accounts/list" bindvalue="$.data.acclist"/>
-      <d-list selection keyexpr=".AccId" bind="data.acclist" bindvalue="state.selaccid" marginleft=8px>
+      <d-list selection keyexpr=".AccId" bind="$.data.acclist" bindvalue="$.state.selaccid" marginleft=8px>
         <div class="row" style="font-size: 16px; margin-bottom: 6px; align-items: center; line-height: 22px;">
           <d-text bind=".AccName"/>
           <d-label if="*.IsPaid" class="blue tiny" style="margin-left: 5px">Paid</d-label>
@@ -20,7 +20,7 @@
     <d-data query="/accounts/get" querydata="$.state.selaccid" bindvalue="$.data.accdetail2"/>
     <div class="col" style="grow; background-color: #eee; padding: 10px;">
       <h2>Account Detail</h2>
-      <div if="*." class="col" style="font-size: 16px" datacontext="data.accdetail2">
+      <div if="*." class="col" style="font-size: 16px" datacontext="$.data.accdetail2">
         <d-def style-name="width: 100px" name="Acc Id" value="*.AccId"/>
         <d-def style-name="width: 100px" name="Name" value="*.AccName"/>
         <d-def style-name="width: 100px" name="Paid Acc"><d-text bind=".IsPaid"/></d-def>
@@ -34,11 +34,11 @@
     </div>
   </div>
   <d-dataview class="dark" style="scroll; height: 200px;" bind="."/>
-  <d-modal name="createAccountModal" closeondocumentclick clearonclose="state.create" modaltitle="Create Account">
+  <d-modal name="createAccountModal" closeondocumentclick clearonclose="$.state.create" modaltitle="Create Account">
     <div class="content">
       <div class="col">
-        <d-input inputlabel="Name" bindvalue="state.create.name" binderrorvalue="state.create.errors.name"/>
-        <d-input inputlabel="Email" bindvalue="state.create.email" binderrorvalue="state.create.errors.email"/>
+        <d-input inputlabel="Name" bindvalue="$.state.create.name" binderrorvalue="$.state.create.errors.name"/>
+        <d-input inputlabel="Email" bindvalue="$.state.create.email" binderrorvalue="$.state.create.errors.email"/>
       </div>
     </div>
     <div class="actions">
