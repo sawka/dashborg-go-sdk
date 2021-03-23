@@ -389,6 +389,7 @@ func (req *PanelRequest) Done() error {
 	if req.IsDone {
 		return nil
 	}
+	req.IsDone = true
 	if !req.AuthImpl && req.isRootReq() && req.Err == nil {
 		AuthNone{}.checkAuth(req)
 	}
