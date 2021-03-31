@@ -1,22 +1,30 @@
 <panel>
   <h1>Todo App</h1>
   <div class="row">
-    <d-input style="width: 300px" bindvalue="$.state.newtodo"/>
-    <d-button handler="/add-todo">Add Todo Item</d-button>
+    <d-select bindvalue="$state.todotype" placeholder="Todo Type" style="width:150px">
+      <d-option value="personal">Personal</d-option>
+      <d-option value="work">Work</d-option>
+    </d-select>
+    <d-input style="width: 300px" bindvalue="$state.newtodo"/>
+    <d-button class-button="primary" handler="/add-todo">Add Todo Item</d-button>
   </div>
-  <d-data query="/get-todo-list" bindvalue="$.data.todos"/>
-  <d-table bind="$.data.todos" style="max-width: 1000px">
+  <d-error title="Submit Error" bind="$.errors" class="compact" style="min-width: 300px"/>
+  <d-data query="/get-todo-list" bindvalue="$.todos"/>
+  <d-table bind="$.todos" style="max-width: 1000px">
     <d-col width="50px" label="Id">
       <d-text bind=".Id"/>
+    </d-col>
+    <d-col width="200px" label="Type">
+      <d-text bind=".TodoType"/>
     </d-col>
     <d-col width="400px" label="Item">
       <d-text bind=".Item"/>
     </d-col>
     <d-col width="100px" label="Done">
-      <d-checkbox readonly bindvalue=".Done" onchangehandler="/mark-todo-done" onchangehandlerdata=".Id" />
+      <d-checkbox readonly bindvalue=".Done" onchangehandler="/mark-todo-done(.Id)"/>
     </d-col>
     <d-col width="200px" label="Actions">
-      <d-button handler="/remove-todo" handlerdata=".Id">Remove</d-button>
+      <d-button handler="/remove-todo(.Id)">Remove</d-button>
     </d-col>
   </d-table>
   <div style="grow;"/>

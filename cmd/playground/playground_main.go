@@ -51,9 +51,9 @@ func init() {
 <div class="row">
    <d-button handler="/add-row">Add Row</d-button>
 </div>
-<d-table bind="$.data.tabledata" keyexpr="@rownum0">
+<d-table bind="$.data.tabledata" keyexpr="@index">
    <d-col label="Row#">
-     <d-text bind="@rownum"/>
+     <d-text bind="@index"/>
    </d-col>
    <d-col label="X">
      <d-text bind=".x"/>
@@ -69,10 +69,10 @@ func init() {
    </d-col>
    <d-col label="Actions">
      <div class="row">
-       <d-button handler="/add-data" handlerdata="{row: @rownum0, key: 'x', val: 1}">X+1</d-button>
-       <d-button handler="/add-data" handlerdata="{row: @rownum0, key: 'x', val: -1}">X-1</d-button>
-       <d-button handler="/add-data" handlerdata="{row: @rownum0, key: 'y', val: 1}">Y+1</d-button>
-       <d-button handler="/add-data" handlerdata="{row: @rownum0, key: 'y', val: -1}">Y-1</d-button>
+       <d-button handler="/add-data({row: @index, key: 'x', val: 1})">X+1</d-button>
+       <d-button handler="/add-data({row: @index, key: 'x', val: -1})">X-1</d-button>
+       <d-button handler="/add-data({row: @index, key: 'y', val: 1})">Y+1</d-button>
+       <d-button handler="/add-data({row: @index, key: 'y', val: -1})">Y-1</d-button>
      </div>
    </d-col>
 </d-table>
@@ -134,14 +134,14 @@ func PreSetHandler(req *dash.PanelRequest) error {
 	}
 	preset := PRESET_MAP[presetType]
 	req.SetData("$.html", strings.TrimSpace(preset.Html))
-	req.SetData("$.state.html", strings.TrimSpace(preset.Html))
+	req.SetData("$state.html", strings.TrimSpace(preset.Html))
 	req.SetData("$.data", preset.Data)
-	req.SetData("$.state.preset", presetType)
+	req.SetData("$state.preset", presetType)
 	barr, err := json.MarshalIndent(preset.Data, "", "  ")
 	if err != nil {
 		return err
 	}
-	req.SetData("$.state.jsondata", string(barr))
+	req.SetData("$state.jsondata", string(barr))
 	return nil
 }
 
@@ -178,7 +178,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		req.SetData("$.state.jsondata", string(barr))
+		req.SetData("$state.jsondata", string(barr))
 		return nil
 	})
 	dash.RegisterPanelHandler("playground", "/add-row", func(req *dash.PanelRequest) error {
@@ -191,7 +191,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		req.SetData("$.state.jsondata", string(barr))
+		req.SetData("$state.jsondata", string(barr))
 		return nil
 	})
 	select {}

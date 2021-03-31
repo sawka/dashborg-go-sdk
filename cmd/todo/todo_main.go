@@ -5,9 +5,10 @@ import (
 )
 
 type TodoItem struct {
-	Id   int
-	Item string
-	Done bool
+	Id       int
+	TodoType string
+	Item     string
+	Done     bool
 }
 
 type ServerTodoModel struct {
@@ -16,7 +17,8 @@ type ServerTodoModel struct {
 }
 
 type TodoPanelState struct {
-	NewTodo string `json:"newtodo"`
+	TodoType string `json:"todotype"`
+	NewTodo  string `json:"newtodo"`
 }
 
 func (m *ServerTodoModel) RootHandler(req *dash.PanelRequest) error {
@@ -25,13 +27,19 @@ func (m *ServerTodoModel) RootHandler(req *dash.PanelRequest) error {
 }
 
 func (m *ServerTodoModel) AddTodo(req *dash.PanelRequest, state *TodoPanelState) error {
+	req.SetData("$.errors", nil)
 	if state.NewTodo == "" {
+		req.SetData("$.errors", "Please enter a Todo Item")
 		return nil
 	}
-	m.TodoList = append(m.TodoList, &TodoItem{Id: m.NextId, Item: state.NewTodo})
+	if state.TodoType == "" {
+		req.SetData("$.errors", "Please select a Todo Type")
+		return nil
+	}
+	m.TodoList = append(m.TodoList, &TodoItem{Id: m.NextId, Item: state.NewTodo, TodoType: state.TodoType})
 	m.NextId++
 	req.InvalidateData("/get-todo-list")
-	req.SetData("$.state.newtodo", "")
+	req.SetData("$state.newtodo", "")
 	return nil
 }
 

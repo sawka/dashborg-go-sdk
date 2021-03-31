@@ -6,39 +6,56 @@
     <div style="grow"/>
     <d-button handler="/acc/regen-acclist">Regenerate Test Accounts</d-button>
   </div>
-  <div class="row" style="grow">
-    <div class="col s3" style="background-color: #eee; padding: 10px">
-      <h2>Accounts</h2>
-      <d-data query="/accounts/list" bindvalue="$.data.acclist"/>
-      <d-list selection keyexpr=".AccId" bind="$.data.acclist" bindvalue="$.state.selaccid" marginleft=8px>
+  <style>
+    .detail-def {
+        padding-bottom: 14px;
+    }
+  </style>
+  <div class="ui grid" style="grow">
+    <div class="four wide column">
+      <div class="ui segment" style="height:100%; padding: 20px; overflow-y: auto;">
+        <h2 style="margin-bottom: 20px;">Accounts</h2>
+        <hr style="background-color: #ccc; height: 1px; border: none;"/>
+      <d-data query="/accounts/list" bindvalue="$.acclist"/>
+      <d-list selection keyexpr=".AccId" bind="$.acclist" bindvalue="$state.selaccid">
         <div class="row" style="font-size: 16px; margin-bottom: 6px; align-items: center; line-height: 22px;">
           <d-text bind=".AccName"/>
-          <d-label if="*.IsPaid" class="blue tiny" style="margin-left: 5px">Paid</d-label>
+          <d-label if=".IsPaid" class="blue tiny" style="margin-left: 5px">Paid</d-label>
         </div>
       </d-list>
+      </div>
     </div>
-    <d-data query="/accounts/get" querydata="$.state.selaccid" bindvalue="$.data.accdetail2"/>
-    <div class="col" style="grow; background-color: #eee; padding: 10px;">
-      <h2>Account Detail</h2>
-      <div if="*." class="col" style="font-size: 16px" datacontext="$.data.accdetail2">
-        <d-def style-name="width: 100px" name="Acc Id" value="*.AccId"/>
-        <d-def style-name="width: 100px" name="Name" value="*.AccName"/>
-        <d-def style-name="width: 100px" name="Paid Acc"><d-text bind=".IsPaid"/></d-def>
-        <d-def style-name="width: 100px" name="Email" value="*.Email"/>
-        <div class="row">
-          <d-button if="*.IsPaid" handler="/acc/downgrade" handlerdata=".AccId">Downgrade</d-button>
-          <d-button notif="*.IsPaid" handler="/acc/upgrade" handlerdata=".AccId">Upgrade</d-button>
-          <d-button handler="/acc/remove" handlerdata=".AccId">Remove Account</d-button>
+    <d-data query="/accounts/get" querydata="$state.selaccid" bindvalue="$.accdetail2"/>
+    <div class="twelve wide column" datacontext="$.accdetail2">
+      <div if="!." class="ui placeholder segment" style="height:100%;">
+        <div class="ui icon header">
+          <i class="search icon"></i>
+          No Account Selected
+        </div>
+      </div>
+      <div if="." class="ui segment" style="height:100%; padding: 20px;">
+        <h2 style="margin-bottom: 20px;">Account Detail</h2>
+        <hr style="background-color: #ccc; height: 1px; border: none;"/>
+        <div class="col" style="font-size: 16px; padding-top: 15px;">
+          <d-def class="detail-def" style-name="width: 100px" name="Acc Id" value="*.AccId"/>
+          <d-def class="detail-def" style-name="width: 100px" name="Name" value="*.AccName"/>
+          <d-def class="detail-def" style-name="width: 100px" name="Paid Acc"><d-text bind=".IsPaid"/></d-def>
+          <d-def class="detail-def" style-name="width: 100px" name="Email" value="*.Email"/>
+          <div class="row" style="margin-top: 20px;">
+            <d-button if=".IsPaid" handler="/acc/downgrade(.AccId)">Downgrade</d-button>
+            <d-button if="!.IsPaid" handler="/acc/upgrade(.AccId)">Upgrade</d-button>
+            <d-button handler="/acc/remove(.AccId)">Remove Account</d-button>
+          </div>
         </div>
       </div>
     </div>
   </div>
   <d-dataview class="dark" style="scroll; height: 200px;" bind="."/>
-  <d-modal name="createAccountModal" closeondocumentclick clearonclose="$.state.create" modaltitle="Create Account">
+  <d-modal name="createAccountModal" closeondocumentclick clearonclose="$state.create" modaltitle="Create Account" style="max-width: 550px;">
     <div class="content">
       <div class="col">
-        <d-input inputlabel="Name" bindvalue="$.state.create.name" binderrorvalue="$.state.create.errors.name"/>
-        <d-input inputlabel="Email" bindvalue="$.state.create.email" binderrorvalue="$.state.create.errors.email"/>
+        <d-input inputlabel="Name" bindvalue="$state.create.name" binderrorvalue="$state.create.errors.name"/>
+        <d-input inputlabel="Email" bindvalue="$state.create.email" binderrorvalue="$state.create.errors.email"/>
       </div>
     </div>
     <div class="actions">
