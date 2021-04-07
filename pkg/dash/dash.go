@@ -119,9 +119,9 @@ func panelLink(panelName string) string {
 	accId := globalClient.Config.AccId
 	zoneName := globalClient.Config.ZoneName
 	if globalClient.Config.Env != "prod" {
-		return fmt.Sprintf("http://console.dashborg.localdev:8080/acc/%s/%s/%s", accId, zoneName, panelName)
+		return fmt.Sprintf("http://acc-%s.console.dashborg.localdev:8080/zone/%s/%s", accId, zoneName, panelName)
 	}
-	return fmt.Sprintf("https://console.dashborg.net/acc/%s/%s/%s", accId, zoneName, panelName)
+	return fmt.Sprintf("https://acc-%s.console.dashborg.net/zone/%s/%s", accId, zoneName, panelName)
 }
 
 func (req *PanelRequest) appendRR(rrAction *dashproto.RRAction) {

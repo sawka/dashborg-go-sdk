@@ -28,12 +28,15 @@ type challengeField struct {
 }
 
 type authChallenge struct {
-	AllowedAuth string `json:"allowedauth"` // "dashborg" or "challenge"
+	AllowedAuth string `json:"allowedauth"` // "dashborg" or "challenge" or "message"
 
 	// These fields only apply when AllowedAuth = "challenge"
 	ChallengeMessage string           `json:"challengemessage"` // message to show user for this auth
 	ChallengeError   string           `json:"challengeerror"`   // error message to show
 	ChallengeFields  []challengeField `json:"challengefields"`  // array of challenge fields
+
+	MessageTitle string `json:"messagetitle"`
+	Message      string `json:"message"`
 }
 
 type challengeData struct {
