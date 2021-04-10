@@ -360,6 +360,11 @@ func (m *StreamModel) ToggleStreaming(req *dash.PanelRequest, state PanelState) 
 	return nil
 }
 
+func (m *StreamModel) RefreshJobList(req *dash.PanelRequest) error {
+	req.InvalidateData("/get-jobs")
+	return nil
+}
+
 func main() {
 	model, err := CreateStreamModel()
 	if err != nil {
@@ -379,6 +384,7 @@ func main() {
 	dash.RegisterPanelHandlerEx("streaming", "/toggle-streaming", model.ToggleStreaming)
 	dash.RegisterPanelHandlerEx("streaming", "/stop-job", model.StopJob)
 	dash.RegisterPanelHandlerEx("streaming", "/delete-job", model.DeleteJob)
+	dash.RegisterPanelHandlerEx("streaming", "/refresh-job-list", model.RefreshJobList)
 
 	time.Sleep(1 * time.Second)
 	dash.BackendPush("streaming", "/refresh-job-list")

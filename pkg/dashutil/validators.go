@@ -26,9 +26,9 @@ const (
 )
 
 var (
-	ZONENAME_RE       = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
+	ZONENAME_RE       = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_.-]*$")
 	CONTROLNAME_RE    = regexp.MustCompile("^[a-zA-Z0-9_.:#/-]+$")
-	PANELNAME_RE      = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
+	PANELNAME_RE      = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_.-]*$")
 	PROCNAME_RE       = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
 	UUID_RE           = regexp.MustCompile("^[a-fA-F0-9-]{36}$")
 	HANDLER_RE        = regexp.MustCompile("^/[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$")

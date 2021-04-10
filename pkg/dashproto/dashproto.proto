@@ -22,6 +22,7 @@ message RRAction {
     string Err = 7;
     bytes BlobBytes = 8;        // for "blob" / "blobext" ActionType
     string BlobMimeType = 9;    // for "blob" ActionType
+    string ReqId = 10;          // transient for LocalServer
 }
 
 message SendResponseMessage {

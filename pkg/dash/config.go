@@ -19,11 +19,12 @@ import (
 )
 
 const (
-	TLS_KEY_FILENAME  = "dashborg-client.key"
-	TLS_CERT_FILENAME = "dashborg-client.crt"
-	DEFAULT_PROCNAME  = "default"
-	DEFAULT_ZONENAME  = "default"
-	DEFAULT_PANELNAME = "default"
+	TLS_KEY_FILENAME         = "dashborg-client.key"
+	TLS_CERT_FILENAME        = "dashborg-client.crt"
+	DEFAULT_PROCNAME         = "default"
+	DEFAULT_ZONENAME         = "default"
+	DEFAULT_PANELNAME        = "default"
+	DEFAULT_LOCALSERVER_ADDR = "localhost:8082"
 )
 
 var cmdRegexp *regexp.Regexp = regexp.MustCompile("^.*/")
@@ -35,6 +36,17 @@ func defaultString(opts ...string) string {
 		}
 	}
 	return ""
+}
+
+func envOverride(val bool, varName string) bool {
+	envVal := os.Getenv(varName)
+	if envVal == "0" {
+		return false
+	}
+	if envVal == "" {
+		return val
+	}
+	return true
 }
 
 func (c *Config) setDefaults() {
@@ -65,11 +77,18 @@ func (c *Config) setDefaults() {
 	c.ProcName = defaultString(c.ProcName, os.Getenv("DASHBORG_PROCNAME"), cmdName, DEFAULT_PROCNAME)
 	c.KeyFileName = defaultString(c.KeyFileName, os.Getenv("DASHBORG_KEYFILE"), TLS_KEY_FILENAME)
 	c.CertFileName = defaultString(c.CertFileName, os.Getenv("DASHBORG_CERTFILE"), TLS_CERT_FILENAME)
-	if os.Getenv("DASHBORG_VERBOSE") != "" {
-		c.Verbose = true
-	}
+	c.Verbose = envOverride(c.Verbose, "DASHBORG_VERBOSE")
 	if c.MinClearTimeout == 0 {
 		c.MinClearTimeout = 1 * time.Second
+	}
+	c.LocalServer = envOverride(c.LocalServer, "DASHBORG_LOCALSERVER")
+	if c.LocalServer {
+		envLspn := os.Getenv("DASHBORG_LOCALSERVER")
+		if !dashutil.IsPanelNameValid(envLspn) {
+			envLspn = ""
+		}
+		c.LocalServerPanelName = defaultString(c.LocalServerPanelName, os.Getenv("DASHBORG_LOCALSERVERPANELNAME"), envLspn, DEFAULT_PANELNAME)
+		c.LocalServerAddr = defaultString(c.LocalServerAddr, os.Getenv("DASHBORG_LOCALSERVERADDR"), DEFAULT_LOCALSERVER_ADDR)
 	}
 }
 

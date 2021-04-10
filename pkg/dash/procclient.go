@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sawka/dashborg-go-sdk/pkg/dashlocal"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 	"google.golang.org/grpc"
@@ -34,7 +35,9 @@ const EC_ACCACCESS = "ACCACCESS"
 const EC_NOHANDLER = "NOHANDLER"
 const EC_UNAVAILABLE = "UNAVAILABLE"
 
-const CLIENT_VERSION = "go-0.0.3"
+const CLIENT_VERSION = "go-0.0.4"
+const returnChSize = 20
+const smallDrainSleep = 5 * time.Millisecond
 
 var globalClient *procClient
 
@@ -58,6 +61,7 @@ type streamControl struct {
 	Ctx            context.Context
 	CancelFn       context.CancelFunc
 	HasZeroClients bool
+	LocalFeClients []string
 }
 
 type streamKey struct {
@@ -65,17 +69,27 @@ type streamKey struct {
 	StreamId  string
 }
 
+type feStreamControl struct {
+	FeClientId string
+	ReturnCh   chan *dashproto.RRAction
+	LastDrain  time.Time
+	ReqIds     []string
+	PushPanel  string
+}
+
 type procClient struct {
-	CVar         *sync.Cond
-	StartTs      int64
-	ProcRunId    string
-	Config       *Config
-	Conn         *grpc.ClientConn
-	DBService    dashproto.DashborgServiceClient
-	HandlerMap   map[handlerKey]handlerVal
-	ConnId       *atomic.Value
-	StreamMap    map[streamKey]streamControl // map streamKey -> streamControl
-	StreamKeyMap map[string]streamKey        // map reqid -> streamKey
+	CVar           *sync.Cond
+	StartTs        int64
+	ProcRunId      string
+	Config         *Config
+	Conn           *grpc.ClientConn
+	DBService      dashproto.DashborgServiceClient
+	HandlerMap     map[handlerKey]handlerVal
+	ConnId         *atomic.Value
+	StreamMap      map[streamKey]streamControl // map streamKey -> streamControl
+	StreamKeyMap   map[string]streamKey        // map reqid -> streamKey
+	LocalReqMap    map[string]chan *dashproto.SendResponseMessage
+	LocalFeStreams map[string]*feStreamControl // feclientid -> local stream control
 }
 
 func newProcClient() *procClient {
@@ -88,7 +102,17 @@ func newProcClient() *procClient {
 	rtn.ConnId.Store("")
 	rtn.StreamMap = make(map[streamKey]streamControl)
 	rtn.StreamKeyMap = make(map[string]streamKey)
+	rtn.LocalReqMap = make(map[string]chan *dashproto.SendResponseMessage)
+	rtn.LocalFeStreams = make(map[string]*feStreamControl)
 	return rtn
+}
+
+func (pc *procClient) streamTimeoutChecker() {
+	t := time.NewTicker(3 * time.Second)
+	for range t.C {
+		// pc.stream_printStatus()
+		pc.localStream_checkTimeouts()
+	}
 }
 
 func (pc *procClient) copyHandlerKeys() []*dashproto.HandlerKey {
@@ -111,13 +135,30 @@ func StartProcClient(config *Config) {
 	config.setupForProcClient()
 	client := newProcClient()
 	client.Config = config
-	err := client.connectGrpc()
-	if err != nil {
-		log.Printf("Dashborg ERROR connecting gRPC client: %v\n", err)
+	if client.localMode() {
+		lsConfig := &dashlocal.Config{
+			AccId:     config.AccId,
+			ZoneName:  config.ZoneName,
+			PanelName: config.LocalServerPanelName,
+			Env:       config.Env,
+			Addr:      config.LocalServerAddr,
+		}
+		go func() {
+			startLocalErr := dashlocal.StartLocalServer(lsConfig, client)
+			if startLocalErr != nil {
+				log.Printf("Dashborg ERROR starting local server: %v\n", startLocalErr)
+			}
+		}()
+		go client.streamTimeoutChecker()
+	} else {
+		err := client.connectGrpc()
+		if err != nil {
+			log.Printf("Dashborg ERROR connecting gRPC client: %v\n", err)
+		}
+		log.Printf("Dashborg Initialized Client AccId:%s Zone:%s ProcName:%s ProcRunId:%s\n", config.AccId, config.ZoneName, config.ProcName, client.ProcRunId)
+		client.sendProcMessage()
+		go client.runRequestStreamLoop()
 	}
-	log.Printf("Dashborg Initialized Client AccId:%s Zone:%s ProcName:%s ProcRunId:%s\n", config.AccId, config.ZoneName, config.ProcName, client.ProcRunId)
-	client.sendProcMessage()
-	go client.runRequestStreamLoop()
 	globalClient = client
 }
 
@@ -177,7 +218,7 @@ func marshalJson(val interface{}) (string, error) {
 
 // returns numStreamClients, err
 func (pc *procClient) sendRequestResponse(req *PanelRequest, done bool) (int, error) {
-	if req.IsStream && pc.streamHasZeroClients(req.ReqId) {
+	if req.IsStream && pc.stream_hasZeroClients(req.ReqId) {
 		req.Lock.Lock()
 		req.RRActions = nil
 		req.Lock.Unlock()
@@ -201,38 +242,54 @@ func (pc *procClient) sendRequestResponse(req *PanelRequest, done bool) (int, er
 	req.RRActions = nil
 	req.Lock.Unlock()
 
-	if pc.ConnId.Load().(string) == "" {
-		return 0, fmt.Errorf("No Active ConnId")
+	if req.IsLocal && req.RequestType == "stream" {
+		numClients, err := pc.sendLocalStreamResponse(m)
+		return numClients, err
+	} else if req.IsLocal {
+		var respCh chan *dashproto.SendResponseMessage
+		pc.CVar.L.Lock()
+		respCh = pc.LocalReqMap[req.ReqId]
+		pc.CVar.L.Unlock()
+		if respCh == nil {
+			return 0, fmt.Errorf("No Active Local Receiver")
+		}
+		select { // non-blocking send
+		case respCh <- m:
+		default:
+			log.Printf("Local Request Response Dropped (channel full)")
+			return 0, fmt.Errorf("Local Channel Full")
+		}
+		if done {
+			close(respCh)
+		}
+		return 0, nil
+	} else {
+		if pc.ConnId.Load().(string) == "" {
+			return 0, fmt.Errorf("No Active ConnId")
+		}
+		resp, err := pc.DBService.SendResponse(pc.ctxWithMd(), m)
+		if err != nil {
+			return 0, err
+		}
+		if resp.Err != "" {
+			return 0, errors.New(resp.Err)
+		}
+		return int(resp.NumStreamClients), nil
 	}
-	resp, err := pc.DBService.SendResponse(pc.ctxWithMd(), m)
-	if err != nil {
-		return 0, err
-	}
-	if resp.Err != "" {
-		return 0, errors.New(resp.Err)
-	}
-	return int(resp.NumStreamClients), nil
 }
 
 func (pc *procClient) startBareStream(panelName string, streamOpts StreamOpts) (string, context.Context, error) {
-	pc.CVar.L.Lock()
-	defer pc.CVar.L.Unlock()
-	skey := streamKey{PanelName: panelName, StreamId: streamOpts.StreamId}
-	sc, ok := pc.StreamMap[skey]
-	if ok {
-		return "", nil, fmt.Errorf("Stream already exists")
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	sc = streamControl{
+	sc := streamControl{
 		PanelName:      panelName,
 		StreamOpts:     streamOpts,
 		ReqId:          uuid.New().String(),
-		Ctx:            ctx,
-		CancelFn:       cancel,
 		HasZeroClients: true,
 	}
-	pc.StreamMap[skey] = sc
-	pc.StreamKeyMap[sc.ReqId] = skey
+	var err error
+	sc, err = pc.stream_clientStartBare(sc)
+	if err != nil {
+		return "", nil, err
+	}
 	return sc.ReqId, sc.Ctx, nil
 }
 
@@ -240,113 +297,79 @@ func (pc *procClient) startBareStream(panelName string, streamOpts StreamOpts) (
 // returns reqid, nil, nil if successfully hooked this client up to the existing streaming function.
 // returns "", nil, err if there was an error.
 func (pc *procClient) startStream(panelName string, feClientId string, streamOpts StreamOpts) (string, context.Context, error) {
-	pc.CVar.L.Lock()
-	defer pc.CVar.L.Unlock()
-	skey := streamKey{PanelName: panelName, StreamId: streamOpts.StreamId}
-	sc, ok := pc.StreamMap[skey]
-	if !ok {
-		sc = streamControl{
-			PanelName:  panelName,
-			StreamOpts: streamOpts,
-			ReqId:      "",
+	reqId := pc.stream_getReqId(streamKey{PanelName: panelName, StreamId: streamOpts.StreamId})
+	if !pc.localMode() {
+		m := &dashproto.StartStreamMessage{
+			Ts:            dashutil.Ts(),
+			PanelName:     panelName,
+			FeClientId:    feClientId,
+			ExistingReqId: reqId,
+		}
+		resp, err := pc.DBService.StartStream(pc.ctxWithMd(), m)
+		if err != nil {
+			return "", nil, fmt.Errorf("Dashborg procclient startStream error: %w", err)
+		}
+		if !resp.Success {
+			return "", nil, fmt.Errorf("Dashborg procclient startStream error: %s", resp.Err)
+		}
+		if reqId != "" && reqId != resp.ReqId {
+			return "", nil, fmt.Errorf("Dashborg procclient startStream returned reqid:%s does not match existing reqid:%s", resp.ReqId, reqId)
+		}
+		reqId = resp.ReqId
+	} else {
+		if reqId == "" {
+			reqId = uuid.New().String()
 		}
 	}
-	m := &dashproto.StartStreamMessage{
-		Ts:            dashutil.Ts(),
-		PanelName:     panelName,
-		FeClientId:    feClientId,
-		ExistingReqId: sc.ReqId,
+	sc := streamControl{
+		PanelName:      panelName,
+		StreamOpts:     streamOpts,
+		ReqId:          reqId,
+		HasZeroClients: false,
 	}
-	resp, err := pc.DBService.StartStream(pc.ctxWithMd(), m)
-	if err != nil {
-		return "", nil, fmt.Errorf("Dashborg procclient startStream error: %w", err)
-	}
-	if !resp.Success {
-		return "", nil, fmt.Errorf("Dashborg procclient startStream error: %s", resp.Err)
-	}
-	if sc.ReqId != "" && sc.ReqId != resp.ReqId {
-		return "", nil, fmt.Errorf("Dashborg procclient startStream returned reqid:%s does not match existing reqid:%s", resp.ReqId, sc.ReqId)
-	}
-	sc.HasZeroClients = false
-	pc.StreamMap[streamKey{sc.PanelName, sc.StreamOpts.StreamId}] = sc
-	if sc.ReqId != "" {
-		// stream already running
+	var shouldStart bool
+	sc, shouldStart = pc.stream_clientStart(sc, feClientId)
+	if !shouldStart {
 		return sc.ReqId, nil, nil
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	sc.ReqId = resp.ReqId
-	sc.Ctx = ctx
-	sc.CancelFn = cancel
-	pc.StreamMap[skey] = sc
-	pc.StreamKeyMap[sc.ReqId] = skey
 	return sc.ReqId, sc.Ctx, nil
 }
 
-func (pc *procClient) lookupStream_nolock(reqId string) (streamControl, bool) {
-	skey, ok := pc.StreamKeyMap[reqId]
-	if !ok {
-		return streamControl{}, false
-	}
-	sc, ok := pc.StreamMap[skey]
-	return sc, ok
-}
-
-func (pc *procClient) deleteAndCancelStream_nolock(reqId string) {
-	skey, ok := pc.StreamKeyMap[reqId]
-	if !ok {
-		return
-	}
-	sc, ok := pc.StreamMap[skey]
-	if !ok {
-		logV("No Stream found for key:%v\n", skey)
-		return
-	}
-	sc.CancelFn() // cancel context
-	delete(pc.StreamKeyMap, reqId)
-	delete(pc.StreamMap, skey)
-}
-
-func (pc *procClient) handleStreamClose(req *PanelRequest, fromServer bool) {
+func (pc *procClient) dispatchLocalRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) ([]*dashproto.RRAction, error) {
 	pc.CVar.L.Lock()
-	defer pc.CVar.L.Unlock()
-	sc, ok := pc.lookupStream_nolock(req.ReqId)
-	if !ok {
-		return
+	respCh := make(chan *dashproto.SendResponseMessage, 10)
+	pc.LocalReqMap[reqMsg.ReqId] = respCh
+	pc.CVar.L.Unlock()
+	go func() {
+		pc.dispatchRequest(ctx, reqMsg, true)
+	}()
+	defer func() {
+		pc.CVar.L.Lock()
+		delete(pc.LocalReqMap, reqMsg.ReqId)
+		pc.CVar.L.Unlock()
+	}()
+	var rtn []*dashproto.RRAction
+outer:
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("Context canceled")
+
+		case resp, ok := <-respCh:
+			if resp.Err != "" {
+				return []*dashproto.RRAction{
+					&dashproto.RRAction{Ts: resp.Ts, ActionType: "error", Err: resp.Err}}, nil
+			}
+			rtn = append(rtn, resp.Actions...)
+			if !ok || resp.ResponseDone {
+				break outer
+			}
+		}
 	}
-	if fromServer && sc.StreamOpts.NoServerCancel {
-		sc.HasZeroClients = true
-		pc.StreamMap[streamKey{sc.PanelName, sc.StreamOpts.StreamId}] = sc
-		return
-	}
-	pc.deleteAndCancelStream_nolock(req.ReqId)
+	return rtn, nil
 }
 
-func (pc *procClient) handleStreamZeroClients(req *PanelRequest) {
-	pc.CVar.L.Lock()
-	defer pc.CVar.L.Unlock()
-	sc, ok := pc.lookupStream_nolock(req.ReqId)
-	if !ok {
-		return
-	}
-	sc.HasZeroClients = true
-	pc.StreamMap[streamKey{sc.PanelName, sc.StreamOpts.StreamId}] = sc
-	if sc.StreamOpts.NoServerCancel {
-		return
-	}
-	pc.deleteAndCancelStream_nolock(req.ReqId)
-}
-
-func (pc *procClient) streamHasZeroClients(reqId string) bool {
-	pc.CVar.L.Lock()
-	defer pc.CVar.L.Unlock()
-	sc, ok := pc.lookupStream_nolock(reqId)
-	if !ok {
-		return true
-	}
-	return sc.HasZeroClients
-}
-
-func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) {
+func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.RequestMessage, isLocal bool) {
 	if reqMsg.Err != "" {
 		logV("Dashborg gRPC got error request: err=%s\n", reqMsg.Err)
 		return
@@ -362,6 +385,7 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 		FeClientId:    reqMsg.FeClientId,
 		Path:          reqMsg.Path,
 		IsBackendCall: reqMsg.IsBackendCall,
+		IsLocal:       isLocal,
 	}
 	hkey := handlerKey{
 		PanelName: reqMsg.PanelName,
@@ -373,7 +397,7 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	case "handler":
 		hkey.HandlerType = "handler"
 	case "streamclose":
-		pc.handleStreamClose(preq, true)
+		pc.stream_serverStop(preq.ReqId)
 		return // no response for streamclose
 	default:
 		preq.Err = fmt.Errorf("Invalid RequestMessage.RequestType [%s]", reqMsg.RequestType)
@@ -628,7 +652,7 @@ func (pc *procClient) runRequestStream() (bool, string) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(reqMsg.TimeoutMs)*time.Millisecond)
 			defer cancel()
-			pc.dispatchRequest(ctx, reqMsg)
+			pc.dispatchRequest(ctx, reqMsg, false)
 		}()
 	}
 	elapsed := time.Since(startTime)
@@ -639,9 +663,11 @@ func (pc *procClient) runRequestStream() (bool, string) {
 // Usually called at the end of main() using defer.
 func WaitForClear() {
 	time.Sleep(globalClient.Config.MinClearTimeout)
-	err := globalClient.Conn.Close()
-	if err != nil {
-		logV("Dashborg ERROR closing gRPC connection: %v\n", err)
+	if globalClient.Conn != nil {
+		err := globalClient.Conn.Close()
+		if err != nil {
+			logV("Dashborg ERROR closing gRPC connection: %v\n", err)
+		}
 	}
 }
 
@@ -653,21 +679,61 @@ func (pc *procClient) registerHandler(protoHkey *dashproto.HandlerKey, handlerFn
 		Path:        protoHkey.Path,
 	}
 	pc.registerHandlerFn(hkey, protoHkey, handlerFn)
-	if pc.ConnId.Load().(string) == "" {
-		return
-	}
-	msg := &dashproto.RegisterHandlerMessage{
-		Ts:       dashutil.Ts(),
-		Handlers: []*dashproto.HandlerKey{protoHkey},
-	}
-	resp, err := globalClient.DBService.RegisterHandler(pc.ctxWithMd(), msg)
-	if err != nil {
-		log.Printf("Dashborg RegisterHandler ERROR-rpc %v\n", err)
-		return
-	}
-	if resp.Err != "" {
-		log.Printf("Dashborg RegisterHandler ERROR %v\n", resp.Err)
-		return
+	if !pc.localMode() {
+		if pc.ConnId.Load().(string) == "" {
+			return
+		}
+		msg := &dashproto.RegisterHandlerMessage{
+			Ts:       dashutil.Ts(),
+			Handlers: []*dashproto.HandlerKey{protoHkey},
+		}
+		resp, err := globalClient.DBService.RegisterHandler(pc.ctxWithMd(), msg)
+		if err != nil {
+			log.Printf("Dashborg RegisterHandler ERROR-rpc %v\n", err)
+			return
+		}
+		if resp.Err != "" {
+			log.Printf("Dashborg RegisterHandler ERROR %v\n", resp.Err)
+			return
+		}
+	} else {
+		// local mode
+		if pc.Config.LocalServer && pc.Config.LocalServerPanelName != hkey.PanelName {
+			log.Printf("Dashborg RegisterHandler ERROR registering handler for panel[%s], but local server panel is [%s]\n", hkey.PanelName, pc.Config.LocalServerPanelName)
+		}
 	}
 	logV("Dashborg RegisterHandler %v\n", hkey)
+}
+
+func (pc *procClient) backendPush(m *dashproto.BackendPushMessage) error {
+	if !pc.localMode() {
+		resp, err := globalClient.DBService.BackendPush(globalClient.ctxWithMd(), m)
+		if err != nil {
+			return err
+		}
+		if resp.Err != "" {
+			return errors.New(resp.Err)
+		}
+		if !resp.Success {
+			return errors.New("Error calling BackendPush()")
+		}
+		return nil
+	} else {
+		for _, fesc := range pc.LocalFeStreams {
+			if fesc.PushPanel == "" || fesc.PushPanel != m.PanelName {
+				continue
+			}
+			rr := &dashproto.RRAction{
+				Ts:         dashutil.Ts(),
+				ActionType: "backendpush",
+				Selector:   m.Path,
+			}
+			nonBlockingSend(fesc.ReturnCh, rr)
+		}
+		return nil
+	}
+}
+
+func (pc *procClient) localMode() bool {
+	return pc.Config.LocalServer
 }
