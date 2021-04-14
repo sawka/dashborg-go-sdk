@@ -1,4 +1,4 @@
-<panel>
+<panel fullscreen>
   <h1>Demo 2</h1>
   <div class="row">
     <d-button handler="/acc/refresh-accounts">Refresh Accounts</d-button>
@@ -50,7 +50,7 @@
       </div>
     </div>
   </div>
-  <d-dataview class="dark" style="scroll; height: 200px;" bind="."/>
+  <d-dataview class="dark" style="scroll; height: 200px; noshrink;" bind="."/>
   <d-modal name="createAccountModal" closeondocumentclick clearonclose="$state.create" modaltitle="Create Account" style="max-width: 550px;">
     <div class="content">
       <div class="col">
