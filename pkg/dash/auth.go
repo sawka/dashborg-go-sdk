@@ -114,7 +114,6 @@ type AuthSimpleLoginResponse struct {
 }
 
 type AuthSimpleLogin struct {
-	// returns loginOk, id, error
 	CheckFn func(user string, password string) (*AuthSimpleLoginResponse, error)
 }
 

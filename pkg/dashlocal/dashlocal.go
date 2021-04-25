@@ -93,7 +93,7 @@ func makeLocalServer(config *Config) *localServer {
 func (s *localServer) getRootHtmlUrl() string {
 	rhRoot := "https://console.dashborg.net/local-server-html"
 	if s.Config.Env != "prod" {
-		rhRoot = "http://console.dashborg.localdev:8080/local-server-html"
+		rhRoot = "https://console.dashborg-dev.com:8080/local-server-html"
 	}
 	rhUrl, _ := url.Parse(rhRoot)
 	q := rhUrl.Query()
@@ -127,7 +127,7 @@ func (s *localServer) rootHandler(w http.ResponseWriter, r *http.Request) {
 	html = strings.Replace(html, "@CSRF-TOKEN", csrfToken, 1)
 	html = strings.Replace(html, "@CONFIG", string(configJson), 1)
 	if s.Config.Env != "prod" {
-		html = strings.Replace(html, "@STATIC-HOST", "http://static.dashborg.localdev:8080", 2)
+		html = strings.Replace(html, "@STATIC-HOST", "https://static.dashborg-dev.com:8080", 2)
 	} else {
 		html = strings.Replace(html, "@STATIC-HOST", "https://static.dashborg.net", 2)
 	}
