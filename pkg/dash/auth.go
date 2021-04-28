@@ -66,11 +66,16 @@ type AuthSimpleJwt struct {
 	SigningKey []byte // secret key, HMAC signed with HS256
 }
 
+// Authenticate against a JWT constructed with account public/private keypair
+type AuthAccountJwt struct {
+	ParamName string // URL parameter to read the JWT token from (or blank for $state.dbrequest.embedauthtoken)
+}
+
 // Creates a JWT token that is compatible with this auth method.  If validFor is set to 0, it will
 // default to 15 minutes.  This is how long the JWT token can be used to authenticate a user to
 // the panel.  Once authenticated, by default, a user will stay authenticated for 24-hours regarless
 // of the token's expiration time.
-func (auth AuthSimpleJwt) MakeJWT(id string, validFor time.Duration) (string, error) {
+func (auth AuthSimpleJwt) MakeJWT(validFor time.Duration, id string) (string, error) {
 	if auth.Issuer == "" {
 		return "", errors.New("SimpleJWT must have an Issuer")
 	}
@@ -90,7 +95,9 @@ func (auth AuthSimpleJwt) MakeJWT(id string, validFor time.Duration) (string, er
 	if auth.Audience != "" {
 		claims["aud"] = auth.Audience
 	}
-	claims["sub"] = id
+	if id != "" {
+		claims["sub"] = id
+	}
 	token := jwt.NewWithClaims(jwt.GetSigningMethod("HS256"), claims)
 	jwtStr, err := token.SignedString(auth.SigningKey)
 	if err != nil {
@@ -100,7 +107,7 @@ func (auth AuthSimpleJwt) MakeJWT(id string, validFor time.Duration) (string, er
 }
 
 func (auth AuthSimpleJwt) MustMakeJWT(id string, validFor time.Duration) string {
-	jwtStr, err := auth.MakeJWT(id, validFor)
+	jwtStr, err := auth.MakeJWT(validFor, id)
 	if err != nil {
 		panic(err)
 	}
@@ -148,6 +155,92 @@ func (auth AuthPassword) checkAuth(req *PanelRequest) (bool, error) {
 		return true, nil
 	}
 	return false, nil
+}
+
+func (auth AuthAccountJwt) checkAuth(req *PanelRequest) (bool, error) {
+	ok, err := auth.checkAuthInternal(req)
+	if err != nil {
+		// send a message
+		ac := authChallenge{
+			AllowedAuth:  "message",
+			RemoveParam:  auth.ParamName,
+			MessageTitle: "External Sign In Error",
+			Message:      err.Error(),
+		}
+		req.appendPanelAuthChallenge(ac)
+		return false, err
+	}
+	if !ok {
+		return false, nil
+	}
+
+	// must remove param on success
+	if auth.ParamName != "" {
+		ac := authChallenge{
+			AllowedAuth: "removeparam",
+			RemoveParam: auth.ParamName,
+		}
+		req.appendPanelAuthChallenge(ac)
+	}
+	return true, nil
+}
+
+func (auth AuthAccountJwt) checkAuthInternal(req *PanelRequest) (bool, error) {
+	type panelState struct {
+		UrlParams map[string]string `json:"urlparams"`
+		DbRequest map[string]string `json:"dbrequest"`
+	}
+	var pstate panelState
+	err := mapstructure.Decode(req.PanelState, &pstate)
+	if err != nil {
+		return false, nil
+	}
+	var jwtParam string
+	if auth.ParamName == "" {
+		jwtParam = pstate.DbRequest["embedauthtoken"]
+	} else {
+		jwtParam = pstate.UrlParams[auth.ParamName]
+	}
+	if jwtParam == "" {
+		return false, nil
+	}
+	type authJwtClaims struct {
+		jwt.StandardClaims
+		Role    string `json:"role"`
+		DashAcc string `json:"dash-acc"`
+	}
+	cert, err := readCertInfo(globalClient.Config.CertFileName)
+	if err != nil {
+		// strange given that the client is running.
+		return false, fmt.Errorf("Error Validating JWT account token")
+	}
+	var claims authJwtClaims
+	_, err = jwt.ParseWithClaims(jwtParam, &claims, func(t *jwt.Token) (interface{}, error) {
+		return cert.PublicKey, nil
+	})
+	if err != nil {
+		return false, fmt.Errorf("Error Parsing JWT account token: %w", err)
+	}
+	err = claims.Valid()
+	if err != nil {
+		return false, fmt.Errorf("Invalid JWT token: %w", err)
+	}
+	if claims.Audience != "dashborg-auth" {
+		return false, fmt.Errorf("Invalid JWT token, audience must be 'dashborg-auth'")
+	}
+	role := "user"
+	if claims.Role != "" {
+		if !dashutil.IsRoleValid(claims.Role) {
+			return false, fmt.Errorf("JWT account token has invalid role")
+		}
+		role = claims.Role
+	}
+	req.setAuthData(authAtom{
+		Type: "accountjwt",
+		Id:   claims.Subject,
+		Role: role,
+	})
+	return true, nil
 }
 
 func (auth AuthSimpleJwt) checkAuth(req *PanelRequest) (bool, error) {
@@ -270,6 +363,13 @@ func (AuthDashborg) returnChallenge(req *PanelRequest) *authChallenge {
 func (auth AuthSimpleJwt) returnChallenge(req *PanelRequest) *authChallenge {
 	return &authChallenge{
 		AllowedAuth: "simplejwt",
+		RemoveParam: auth.ParamName,
+	}
+}
+
+func (auth AuthAccountJwt) returnChallenge(req *PanelRequest) *authChallenge {
+	return &authChallenge{
+		AllowedAuth: "accountjwt",
 		RemoveParam: auth.ParamName,
 	}
 }

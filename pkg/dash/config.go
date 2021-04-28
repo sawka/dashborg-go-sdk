@@ -1,7 +1,9 @@
 package dash
 
 import (
+	"crypto/ecdsa"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
@@ -13,6 +15,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/google/uuid"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 	"github.com/sawka/dashborg-go-sdk/pkg/keygen"
@@ -145,8 +148,9 @@ func (c *Config) maybeMakeKeys(accId string) error {
 }
 
 type certInfo struct {
-	AccId string
-	Pk256 string
+	AccId     string
+	Pk256     string
+	PublicKey interface{}
 }
 
 func readCertInfo(certFileName string) (*certInfo, error) {
@@ -172,5 +176,57 @@ func readCertInfo(certFileName string) (*certInfo, error) {
 	}
 	pk256 := sha256.Sum256(pubKeyBytes)
 	pk256Str := base64.StdEncoding.EncodeToString(pk256[:])
-	return &certInfo{AccId: cn, Pk256: pk256Str}, nil
+	return &certInfo{AccId: cn, Pk256: pk256Str, PublicKey: cert.PublicKey}, nil
+}
+
+func (c *Config) loadPrivateKey() (interface{}, error) {
+	cert, err := tls.LoadX509KeyPair(c.CertFileName, c.KeyFileName)
+	if err != nil {
+		return nil, fmt.Errorf("Error loading x509 key pair cert[%s] key[%s]: %w", c.CertFileName, c.KeyFileName, err)
+	}
+	ecKey, ok := cert.PrivateKey.(*ecdsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("Invalid private key %s, must be ECDSA", c.KeyFileName)
+	}
+	return ecKey, nil
+}
+
+// Creates a JWT token from the public/private keypair
+func (c *Config) MakeAccountJWT(validFor time.Duration, id string, role string) (string, error) {
+	c.setupForProcClient()
+	ecKey, err := c.loadPrivateKey()
+	if err != nil {
+		return "", err
+	}
+	claims := jwt.MapClaims{}
+	claims["iss"] = "dashborg"
+	claims["exp"] = time.Now().Add(validFor).Unix()
+	claims["iat"] = time.Now().Add(-5 * time.Second).Unix() // skeww
+	claims["jti"] = uuid.New().String()
+	claims["dash-acc"] = c.AccId
+	if id != "" {
+		claims["aud"] = "dashborg-auth"
+		claims["sub"] = id
+		if role == "" {
+			role = "user"
+		}
+		claims["role"] = role
+
+	} else {
+		claims["aud"] = "dashborg-csrf"
+	}
+	token := jwt.NewWithClaims(jwt.GetSigningMethod("ES384"), claims)
+	jwtStr, err := token.SignedString(ecKey)
+	if err != nil {
+		return "", fmt.Errorf("Error signing JWT: %w", err)
+	}
+	return jwtStr, nil
+}
+
+func (c *Config) MustMakeAccountJWT(validFor time.Duration, id string, role string) string {
+	rtn, err := c.MakeAccountJWT(validFor, id, role)
+	if err != nil {
+		panic(err)
+	}
+	return rtn
 }

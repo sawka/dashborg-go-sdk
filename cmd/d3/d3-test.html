@@ -1,14 +1,14 @@
-<panel fullscreen onloadhandler="expr fn:js('renderD3', $.data)">
+<panel fullscreen onloadhandler="@local/render-d3($.data)">
   <script sync src="https://d3js.org/d3.v6.min.js"></script>
   <include sync script="d3-code"/>
   <h1 style="noshrink;">D3 Test</h1>
 
   <div class="row">
-    <d-select bindvalue="$state.mode" defaultvalue="scatter" style="width: 300px;" onchangehandler="expr fn:js('renderD3', $.data)">
+    <d-select bindvalue="$state.mode" defaultvalue="scatter" style="width: 300px;" onchangehandler="@local/render-d3($.data)">
       <d-option value="table">Table</d-option>
       <d-option value="scatter">Scatter</d-option>
     </d-select>
-    <d-button handler="/regen-data; expr fn:js('renderD3', $.data)">Regen Data</d-button>
+    <d-button handler="/regen-data; @local/render-d3($.data)">Regen Data</d-button>
   </div>
 
   <d-table if="$state.mode == 'table'" bind="$.data">
@@ -26,24 +26,27 @@
     </d-col>
     <d-col label="Color">
       <div class="row">
-        <div style="height: 15px; width: 15px; background-color: *.Color; margin-right: 10px; margin-top: 3px; border-radius: 3px;"/>
+        <div style.background-color="*.Color" style="height: 15px; width: 15px; margin-right: 10px; margin-top: 3px; border-radius: 3px;"/>
         <d-text bind=".Color"/>
       </div>
     </d-col>
   </d-table>
 
-  <svg style="width: 560px; height: 560px; display: *$state.mode == 'scatter' ? 'block' : 'none'" id="scatter-svg">
+  <svg style.display="*$state.mode == 'scatter' ? 'block' : 'none'" style="width: 560px; height: 560px;" id="scatter-svg">
   </svg>
 </panel>
 
 <script name="d3-code">
-  function renderScatter(data) {
+  DashborgService.registerPanelHandler("d3-test", "/render-d3", renderScatter);
+  
+  function renderScatter(req) {
+      let data = req.data;
       console.log("RENDER SCATTER", data);
-      DashborgPanelElem.querySelector("#scatter-svg").innerHTML = "";
+      req.panelDOMRoot.querySelector("#scatter-svg").innerHTML = "";
       let height = 500;
       let width = 500;
       let margin = 30;
-      let svg = d3.select(DashborgPanelElem.querySelector("#scatter-svg"));
+      let svg = d3.select(req.panelDOMRoot.querySelector("#scatter-svg"));
       svg = svg.append("g").attr("transform", "translate(" + margin + "," + margin + ")");
       let xaxis = d3.scaleLinear().domain([0, 50]).range([0, width]);
       svg.append("g").attr("transform", "translate(0, " + height + ")").call(d3.axisBottom(xaxis));
@@ -56,7 +59,4 @@
           .style("fill", (d) => d.Color);
   }
 
-  function renderD3(data) {
-      renderScatter(data);
-  }
 </script>
