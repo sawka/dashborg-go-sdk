@@ -11,10 +11,10 @@ Dashborg was built to be the simplest way to create secure web-based internal to
 
 * Doc Site: https://docs.dashborg.net/
 * Tutorials: https://docs.dashborg.net/tutorials/t1/
+* Binding Data to Your HTML: https://docs.dashborg.net/docs/binding-data/
 * GoDoc (pkg.go.dev): https://pkg.go.dev/github.com/sawka/dashborg-go-sdk/pkg/dash
-* Playground: https://console.dashborg.net/acc/421d595f-9e30-4178-bcc3-b853f890fb8e/default/playground
-* Streaming Demo: https://console.dashborg.net/acc/421d595f-9e30-4178-bcc3-b853f890fb8e/default/streaming
-* Slack: [Join the Dashborg Slack Channel](https://join.slack.com/t/dashborgworkspace/shared_invite/zt-ls710ixw-nHmCAFiOQqzal2mu0r_87w)
+* Demo Site: https://acc-421d595f-9e30-4178-bcc3-b853f890fb8e.console.dashborg.net/zone/default/default
+* Slack: [Join the Dashborg Slack Channel](https://join.slack.com/t/dashborgworkspace/shared_invite/zt-pja2sjtz-hSPviQUDDXFzln78b_2u1w)
 
 ## Key Features
 
@@ -71,7 +71,7 @@ You should see output that looks similar to:
 Dashborg created new self-signed keypair key:dashborg-client.key cert:dashborg-client.crt for new accountid:[YOUR-ACCOUNT-ID]
 Dashborg KeyFile:dashborg-client.key CertFile:dashborg-client.crt SHA256:[YOUR-KEY-FINGERPRINT]
 Dashborg Initialized Client AccId:[YOUR-ACCOUNT-ID] Zone:default ProcName:demo ProcRunId:4f4e8364-5d39-495f-8c9e-1009741b1b47
-Dashborg Panel Link [default]: https://console.dashborg.net/acc/YOUR-OWN-PRIVATE-LINK
+Dashborg Panel Link [default]: https://acc-[ACCOUNT-ID].console.dashborg.net/zone/default/default
 
 </pre>
 
