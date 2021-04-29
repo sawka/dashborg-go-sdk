@@ -35,7 +35,7 @@ const EC_ACCACCESS = "ACCACCESS"
 const EC_NOHANDLER = "NOHANDLER"
 const EC_UNAVAILABLE = "UNAVAILABLE"
 
-const CLIENT_VERSION = "go-0.5.0"
+const CLIENT_VERSION = "go-0.5.2"
 const returnChSize = 20
 const smallDrainSleep = 5 * time.Millisecond
 
