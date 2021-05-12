@@ -301,7 +301,7 @@ func (m *StreamModel) SelectJob(req *dash.PanelRequest, state PanelState, jobId 
 	j = j.CopyJob()
 	req.SetData("$.seljob", j)
 	req.SetData("$state.jobstreams", nil)
-	if state.Streaming {
+	if state.Streaming && j.JobStatus == "running" {
 		cpath := fmt.Sprintf("$state.jobstreams['" + j.JobId + "']")
 		req.StartStream(dash.StreamOpts{StreamId: j.JobId, ControlPath: cpath}, nil)
 	}
@@ -386,7 +386,7 @@ func main() {
 	dash.RegisterPanelHandlerEx("streaming", "/delete-job", model.DeleteJob)
 	dash.RegisterPanelHandlerEx("streaming", "/refresh-job-list", model.RefreshJobList)
 
-	time.Sleep(1 * time.Second)
+	time.Sleep(5 * time.Second)
 	dash.BackendPush("streaming", "/refresh-job-list")
 	select {}
 }

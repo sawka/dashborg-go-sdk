@@ -481,7 +481,7 @@ func (req *PanelRequest) getRawAuthData() []*authAtom {
 }
 
 func (req *PanelRequest) IsAuthenticated() bool {
-	if req.IsLocal {
+	if globalClient.Config.LocalServer {
 		return true
 	}
 	rawAuth := req.getRawAuthData()

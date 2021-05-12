@@ -35,6 +35,7 @@ type Config struct {
 	LocalServer          bool
 	LocalServerAddr      string // defaults to "localhost:8082", set to override (only when LocalServer is true)
 	LocalServerPanelName string // defaults to "default", set to override (only when LocalServer is true)
+	LocalServerPanelOpts interface{}
 
 	// DASHBORG_ZONE defaults to "default"
 	ZoneName string
@@ -66,6 +67,11 @@ type Config struct {
 	DashborgSrvPort int    // DASHBORG_PROCPORT
 }
 
+type PanelOpts struct {
+	NoChrome bool `json:"nochrome"`
+	NoNav    bool `json:"nonav"`
+}
+
 // PanelRequest encapsulates all the data about a Dashborg request.  Normally the only
 // fields that a handler needs to access are "Data" and "PanelState" in order to read
 // the parameters and UI state associated with this request.  The other fields are
@@ -93,7 +99,6 @@ type PanelRequest struct {
 
 	IsDone        bool // set after Done() is called and response has been sent to server
 	IsStream      bool // true if this is a streaming request
-	IsLocal       bool // true if this is a local request
 	IsBackendCall bool // true if this request originated from a backend data call
 }
 
@@ -167,7 +172,6 @@ func StartBareStream(panelName string, streamOpts StreamOpts) (*PanelRequest, er
 		RequestType: "stream",
 		Path:        streamOpts.StreamId,
 		IsStream:    true,
-		IsLocal:     globalClient.localMode(),
 	}
 	return streamReq, nil
 }
@@ -220,7 +224,6 @@ func (req *PanelRequest) StartStream(streamOpts StreamOpts, streamFn func(ctx co
 			RequestType: "stream",
 			Path:        streamOpts.StreamId,
 			IsStream:    true,
-			IsLocal:     globalClient.localMode(),
 		}
 		go func() {
 			defer func() {
@@ -401,12 +404,12 @@ func (req *PanelRequest) Done() error {
 	if !req.AuthImpl && req.isRootReq() && req.Err == nil {
 		AuthNone{}.checkAuth(req)
 	}
-	if req.IsStream {
-		globalClient.stream_clientStop(req.ReqId)
-	}
 	_, err := globalClient.sendRequestResponse(req, true)
 	if err != nil {
 		logV("Dashborg ERROR sending handler response: %v\n", err)
+	}
+	if req.IsStream {
+		globalClient.stream_clientStop(req.ReqId)
 	}
 	return err
 }
@@ -423,7 +426,7 @@ func RegisterPanelHandler(panelName string, path string, handlerFn func(*PanelRe
 		return nil, err
 	}
 	globalClient.registerHandler(hkey, hfn)
-	if path == "/" && !globalClient.localMode() {
+	if path == "/" && !globalClient.Config.LocalServer {
 		log.Printf("Dashborg Panel Link [%s]: %s\n", panelName, panelLink(panelName))
 	}
 }
@@ -445,9 +448,6 @@ func logV(fmtStr string, args ...interface{}) {
 }
 
 func CallDataHandler(panelName string, path string, data interface{}) (interface{}, error) {
-	if globalClient.localMode() {
-		return nil, fmt.Errorf("Cannot call data handler in LocalServer mode")
-	}
 	jsonData, err := marshalJson(data)
 	if err != nil {
 		return nil, err
@@ -488,9 +488,6 @@ func BackendPush(panelName string, path string) error {
 }
 
 func ReflectZone() (*ZoneReflection, error) {
-	if globalClient.localMode() {
-		return nil, fmt.Errorf("Cannot call ReflectZone in LocalServer mode")
-	}
 	m := &dashproto.ReflectZoneMessage{Ts: dashutil.Ts()}
 	resp, err := globalClient.DBService.ReflectZone(globalClient.ctxWithMd(), m)
 	if err != nil {

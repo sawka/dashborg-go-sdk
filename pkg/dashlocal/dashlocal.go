@@ -30,13 +30,6 @@ const HTTP_WRITE_TIMEOUT = 21 * time.Second
 const HTTP_MAX_HEADER_BYTES = 60000
 const HTTP_TIMEOUT_VAL = 21 * time.Second
 
-type DashProcClient interface {
-	DispatchLocalRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) ([]*dashproto.RRAction, error)
-	GetClientVersion() string
-	DrainLocalFeStream(ctx context.Context, feClientId string, timeout time.Duration, pushPanel string) ([]*dashproto.RRAction, []string, error)
-	StopStream(reqId string) error
-}
-
 type errorResponse struct {
 	Success bool   `json:"success"`
 	Error   string `json:"error"`
@@ -48,29 +41,33 @@ type successResponse struct {
 }
 
 type Config struct {
-	Addr       string        // defaults to localhost:8082
-	ShutdownCh chan struct{} // channel for shutting down server
-	AccId      string
-	ZoneName   string
-	PanelName  string
-	Env        string
+	Addr          string        // defaults to localhost:8082
+	ShutdownCh    chan struct{} // channel for shutting down server
+	AccId         string
+	ZoneName      string
+	PanelName     string
+	Env           string
+	ClientVersion string
+	PanelOpts     interface{}
 }
 
 type localServer struct {
-	Config     *Config
-	RootHtml   string
-	ProcClient DashProcClient
+	Config   *Config
+	RootHtml string
+	Client   *LocalClient
 }
 
 type lsPanelConfig struct {
-	AccId         string `json:"accId"`
-	ZoneName      string `json:"zoneName"`
-	PanelName     string `json:"panelName"`
-	ChromeVarName string `json:"chromeVarName,omitempty"`
-	Id            string `json:"id"`
-	LocalServer   bool   `json:"localServer"`
-	LinkToUrl     bool   `json:"linkToUrl"`
-	ClientVersion string `json:"clientVersion"`
+	AccId         string      `json:"accId"`
+	ZoneName      string      `json:"zoneName"`
+	PanelName     string      `json:"panelName"`
+	ChromeVarName string      `json:"chromeVarName,omitempty"`
+	Id            string      `json:"id"`
+	LocalServer   bool        `json:"localServer"`
+	LinkToUrl     bool        `json:"linkToUrl"`
+	ClientVersion string      `json:"clientVersion"`
+	PanelOpts     interface{} `json:"panelopts"`
+	UseShadow     bool        `json:"useShadow"`
 }
 
 func marshalJson(val interface{}) (string, error) {
@@ -98,7 +95,7 @@ func (s *localServer) getRootHtmlUrl() string {
 	rhUrl, _ := url.Parse(rhRoot)
 	q := rhUrl.Query()
 	q.Set("scope", s.Config.AccId+":"+s.Config.ZoneName+":"+s.Config.PanelName)
-	q.Set("client", s.ProcClient.GetClientVersion())
+	q.Set("client", s.Config.ClientVersion)
 	rhUrl.RawQuery = q.Encode()
 	return rhUrl.String()
 }
@@ -109,10 +106,12 @@ func (s *localServer) rootHandler(w http.ResponseWriter, r *http.Request) {
 		ZoneName:      s.Config.ZoneName,
 		PanelName:     s.Config.PanelName,
 		ChromeVarName: "DashborgChromeState",
-		Id:            "chromeroot",
+		Id:            "dash-chromeroot",
 		LocalServer:   true,
-		ClientVersion: s.ProcClient.GetClientVersion(),
+		ClientVersion: s.Config.ClientVersion,
 		LinkToUrl:     false,
+		UseShadow:     false,
+		PanelOpts:     s.Config.PanelOpts,
 	}
 	w.Header().Set("Cache-Control", "no-cache")
 	configJson, err := json.MarshalIndent(pconfig, "", "  ")
@@ -315,7 +314,7 @@ func (s *localServer) handleLoadPanel(w http.ResponseWriter, r *http.Request) (i
 		return nil, err
 	}
 	req.FeClientId = uuid.New().String()
-	rra, err := s.ProcClient.DispatchLocalRequest(r.Context(), req)
+	rra, err := s.Client.DispatchLocalRequest(r.Context(), req)
 	if err != nil {
 		return nil, err
 	}
@@ -347,7 +346,7 @@ func (s *localServer) handleData(w http.ResponseWriter, r *http.Request) (interf
 		return nil, err
 	}
 	// FeClientId
-	rra, err := s.ProcClient.DispatchLocalRequest(r.Context(), req)
+	rra, err := s.Client.DispatchLocalRequest(r.Context(), req)
 	if err != nil {
 		return nil, err
 	}
@@ -392,7 +391,7 @@ func (s *localServer) handleCallHandler(w http.ResponseWriter, r *http.Request) 
 		return nil, err
 	}
 	// FeClientId
-	rra, err := s.ProcClient.DispatchLocalRequest(r.Context(), req)
+	rra, err := s.Client.DispatchLocalRequest(r.Context(), req)
 	if err != nil {
 		return nil, err
 	}
@@ -428,7 +427,7 @@ func (s *localServer) handleDrainStreams(w http.ResponseWriter, r *http.Request)
 	if params.AllowPush {
 		pushPanel = s.Config.PanelName
 	}
-	rra, reqIds, err := s.ProcClient.DrainLocalFeStream(r.Context(), feClientId, 10*time.Second, pushPanel)
+	rra, reqIds, err := s.Client.DrainLocalFeStream(r.Context(), feClientId, 10*time.Second, pushPanel)
 	rtn := make(map[string]interface{})
 	rtn["reqids"] = reqIds
 	if err == dashutil.TimeoutErr {
@@ -459,7 +458,11 @@ func (s *localServer) handleStopStream(w http.ResponseWriter, r *http.Request) (
 	if err != nil {
 		return nil, err
 	}
-	err = s.ProcClient.StopStream(params.ReqId)
+	feClientId := r.Header.Get(FECLIENTID_HEADER)
+	if feClientId == "" {
+		return nil, fmt.Errorf("/api2/stop-stream requires feClientId")
+	}
+	err = s.Client.StopStream(params.ReqId, feClientId)
 	if err != nil {
 		return nil, err
 	}
@@ -504,9 +507,9 @@ func (s *localServer) getLocalHtml() error {
 	return nil
 }
 
-func StartLocalServer(config *Config, pc DashProcClient) error {
-	if pc == nil {
-		panic("DashProcClient cannot be nil")
+func StartLocalServer(config *Config, client *LocalClient) error {
+	if client == nil {
+		panic("LocalClient cannot be nil")
 	}
 	if config == nil {
 		panic("Config cannot be nil")
@@ -518,7 +521,7 @@ func StartLocalServer(config *Config, pc DashProcClient) error {
 		return fmt.Errorf("Invalid Configuration AccId/ZoneName/PanelName")
 	}
 	s := makeLocalServer(config)
-	s.ProcClient = pc
+	s.Client = client
 	err := s.getLocalHtml()
 	if err != nil {
 		return fmt.Errorf("Cannot contact Dashborg Service to download HTML chrome for Local Server: %w", err)
