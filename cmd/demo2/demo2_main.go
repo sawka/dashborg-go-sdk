@@ -173,10 +173,9 @@ func main() {
 	cfg := &dash.Config{ProcName: "demo2", AnonAcc: true, AutoKeygen: true}
 	dash.StartProcClient(cfg)
 	defer dash.WaitForClear()
-
 	Model = MakeAccModel()
 	dash.RegisterPanelHandler("demo2", "/", func(req *dash.PanelRequest) error {
-		if !req.CheckAuth(dash.AuthPassword{"hello"}, dash.AuthDashborg{}) {
+		if !req.CheckAuth(dash.AuthPassword{"hello"}) {
 			return nil
 		}
 		err := req.SetHtmlFromFile("cmd/demo2/demo2.html")
@@ -225,11 +224,11 @@ func main() {
 		return nil
 	})
 	dash.RegisterPanelHandler("demo2", "/acc/open-create-account-modal", func(req *dash.PanelRequest) error {
-		req.SetData("$state.createAccountModal.open", true)
+		req.SetData("$state.createAccountModal", true)
 		return nil
 	})
 	dash.RegisterPanelHandler("demo2", "/acc/close-modal", func(req *dash.PanelRequest) error {
-		req.SetData("$state.createAccountModal.open", false)
+		req.SetData("$state.createAccountModal", false)
 		return nil
 	})
 	dash.RegisterPanelHandler("demo2", "/acc/create-account", func(req *dash.PanelRequest) error {
@@ -245,7 +244,7 @@ func main() {
 		}
 		req.SetData("$state.create.errors", nil)
 		newAccId := Model.CreateAcc(panelModel.CreateData.Name, panelModel.CreateData.Email)
-		req.SetData("$state.createAccountModal.open", false)
+		req.SetData("$state.createAccountModal", false)
 		req.SetData("$state.selaccid", newAccId)
 		req.InvalidateData("/accounts/.*")
 		return nil

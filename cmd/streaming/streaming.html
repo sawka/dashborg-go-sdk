@@ -48,7 +48,7 @@
             <h4>Job <d-text bind=".ShortJobId" format="%8s"/> - <d-text bind=".JobType"/></h4>
             <div class="col" style="margin-left: 12px;">
               <d-def name="Started" style-name="width: 80px;">
-                <d-moment bind=".StartTs" format="YYYY-MM-DD hh:mm a"/>
+                <d-dateformat bind=".StartTs" format="YYYY-MM-DD hh:mm a"/>
               </d-def>
               <d-def name="Status" style-name="width: 80px;">
                 <d-text bind=".JobStatus"/>
@@ -81,7 +81,7 @@
               <span if=".JobType == 'randomwalk-xy'">| +XY Bias <i style="transform: rotate(45deg)" class="arrow right icon" /></span>
             </d-def>
             <d-def style-name="width: 150px" name="Start Time">
-              <d-moment bind=".StartTs" format="YYYY-MM-DD hh:mm a"/>
+              <d-dateformat bind=".StartTs" format="YYYY-MM-DD hh:mm a"/>
             </d-def>
             <d-def style-name="width: 150px" name="Job Status">
               <d-text bind=".JobStatus"/>

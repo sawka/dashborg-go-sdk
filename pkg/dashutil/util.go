@@ -1,15 +1,65 @@
 package dashutil
 
 import (
+	"bytes"
 	"errors"
+	"strconv"
 	"time"
+	"unicode"
 )
 
 var TimeoutErr = errors.New("TimeoutErr")
 var NoFeStreamErr = errors.New("NoFeStreamErr")
 
+type SortSpec struct {
+	Column string `json:"column"`
+	Asc    bool   `json:"asc"`
+}
+
 func Ts() int64 {
 	return time.Now().UnixNano() / 1000000
+}
+
+// Creates a Dashborg compatible double quoted string for pure ASCII printable strings (+ tab, newline, linefeed).
+// Not a general purpose string quoter, but will work for most simple keys.
+func QuoteString(str string) string {
+	var buf bytes.Buffer
+	buf.WriteByte('"')
+	for i := 0; i < len(str); i++ {
+		ch := str[i]
+		if ch > unicode.MaxASCII || ch == 127 {
+			buf.WriteByte('_')
+			continue
+		}
+		switch ch {
+		case '\t':
+			buf.WriteByte('\\')
+			buf.WriteByte('t')
+			continue
+
+		case '\n':
+			buf.WriteByte('\\')
+			buf.WriteByte('n')
+			continue
+
+		case '\r':
+			buf.WriteByte('\\')
+			buf.WriteByte('r')
+			continue
+
+		case '\\':
+			buf.WriteByte('\\')
+			buf.WriteByte('\\')
+			continue
+		}
+		if !strconv.IsPrint(rune(ch)) {
+			buf.WriteByte('_')
+			continue
+		}
+		buf.WriteByte(ch)
+	}
+	buf.WriteByte('"')
+	return buf.String()
 }
 
 // checks for dups

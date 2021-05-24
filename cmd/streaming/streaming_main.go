@@ -195,7 +195,6 @@ func (m *StreamModel) StartJob(req *dash.PanelRequest, state PanelState, data St
 	m.Lock.Lock()
 	m.RunningJobs[job.JobId] = job
 	defer m.Lock.Unlock()
-	go job.Run()
 
 	req.InvalidateData("/get-jobs")
 	req.SetData("$state.seljobid", jobId)
@@ -207,6 +206,7 @@ func (m *StreamModel) StartJob(req *dash.PanelRequest, state PanelState, data St
 		req.StartStream(dash.StreamOpts{StreamId: job.JobId, ControlPath: cpath}, nil)
 	}
 
+	go job.Run()
 	return nil
 }
 
@@ -332,19 +332,18 @@ func (m *StreamModel) DeleteJob(req *dash.PanelRequest, state PanelState, jobId 
 		return nil
 	}
 	m.Lock.Lock()
-	j := m.RunningJobs[jobId]
-	m.Lock.Unlock()
+	defer m.Lock.Unlock()
 
-	j.Lock.Lock()
-	if j.JobStatus == "running" {
-		j.Lock.Unlock()
+	j := m.RunningJobs[jobId]
+	if j == nil {
 		return nil
 	}
-	j.Lock.Unlock()
-
-	m.Lock.Lock()
+	j.Lock.Lock()
+	defer j.Lock.Unlock()
+	if j.JobStatus == "running" {
+		return nil
+	}
 	delete(m.RunningJobs, jobId)
-	m.Lock.Unlock()
 	req.SetData("$state.seljobid", nil)
 	req.SetData("$.seljob", nil)
 	req.InvalidateData("/get-jobs")
