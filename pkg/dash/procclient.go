@@ -1,7 +1,6 @@
 package dash
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -110,6 +109,37 @@ func (pc *procClient) copyHandlerKeys() []*dashproto.HandlerKey {
 	return rtn
 }
 
+func makeAppMessage(app App) (*dashproto.ConnectAppMessage, error) {
+	appConfig := app.AppConfig()
+	m := &dashproto.ConnectAppMessage{Ts: dashutil.Ts()}
+	m.AppName = appConfig.AppName
+	m.Options = make(map[string]string)
+	for name, val := range appConfig.Options {
+		jsonVal, err := dashutil.MarshalJson(val)
+		if err != nil {
+			return nil, err
+		}
+		m.Options[name] = jsonVal
+	}
+	return m, nil
+}
+
+func (pc *procClient) makeAppMessages() []*dashproto.ConnectAppMessage {
+	pc.CVar.L.Lock()
+	defer pc.CVar.L.Unlock()
+
+	rtn := make([]*dashproto.ConnectAppMessage, 0, len(pc.AppMap))
+	for _, app := range pc.AppMap {
+		m, err := makeAppMessage(app)
+		if err != nil {
+			log.Printf("Dashborg ERROR serializing AppConfig: %v\n", err)
+			continue
+		}
+		rtn = append(rtn, m)
+	}
+	return rtn
+}
+
 // Starts the Dashborg Client
 func StartProcClient(config *Config) {
 	config.SetupForProcClient()
@@ -197,17 +227,6 @@ func (pc *procClient) connectGrpc() error {
 	pc.Conn = conn
 	pc.DBService = dashproto.NewDashborgServiceClient(conn)
 	return err
-}
-
-func marshalJson(val interface{}) (string, error) {
-	var jsonBuf bytes.Buffer
-	enc := json.NewEncoder(&jsonBuf)
-	enc.SetEscapeHTML(false)
-	err := enc.Encode(val)
-	if err != nil {
-		return "", err
-	}
-	return jsonBuf.String(), nil
 }
 
 // returns numStreamClients, err
@@ -413,7 +432,7 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 		dataResult, preq.Err = hval.HandlerFn(preq)
 	}
 	if hkey.HandlerType == "data" {
-		jsonData, err := marshalJson(dataResult)
+		jsonData, err := dashutil.MarshalJson(dataResult)
 		if err != nil {
 			preq.Err = err
 			return
@@ -438,6 +457,10 @@ func (pc *procClient) sendProcMessage() error {
 		"Pid":      strconv.Itoa(os.Getpid()),
 	}
 	hkeys := pc.copyHandlerKeys()
+	apps := pc.makeAppMessages()
+	if err != nil {
+		return err
+	}
 	m := &dashproto.ProcMessage{
 		Ts:            dashutil.Ts(),
 		ProcRunId:     pc.ProcRunId,
@@ -449,6 +472,7 @@ func (pc *procClient) sendProcMessage() error {
 		HostData:      hostData,
 		StartTs:       pc.StartTs,
 		Handlers:      hkeys,
+		Apps:          apps,
 		ClientVersion: CLIENT_VERSION,
 	}
 	resp, err := pc.DBService.Proc(pc.ctxWithMd(), m)

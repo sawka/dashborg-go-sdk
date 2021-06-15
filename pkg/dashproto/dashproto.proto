@@ -85,6 +85,7 @@ message ProcMessage {
     int64 StartTs = 9;
     repeated HandlerKey Handlers = 10;
     string ClientVersion = 11;
+    repeated ConnectAppMessage Apps = 12;
 }
 
 message ProcResponse {
@@ -154,8 +155,6 @@ message BackendPushResponse {
 
 message ConnectAppMessage {
     int64 Ts = 1;
-    string AccId = 2;
-    string ZoneName = 3;
     string AppName = 4;
     map<string,string> Options = 5;
 }
@@ -169,7 +168,6 @@ message ConnectAppResponse {
 service DashborgService {
     rpc Proc(ProcMessage) returns (ProcResponse) {}
     rpc ConnectApp(ConnectAppMessage) returns (ConnectAppResponse) {}
-    rpc RegisterHandler(RegisterHandlerMessage) returns (RegisterHandlerResponse) {}
     rpc ReflectZone(ReflectZoneMessage) returns (ReflectZoneResponse) {}
     rpc CallDataHandler(CallDataHandlerMessage) returns (CallDataHandlerResponse) {}
     
@@ -177,4 +175,6 @@ service DashborgService {
     rpc SendResponse(SendResponseMessage) returns (SendResponseResponse) {}
     rpc StartStream(StartStreamMessage) returns (StartStreamResponse) {}
     rpc BackendPush(BackendPushMessage) returns (BackendPushResponse) {}
+
+    rpc RegisterHandler(RegisterHandlerMessage) returns (RegisterHandlerResponse) {}
 }

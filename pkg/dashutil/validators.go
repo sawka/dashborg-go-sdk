@@ -65,6 +65,13 @@ func IsPanelNameValid(panelName string) bool {
 	return PANELNAME_RE.MatchString(panelName)
 }
 
+func IsAppNameValid(appName string) bool {
+	if len(appName) > PANELNAME_MAX {
+		return false
+	}
+	return PANELNAME_RE.MatchString(appName)
+}
+
 func IsSimpleFileNameValid(fileName string) bool {
 	if len(fileName) > FILENAME_MAX {
 		return false

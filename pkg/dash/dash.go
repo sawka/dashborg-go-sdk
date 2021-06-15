@@ -210,7 +210,7 @@ func (req *PanelRequest) StartStream(streamOpts StreamOpts, streamFn func(ctx co
 		"reqid":       streamReqId,
 		"controlpath": streamOpts.ControlPath,
 	}
-	jsonData, _ := marshalJson(data)
+	jsonData, _ := dashutil.MarshalJson(data)
 	rrAction := &dashproto.RRAction{
 		Ts:         dashutil.Ts(),
 		ActionType: "streamopen",
@@ -305,7 +305,7 @@ func (req *PanelRequest) SetData(path string, data interface{}) error {
 	if req.IsDone {
 		return fmt.Errorf("Cannot call SetData(), path=%s, PanelRequest is already done", path)
 	}
-	jsonData, err := marshalJson(data)
+	jsonData, err := dashutil.MarshalJson(data)
 	if err != nil {
 		return fmt.Errorf("Error marshaling json for SetData, path:%s, err:%v\n", path, err)
 	}
@@ -368,7 +368,7 @@ func (req *PanelRequest) sendEvent(selector string, eventType string, data inter
 	if req.IsDone {
 		return fmt.Errorf("Cannot call SendEvent(), selector=%s, event=%s, PanelRequest is already done", selector, eventType)
 	}
-	jsonData, err := marshalJson(data)
+	jsonData, err := dashutil.MarshalJson(data)
 	if err != nil {
 		return fmt.Errorf("Error marshaling json for SendEvent, selector:%s, event:%s, err:%v\n", selector, eventType, err)
 	}
@@ -452,7 +452,7 @@ func logV(fmtStr string, args ...interface{}) {
 }
 
 func CallDataHandler(panelName string, path string, data interface{}) (interface{}, error) {
-	jsonData, err := marshalJson(data)
+	jsonData, err := dashutil.MarshalJson(data)
 	if err != nil {
 		return nil, err
 	}
@@ -512,18 +512,9 @@ func ReflectZone() (*ZoneReflection, error) {
 }
 
 func ConnectApp(app App) error {
-	appConfig := app.AppConfig()
-	m := &dashproto.ConnectAppMessage{Ts: dashutil.Ts()}
-	m.AccId = globalClient.Config.AccId
-	m.ZoneName = globalClient.Config.ZoneName
-	m.AppName = appConfig.AppName
-	m.Options = make(map[string]string)
-	for name, val := range appConfig.Options {
-		jsonVal, err := dashutil.MarshalJson(val)
-		if err != nil {
-			return err
-		}
-		m.Options[name] = jsonVal
+	m, err := makeAppMessage(app)
+	if err != nil {
+		return err
 	}
 	resp, err := globalClient.DBService.ConnectApp(globalClient.ctxWithMd(), m)
 	if err != nil {
