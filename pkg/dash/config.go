@@ -84,18 +84,9 @@ func (c *Config) setDefaults() {
 	if c.MinClearTimeout == 0 {
 		c.MinClearTimeout = 1 * time.Second
 	}
-	c.LocalServer = envOverride(c.LocalServer, "DASHBORG_LOCALSERVER")
-	if c.LocalServer {
-		envLspn := os.Getenv("DASHBORG_LOCALSERVER")
-		if !dashutil.IsPanelNameValid(envLspn) {
-			envLspn = ""
-		}
-		c.LocalServerPanelName = defaultString(c.LocalServerPanelName, os.Getenv("DASHBORG_LOCALSERVERPANELNAME"), envLspn, DEFAULT_PANELNAME)
-		c.LocalServerAddr = defaultString(c.LocalServerAddr, os.Getenv("DASHBORG_LOCALSERVERADDR"), DEFAULT_LOCALSERVER_ADDR)
-	}
 }
 
-func (c *Config) setupForProcClient() {
+func (c *Config) SetupForProcClient() {
 	c.setDefaults()
 	c.loadKeys()
 }
@@ -193,7 +184,7 @@ func (c *Config) loadPrivateKey() (interface{}, error) {
 
 // Creates a JWT token from the public/private keypair
 func (c *Config) MakeAccountJWT(validFor time.Duration, id string, role string) (string, error) {
-	c.setupForProcClient()
+	c.SetupForProcClient()
 	ecKey, err := c.loadPrivateKey()
 	if err != nil {
 		return "", err

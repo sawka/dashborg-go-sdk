@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sawka/dashborg-go-sdk/pkg/dashapp"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 	"google.golang.org/grpc"
@@ -30,6 +31,8 @@ type LocalClient struct {
 	ReqClient    *reqClient
 	LocalReqMap  map[string]*localReq
 	StreamClient *streamClient
+
+	LocalApp *dashapp.App
 }
 
 type localReq struct {
@@ -112,6 +115,11 @@ func (c *LocalClient) SendResponse(ctx context.Context, in *dashproto.SendRespon
 		close(lreq.DoneCh)
 	}
 	return &dashproto.SendResponseResponse{Success: true}, nil
+}
+
+func (c *LocalClient) ConnectApp(ctx context.Context, in *dashproto.ConnectAppMessage, opts ...grpc.CallOption) (*dashproto.ConnectAppResponse, error) {
+	resp := &dashproto.ConnectAppResponse{Success: true}
+	return resp, nil
 }
 
 func (c *LocalClient) RegisterHandler(ctx context.Context, in *dashproto.RegisterHandlerMessage, opts ...grpc.CallOption) (*dashproto.RegisterHandlerResponse, error) {

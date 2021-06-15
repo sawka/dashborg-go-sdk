@@ -48,7 +48,7 @@ var (
 	PASSWORD_RE = regexp.MustCompile("^[a-zA-Z0-9]+$")
 )
 
-var ValidHandlerType = map[string]bool{"data": true, "handler": true, "stream": true}
+var ValidHandlerType = map[string]bool{"data": true, "handler": true, "stream": true, "call": true, "auth": true, "html": true}
 var ValidActionType = map[string]bool{"setdata": true, "event": true, "invalidate": true, "html": true, "panelauth": true, "panelauthchallenge": true, "error": true, "blob": true, "blobext": true, "streamopen": true, "backendpush": true}
 
 func IsZoneNameValid(zoneName string) bool {

@@ -152,15 +152,29 @@ message BackendPushResponse {
     string Err = 2;
 }
 
+message ConnectAppMessage {
+    int64 Ts = 1;
+    string AccId = 2;
+    string ZoneName = 3;
+    string AppName = 4;
+    map<string,string> Options = 5;
+}
+
+message ConnectAppResponse {
+    bool Success = 1;
+    string Err = 2;
+    map<string,string> OptionWarnings = 3;
+}
+
 service DashborgService {
     rpc Proc(ProcMessage) returns (ProcResponse) {}
-    rpc SendResponse(SendResponseMessage) returns (SendResponseResponse) {}
+    rpc ConnectApp(ConnectAppMessage) returns (ConnectAppResponse) {}
     rpc RegisterHandler(RegisterHandlerMessage) returns (RegisterHandlerResponse) {}
-    rpc StartStream(StartStreamMessage) returns (StartStreamResponse) {}
     rpc ReflectZone(ReflectZoneMessage) returns (ReflectZoneResponse) {}
     rpc CallDataHandler(CallDataHandlerMessage) returns (CallDataHandlerResponse) {}
-    rpc BackendPush(BackendPushMessage) returns (BackendPushResponse) {}
     
-    // this is backwards since the server sends requests, and the client responds to them
-    rpc RequestStream(RequestStreamMessage) returns (stream RequestMessage) {}
+    rpc RequestStream(RequestStreamMessage) returns (stream RequestMessage) {} // backwards
+    rpc SendResponse(SendResponseMessage) returns (SendResponseResponse) {}
+    rpc StartStream(StartStreamMessage) returns (StartStreamResponse) {}
+    rpc BackendPush(BackendPushMessage) returns (BackendPushResponse) {}
 }

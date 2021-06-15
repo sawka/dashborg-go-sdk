@@ -49,6 +49,7 @@ type Config struct {
 	Env           string
 	ClientVersion string
 	PanelOpts     interface{}
+	Container     *Container
 }
 
 type localServer struct {
@@ -308,18 +309,44 @@ func (s *localServer) handleLoadPanel(w http.ResponseWriter, r *http.Request) (i
 	if err != nil {
 		return nil, err
 	}
+	feClientId := uuid.New().String()
 	rtn := make(map[string]interface{})
-	req, err := s.newReq(r, "handler", "/", nil, params.PanelState)
-	if err != nil {
-		return nil, err
+	if s.Config.Container != nil {
+		c := s.Config.Container
+		var rtnRRA []interface{}
+		if c.DynamicHtml {
+			req, err := s.newReq(r, "html", "", nil, params.PanelState)
+			req.FeClientId = feClientId
+			htmlRRA, err := s.Client.DispatchLocalRequest(r.Context(), req)
+			if err != nil {
+				return nil, err
+			}
+			rtnRRA = append(rtnRRA, convertRRArr(htmlRRA, req.ReqId)...)
+		}
+		if c.OnloadHandler != "" {
+			req, err := s.newReq(r, "handler", c.OnloadHandler, nil, params.PanelState)
+			req.FeClientId = feClientId
+			onloadRRA, err := s.Client.DispatchLocalRequest(r.Context(), req)
+			if err != nil {
+				return nil, err
+			}
+			rtnRRA = append(rtnRRA, convertRRArr(onloadRRA, req.ReqId)...)
+		}
+		rtn["rra"] = rtnRRA
+		rtn["feclientid"] = feClientId
+	} else {
+		req, err := s.newReq(r, "handler", "/", nil, params.PanelState)
+		if err != nil {
+			return nil, err
+		}
+		req.FeClientId = feClientId
+		rra, err := s.Client.DispatchLocalRequest(r.Context(), req)
+		if err != nil {
+			return nil, err
+		}
+		rtn["rra"] = convertRRArr(rra, req.ReqId)
+		rtn["feclientid"] = feClientId
 	}
-	req.FeClientId = uuid.New().String()
-	rra, err := s.Client.DispatchLocalRequest(r.Context(), req)
-	if err != nil {
-		return nil, err
-	}
-	rtn["rra"] = convertRRArr(rra, req.ReqId)
-	rtn["feclientid"] = req.FeClientId
 	return rtn, nil
 }
 
@@ -546,6 +573,6 @@ func StartLocalServer(config *Config, client *LocalClient) error {
 		log.Printf("Dashborg Local Server error:%v\n", err)
 		return err
 	}
-	log.Printf("Dashborg Local Server Shutdown\n", err)
+	log.Printf("Dashborg Local Server Shutdown\n")
 	return nil
 }

@@ -32,10 +32,8 @@ type Config struct {
 	AnonAcc bool
 
 	// Set to enable LocalServer mode
-	LocalServer          bool
-	LocalServerAddr      string // defaults to "localhost:8082", set to override (only when LocalServer is true)
-	LocalServerPanelName string // defaults to "default", set to override (only when LocalServer is true)
-	LocalServerPanelOpts interface{}
+	LocalServer bool
+	LocalClient dashproto.DashborgServiceClient
 
 	// DASHBORG_ZONE defaults to "default"
 	ZoneName string
@@ -107,12 +105,18 @@ type ZoneReflection struct {
 	ZoneName string                     `json:"zonename"`
 	Procs    map[string]ProcReflection  `json:"procs"`
 	Panels   map[string]PanelReflection `json:"panels"`
+	Apps     map[string]AppReflection   `json:"apps"`
 }
 
 type PanelReflection struct {
 	PanelName     string                       `json:"panelname"`
 	PanelHandlers map[string]HandlerReflection `json:"panelhandlers"`
 	DataHandlers  map[string]HandlerReflection `json:"datahandlers"`
+}
+
+type AppReflection struct {
+	AppName    string   `json:"appname"`
+	ProcRunIds []string `json:"procrunids"`
 }
 
 type ProcReflection struct {
@@ -505,4 +509,35 @@ func ReflectZone() (*ZoneReflection, error) {
 		return nil, err
 	}
 	return &rtn, nil
+}
+
+func ConnectApp(app App) error {
+	appConfig := app.AppConfig()
+	m := &dashproto.ConnectAppMessage{Ts: dashutil.Ts()}
+	m.AccId = globalClient.Config.AccId
+	m.ZoneName = globalClient.Config.ZoneName
+	m.AppName = appConfig.AppName
+	m.Options = make(map[string]string)
+	for name, val := range appConfig.Options {
+		jsonVal, err := dashutil.MarshalJson(val)
+		if err != nil {
+			return err
+		}
+		m.Options[name] = jsonVal
+	}
+	resp, err := globalClient.DBService.ConnectApp(globalClient.ctxWithMd(), m)
+	if err != nil {
+		return err
+	}
+	if resp.Err != "" {
+		return errors.New(resp.Err)
+	}
+	if !resp.Success {
+		return errors.New("Error calling ConnectApp()")
+	}
+	globalClient.connectApp(app)
+	for name, warning := range resp.OptionWarnings {
+		log.Printf("ConnectApp WARNING option[%s]: %s\n", name, warning)
+	}
+	return nil
 }

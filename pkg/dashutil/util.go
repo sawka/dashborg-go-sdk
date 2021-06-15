@@ -2,6 +2,7 @@ package dashutil
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"time"
@@ -18,6 +19,32 @@ type SortSpec struct {
 
 func Ts() int64 {
 	return time.Now().UnixNano() / 1000000
+}
+
+func GoTime(ts int64) time.Time {
+	return time.Unix(ts/1000, (ts%1000)*1000000)
+}
+
+func MarshalJson(val interface{}) (string, error) {
+	var jsonBuf bytes.Buffer
+	enc := json.NewEncoder(&jsonBuf)
+	enc.SetEscapeHTML(false)
+	err := enc.Encode(val)
+	if err != nil {
+		return "", err
+	}
+	return jsonBuf.String(), nil
+}
+
+func MarshalJsonNoError(val interface{}) string {
+	var jsonBuf bytes.Buffer
+	enc := json.NewEncoder(&jsonBuf)
+	enc.SetEscapeHTML(false)
+	err := enc.Encode(val)
+	if err != nil {
+		return "\"error marshaling json\""
+	}
+	return jsonBuf.String()
 }
 
 // Creates a Dashborg compatible double quoted string for pure ASCII printable strings (+ tab, newline, linefeed).
