@@ -686,7 +686,9 @@ func (pc *procClient) backendPush(m *dashproto.BackendPushMessage) error {
 
 func (pc *procClient) connectApp(app App) {
 	appName := app.GetAppName()
-	log.Printf("Dashborg App Link [%s]: %s\n", appName, panelLink(appName))
+	if !pc.Config.LocalServer {
+		log.Printf("Dashborg App Link [%s]: %s\n", appName, panelLink(appName))
+	}
 
 	pc.CVar.L.Lock()
 	defer pc.CVar.L.Unlock()

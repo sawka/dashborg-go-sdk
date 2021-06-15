@@ -9,6 +9,8 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
+const CONTAINER_VERSION = "gocontainer-0.6.0"
+
 type ContainerConfig struct {
 	Addr       string        // defaults to localhost:8082
 	ShutdownCh chan struct{} // channel for shutting down server
@@ -29,6 +31,20 @@ type Container struct {
 }
 
 type BindOptions struct {
+}
+
+func (c *Container) getAppName() string {
+	if c.App == nil {
+		return "noapp"
+	}
+	return c.App.GetAppName()
+}
+
+func (c *Container) getClientVersion() string {
+	if c.App == nil {
+		return "noclient-0.0.0"
+	}
+	return c.App.GetClientVersion()
 }
 
 func (c *ContainerConfig) SetDefaults() {
@@ -110,15 +126,12 @@ func (c *Container) ConnectApp(app dash.App, bindOpts *BindOptions) error {
 			return optErr
 		}
 	}
-	fmt.Printf("container %#v\n", c)
-
+	dash.ConnectApp(c.App)
+	log.Printf("Connected app[%s] to Local Container @ %s\n", c.App.GetAppName(), c.Config.Addr)
 	return nil
 }
 
 func (c *Container) StartContainer() error {
-	if c.App == nil {
-		panic("Must register an App to start local container")
-	}
 	config := &dash.Config{
 		ZoneName:    "default",
 		LocalServer: true,
@@ -126,22 +139,17 @@ func (c *Container) StartContainer() error {
 		Verbose:     c.Config.Verbose,
 	}
 	config.SetupForProcClient()
+	c.Config.AccId = config.AccId
+	c.Config.ZoneName = config.ZoneName
 	lsConfig := &Config{
-		AccId:         config.AccId,
-		ZoneName:      "default",
-		PanelName:     c.App.GetAppName(),
-		Env:           c.Config.Env,
-		Addr:          c.Config.Addr,
-		ClientVersion: c.App.GetClientVersion(),
-		PanelOpts:     c.BindOpts,
-		Container:     c,
+		Env:  c.Config.Env,
+		Addr: c.Config.Addr,
 	}
-	dbService, err := MakeLocalClient(lsConfig)
+	dbService, err := MakeLocalClient(lsConfig, c)
 	if err != nil {
 		return err
 	}
 	config.LocalClient = dbService
 	dash.StartProcClient(config)
-	dash.ConnectApp(c.App)
 	return nil
 }

@@ -41,21 +41,16 @@ type successResponse struct {
 }
 
 type Config struct {
-	Addr          string        // defaults to localhost:8082
-	ShutdownCh    chan struct{} // channel for shutting down server
-	AccId         string
-	ZoneName      string
-	PanelName     string
-	Env           string
-	ClientVersion string
-	PanelOpts     interface{}
-	Container     *Container
+	Addr       string        // defaults to localhost:8082
+	ShutdownCh chan struct{} // channel for shutting down server
+	Env        string
 }
 
 type localServer struct {
-	Config   *Config
-	RootHtml string
-	Client   *LocalClient
+	Config    *Config
+	RootHtml  string
+	Client    *LocalClient
+	Container *Container
 }
 
 type lsPanelConfig struct {
@@ -82,9 +77,10 @@ func marshalJson(val interface{}) (string, error) {
 	return jsonBuf.String(), nil
 }
 
-func makeLocalServer(config *Config) *localServer {
+func makeLocalServer(config *Config, container *Container) *localServer {
 	return &localServer{
-		Config: config,
+		Config:    config,
+		Container: container,
 	}
 }
 
@@ -95,24 +91,24 @@ func (s *localServer) getRootHtmlUrl() string {
 	}
 	rhUrl, _ := url.Parse(rhRoot)
 	q := rhUrl.Query()
-	q.Set("scope", s.Config.AccId+":"+s.Config.ZoneName+":"+s.Config.PanelName)
-	q.Set("client", s.Config.ClientVersion)
+	q.Set("scope", s.Container.Config.AccId+":"+s.Container.Config.ZoneName)
+	q.Set("client", CONTAINER_VERSION)
 	rhUrl.RawQuery = q.Encode()
 	return rhUrl.String()
 }
 
 func (s *localServer) rootHandler(w http.ResponseWriter, r *http.Request) {
 	pconfig := &lsPanelConfig{
-		AccId:         s.Config.AccId,
-		ZoneName:      s.Config.ZoneName,
-		PanelName:     s.Config.PanelName,
+		AccId:         s.Container.Config.AccId,
+		ZoneName:      s.Container.Config.ZoneName,
+		PanelName:     s.Container.getAppName(),
 		ChromeVarName: "DashborgChromeState",
 		Id:            "dash-chromeroot",
 		LocalServer:   true,
-		ClientVersion: s.Config.ClientVersion,
+		ClientVersion: s.Container.getClientVersion(),
 		LinkToUrl:     false,
 		UseShadow:     false,
-		PanelOpts:     s.Config.PanelOpts,
+		PanelOpts:     s.Container.BindOpts,
 	}
 	w.Header().Set("Cache-Control", "no-cache")
 	configJson, err := json.MarshalIndent(pconfig, "", "  ")
@@ -139,11 +135,11 @@ func (s *localServer) rootHandler(w http.ResponseWriter, r *http.Request) {
 func (s *localServer) newReq(r *http.Request, rtype string, path string, data interface{}, panelState interface{}) (*dashproto.RequestMessage, error) {
 	rtn := &dashproto.RequestMessage{
 		Ts:          dashutil.Ts(),
-		AccId:       s.Config.AccId,
+		AccId:       s.Container.Config.AccId,
 		ReqId:       uuid.New().String(),
 		RequestType: rtype,
-		ZoneName:    s.Config.ZoneName,
-		PanelName:   s.Config.PanelName,
+		ZoneName:    s.Container.Config.ZoneName,
+		PanelName:   s.Container.getAppName(),
 		Path:        path,
 	}
 	feClientId := r.Header.Get(FECLIENTID_HEADER)
@@ -311,8 +307,8 @@ func (s *localServer) handleLoadPanel(w http.ResponseWriter, r *http.Request) (i
 	}
 	feClientId := uuid.New().String()
 	rtn := make(map[string]interface{})
-	if s.Config.Container != nil {
-		c := s.Config.Container
+	if s.Container != nil {
+		c := s.Container
 		var rtnRRA []interface{}
 		if c.DynamicHtml {
 			req, err := s.newReq(r, "html", "", nil, params.PanelState)
@@ -452,7 +448,7 @@ func (s *localServer) handleDrainStreams(w http.ResponseWriter, r *http.Request)
 	}
 	pushPanel := ""
 	if params.AllowPush {
-		pushPanel = s.Config.PanelName
+		pushPanel = s.Container.getAppName()
 	}
 	rra, reqIds, err := s.Client.DrainLocalFeStream(r.Context(), feClientId, 10*time.Second, pushPanel)
 	rtn := make(map[string]interface{})
@@ -534,7 +530,7 @@ func (s *localServer) getLocalHtml() error {
 	return nil
 }
 
-func StartLocalServer(config *Config, client *LocalClient) error {
+func StartLocalServer(config *Config, client *LocalClient, container *Container) error {
 	if client == nil {
 		panic("LocalClient cannot be nil")
 	}
@@ -544,10 +540,10 @@ func StartLocalServer(config *Config, client *LocalClient) error {
 	if config.Addr == "" {
 		return fmt.Errorf("Addr not set in Config")
 	}
-	if !dashutil.IsUUIDValid(config.AccId) || !dashutil.IsZoneNameValid(config.ZoneName) || !dashutil.IsPanelNameValid(config.PanelName) {
+	if !dashutil.IsUUIDValid(container.Config.AccId) || !dashutil.IsZoneNameValid(container.Config.ZoneName) || !dashutil.IsPanelNameValid(container.getAppName()) {
 		return fmt.Errorf("Invalid Configuration AccId/ZoneName/PanelName")
 	}
-	s := makeLocalServer(config)
+	s := makeLocalServer(config, container)
 	s.Client = client
 	err := s.getLocalHtml()
 	if err != nil {
@@ -567,7 +563,7 @@ func StartLocalServer(config *Config, client *LocalClient) error {
 			httpServer.Shutdown(context.Background())
 		}()
 	}
-	log.Printf("Dashborg Local Server for panel[%s] starting at http://%s\n", s.Config.PanelName, s.Config.Addr)
+	log.Printf("Dashborg Local Container starting at http://%s\n", s.Config.Addr)
 	err = httpServer.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {
 		log.Printf("Dashborg Local Server error:%v\n", err)
