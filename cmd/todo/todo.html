@@ -28,5 +28,8 @@
     </d-col>
   </d-table>
   <div style="grow;"/>
+  <d-button handler="/start-stream">Start Stream</d-button>
+  <d-button handler="$.streamcontrol = false;">Stop Stream</d-button>
+  <d-stat label="Counter" bind="$.counter" defaultvalue="0"/>
   <d-dataview class="dark" style="height: 200px; scroll;" bind="$"/>
 </panel>

@@ -52,7 +52,7 @@ type handlerKey struct {
 	Path        string
 }
 
-func MakeLocalClient(config *Config) (*LocalClient, error) {
+func MakeLocalClient(config *Config, container *Container) (*LocalClient, error) {
 	rtn := &LocalClient{
 		Lock:   &sync.Mutex{},
 		Config: config,
@@ -62,7 +62,7 @@ func MakeLocalClient(config *Config) (*LocalClient, error) {
 	rtn.ReqClient = makeReqClient(config)
 	rtn.StreamClient = makeStreamClient(rtn.sendStreamClose)
 	go func() {
-		startLocalErr := StartLocalServer(config, rtn)
+		startLocalErr := StartLocalServer(config, rtn, container)
 		if startLocalErr != nil {
 			log.Printf("Dashborg ERROR starting local server: %v\n", startLocalErr)
 		}

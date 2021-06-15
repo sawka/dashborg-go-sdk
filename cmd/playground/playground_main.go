@@ -30,7 +30,7 @@ func init() {
     This is some message content in a basic message block.
 </d-message>
 
-<d-message title="Message Classes" class="*$.data.messagetype">
+<d-message title="Message Classes" class-message="*$.data.messagetype">
     This content is in a <d-text bind="$.data.messagetype"/> message block.
     Here are some other options (select to try):
     <d-select bindvalue="$.data.messagetype" style="max-width: 200px;">
