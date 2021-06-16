@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"sync"
 	"time"
 
@@ -22,9 +21,8 @@ func init() {
 	notImplErr = fmt.Errorf("Not Implemented in LocalServer mode")
 }
 
-type LocalClient struct {
+type localClient struct {
 	Lock         *sync.Mutex
-	Config       *Config
 	ConnId       string
 	HandlerMap   map[handlerKey]bool
 	LocalServer  *localServer
@@ -52,32 +50,25 @@ type handlerKey struct {
 	Path        string
 }
 
-func MakeLocalClient(config *Config, container *Container) (*LocalClient, error) {
-	rtn := &LocalClient{
-		Lock:   &sync.Mutex{},
-		Config: config,
+func makeLocalClient(config *localServerConfig, container *containerImpl) (*localClient, error) {
+	rtn := &localClient{
+		Lock: &sync.Mutex{},
 	}
 	rtn.HandlerMap = make(map[handlerKey]bool)
 	rtn.LocalReqMap = make(map[string]*localReq)
 	rtn.ReqClient = makeReqClient(config)
 	rtn.StreamClient = makeStreamClient(rtn.sendStreamClose)
-	go func() {
-		startLocalErr := StartLocalServer(config, rtn, container)
-		if startLocalErr != nil {
-			log.Printf("Dashborg ERROR starting local server: %v\n", startLocalErr)
-		}
-	}()
 	return rtn, nil
 }
 
-func makeReqClient(config *Config) *reqClient {
+func makeReqClient(config *localServerConfig) *reqClient {
 	rtn := &reqClient{}
 	rtn.ReqCh = make(chan *dashproto.RequestMessage, 10)
 	rtn.ShutdownCh = config.ShutdownCh
 	return rtn
 }
 
-func (c *LocalClient) Proc(ctx context.Context, in *dashproto.ProcMessage, opts ...grpc.CallOption) (*dashproto.ProcResponse, error) {
+func (c *localClient) Proc(ctx context.Context, in *dashproto.ProcMessage, opts ...grpc.CallOption) (*dashproto.ProcResponse, error) {
 	c.Lock.Lock()
 	defer c.Lock.Unlock()
 
@@ -90,7 +81,7 @@ func (c *LocalClient) Proc(ctx context.Context, in *dashproto.ProcMessage, opts 
 	}, nil
 }
 
-func (c *LocalClient) SendResponse(ctx context.Context, in *dashproto.SendResponseMessage, opts ...grpc.CallOption) (*dashproto.SendResponseResponse, error) {
+func (c *localClient) SendResponse(ctx context.Context, in *dashproto.SendResponseMessage, opts ...grpc.CallOption) (*dashproto.SendResponseResponse, error) {
 	c.Lock.Lock()
 	defer c.Lock.Unlock()
 
@@ -117,12 +108,12 @@ func (c *LocalClient) SendResponse(ctx context.Context, in *dashproto.SendRespon
 	return &dashproto.SendResponseResponse{Success: true}, nil
 }
 
-func (c *LocalClient) ConnectApp(ctx context.Context, in *dashproto.ConnectAppMessage, opts ...grpc.CallOption) (*dashproto.ConnectAppResponse, error) {
+func (c *localClient) ConnectApp(ctx context.Context, in *dashproto.ConnectAppMessage, opts ...grpc.CallOption) (*dashproto.ConnectAppResponse, error) {
 	resp := &dashproto.ConnectAppResponse{Success: true}
 	return resp, nil
 }
 
-func (c *LocalClient) RegisterHandler(ctx context.Context, in *dashproto.RegisterHandlerMessage, opts ...grpc.CallOption) (*dashproto.RegisterHandlerResponse, error) {
+func (c *localClient) RegisterHandler(ctx context.Context, in *dashproto.RegisterHandlerMessage, opts ...grpc.CallOption) (*dashproto.RegisterHandlerResponse, error) {
 	c.Lock.Lock()
 	defer c.Lock.Unlock()
 
@@ -133,15 +124,15 @@ func (c *LocalClient) RegisterHandler(ctx context.Context, in *dashproto.Registe
 	return &dashproto.RegisterHandlerResponse{Success: true}, nil
 }
 
-func (c *LocalClient) RequestStream(ctx context.Context, in *dashproto.RequestStreamMessage, opts ...grpc.CallOption) (dashproto.DashborgService_RequestStreamClient, error) {
+func (c *localClient) RequestStream(ctx context.Context, in *dashproto.RequestStreamMessage, opts ...grpc.CallOption) (dashproto.DashborgService_RequestStreamClient, error) {
 	return c.ReqClient, nil
 }
 
-func (c *LocalClient) CallDataHandler(ctx context.Context, in *dashproto.CallDataHandlerMessage, opts ...grpc.CallOption) (*dashproto.CallDataHandlerResponse, error) {
+func (c *localClient) CallDataHandler(ctx context.Context, in *dashproto.CallDataHandlerMessage, opts ...grpc.CallOption) (*dashproto.CallDataHandlerResponse, error) {
 	return nil, fmt.Errorf("CallDataHandler not supported in LocalClient")
 }
 
-func (c *LocalClient) StartStream(ctx context.Context, in *dashproto.StartStreamMessage, opts ...grpc.CallOption) (*dashproto.StartStreamResponse, error) {
+func (c *localClient) StartStream(ctx context.Context, in *dashproto.StartStreamMessage, opts ...grpc.CallOption) (*dashproto.StartStreamResponse, error) {
 	reqId, err := c.StreamClient.startStream(in.ExistingReqId, in.FeClientId)
 	if err != nil {
 		return &dashproto.StartStreamResponse{Err: err.Error()}, nil
@@ -149,7 +140,7 @@ func (c *LocalClient) StartStream(ctx context.Context, in *dashproto.StartStream
 	return &dashproto.StartStreamResponse{Success: true, ReqId: reqId}, nil
 }
 
-func (c *LocalClient) BackendPush(ctx context.Context, in *dashproto.BackendPushMessage, opts ...grpc.CallOption) (*dashproto.BackendPushResponse, error) {
+func (c *localClient) BackendPush(ctx context.Context, in *dashproto.BackendPushMessage, opts ...grpc.CallOption) (*dashproto.BackendPushResponse, error) {
 	rr := &dashproto.RRAction{
 		Ts:         dashutil.Ts(),
 		ActionType: "backendpush",
@@ -159,7 +150,7 @@ func (c *LocalClient) BackendPush(ctx context.Context, in *dashproto.BackendPush
 	return &dashproto.BackendPushResponse{Success: true}, nil
 }
 
-func (c *LocalClient) ReflectZone(ctx context.Context, in *dashproto.ReflectZoneMessage, opts ...grpc.CallOption) (*dashproto.ReflectZoneResponse, error) {
+func (c *localClient) ReflectZone(ctx context.Context, in *dashproto.ReflectZoneMessage, opts ...grpc.CallOption) (*dashproto.ReflectZoneResponse, error) {
 	return nil, fmt.Errorf("ReflectZone not supported in LocalClient")
 }
 
@@ -201,7 +192,7 @@ func (rc *reqClient) RecvMsg(m interface{}) error {
 
 //////////////////////////
 
-func (c *LocalClient) DispatchLocalRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) ([]*dashproto.RRAction, error) {
+func (c *localClient) DispatchLocalRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) ([]*dashproto.RRAction, error) {
 	select {
 	case c.ReqClient.ReqCh <- reqMsg:
 		break
@@ -226,22 +217,22 @@ func (c *LocalClient) DispatchLocalRequest(ctx context.Context, reqMsg *dashprot
 	return req.Actions, nil
 }
 
-func (c *LocalClient) unlinkReq(reqId string) {
+func (c *localClient) unlinkReq(reqId string) {
 	c.Lock.Lock()
 	defer c.Lock.Unlock()
 	delete(c.LocalReqMap, reqId)
 }
 
-func (c *LocalClient) DrainLocalFeStream(ctx context.Context, feClientId string, timeout time.Duration, pushPanel string) ([]*dashproto.RRAction, []string, error) {
+func (c *localClient) DrainLocalFeStream(ctx context.Context, feClientId string, timeout time.Duration, pushPanel string) ([]*dashproto.RRAction, []string, error) {
 	return c.StreamClient.drainFeStream(ctx, feClientId, timeout, pushPanel)
 }
 
-func (c *LocalClient) StopStream(reqId string, feClientId string) error {
+func (c *localClient) StopStream(reqId string, feClientId string) error {
 	c.StreamClient.endReqStream_client(reqId, feClientId)
 	return nil
 }
 
-func (c *LocalClient) sendStreamClose(reqId string) {
+func (c *localClient) sendStreamClose(reqId string) {
 	req := &dashproto.RequestMessage{
 		Ts:          dashutil.Ts(),
 		ReqId:       reqId,

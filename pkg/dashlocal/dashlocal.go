@@ -20,15 +20,15 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
-const LS_VERSION = "go-0.1.0"
-const CSRF_COOKIE = "dashcsrf"
-const CSRFTOKEN_HEADER = "X-Csrf-Token"
-const FECLIENTID_HEADER = "X-Dashborg-FeClientId"
+const LOCALSERVER_VERSION = "go-0.2.0"
+const _CSRF_COOKIE = "dashcsrf"
+const _CSRFTOKEN_HEADER = "X-Csrf-Token"
+const _FECLIENTID_HEADER = "X-Dashborg-FeClientId"
 
-const HTTP_READ_TIMEOUT = 5 * time.Second
-const HTTP_WRITE_TIMEOUT = 21 * time.Second
-const HTTP_MAX_HEADER_BYTES = 60000
-const HTTP_TIMEOUT_VAL = 21 * time.Second
+const _HTTP_READ_TIMEOUT = 5 * time.Second
+const _HTTP_WRITE_TIMEOUT = 21 * time.Second
+const _HTTP_MAX_HEADER_BYTES = 60000
+const _HTTP_TIMEOUT_VAL = 21 * time.Second
 
 type errorResponse struct {
 	Success bool   `json:"success"`
@@ -40,17 +40,18 @@ type successResponse struct {
 	Data    interface{} `json:"data"`
 }
 
-type Config struct {
+type localServerConfig struct {
 	Addr       string        // defaults to localhost:8082
 	ShutdownCh chan struct{} // channel for shutting down server
 	Env        string
 }
 
 type localServer struct {
-	Config    *Config
-	RootHtml  string
-	Client    *LocalClient
-	Container *Container
+	Config     *localServerConfig
+	RootHtml   string
+	Client     *localClient
+	Container  *containerImpl
+	HttpServer *http.Server
 }
 
 type lsPanelConfig struct {
@@ -77,13 +78,6 @@ func marshalJson(val interface{}) (string, error) {
 	return jsonBuf.String(), nil
 }
 
-func makeLocalServer(config *Config, container *Container) *localServer {
-	return &localServer{
-		Config:    config,
-		Container: container,
-	}
-}
-
 func (s *localServer) getRootHtmlUrl() string {
 	rhRoot := "https://console.dashborg.net/local-server-html"
 	if s.Config.Env != "prod" {
@@ -108,7 +102,7 @@ func (s *localServer) rootHandler(w http.ResponseWriter, r *http.Request) {
 		ClientVersion: s.Container.getClientVersion(),
 		LinkToUrl:     false,
 		UseShadow:     false,
-		PanelOpts:     s.Container.BindOpts,
+		PanelOpts:     nil,
 	}
 	w.Header().Set("Cache-Control", "no-cache")
 	configJson, err := json.MarshalIndent(pconfig, "", "  ")
@@ -142,7 +136,7 @@ func (s *localServer) newReq(r *http.Request, rtype string, path string, data in
 		PanelName:   s.Container.getAppName(),
 		Path:        path,
 	}
-	feClientId := r.Header.Get(FECLIENTID_HEADER)
+	feClientId := r.Header.Get(_FECLIENTID_HEADER)
 	if dashutil.IsUUIDValid(feClientId) {
 		rtn.FeClientId = feClientId
 	}
@@ -202,7 +196,7 @@ func jsonWrapper(handler func(w http.ResponseWriter, r *http.Request) (interface
 
 func setCsrfToken(w http.ResponseWriter, r *http.Request) string {
 	csrfToken := ""
-	cookie, _ := r.Cookie(CSRF_COOKIE)
+	cookie, _ := r.Cookie(_CSRF_COOKIE)
 	if cookie != nil {
 		csrfCookieVal := cookie.Value
 		if dashutil.IsUUIDValid(csrfCookieVal) {
@@ -213,7 +207,7 @@ func setCsrfToken(w http.ResponseWriter, r *http.Request) string {
 		csrfToken = uuid.New().String()
 	}
 	cookie = &http.Cookie{
-		Name:     CSRF_COOKIE,
+		Name:     _CSRF_COOKIE,
 		Value:    csrfToken,
 		Path:     "/",
 		Secure:   false,
@@ -225,7 +219,7 @@ func setCsrfToken(w http.ResponseWriter, r *http.Request) string {
 }
 
 func checkCsrf(r *http.Request) error {
-	cookie, err := r.Cookie(CSRF_COOKIE)
+	cookie, err := r.Cookie(_CSRF_COOKIE)
 	if err == http.ErrNoCookie || cookie == nil {
 		return fmt.Errorf("Bad Request: No CSRF Cookie Found")
 	}
@@ -233,7 +227,7 @@ func checkCsrf(r *http.Request) error {
 	if !dashutil.IsUUIDValid(csrfCookieVal) {
 		return fmt.Errorf("Bad Request: Malformed CSRF Cookie")
 	}
-	csrfHeaderVal := r.Header.Get(CSRFTOKEN_HEADER)
+	csrfHeaderVal := r.Header.Get(_CSRFTOKEN_HEADER)
 	if !dashutil.IsUUIDValid(csrfHeaderVal) {
 		return fmt.Errorf("Bad Request: No CSRF Header Set")
 	}
@@ -307,42 +301,28 @@ func (s *localServer) handleLoadPanel(w http.ResponseWriter, r *http.Request) (i
 	}
 	feClientId := uuid.New().String()
 	rtn := make(map[string]interface{})
-	if s.Container != nil {
-		c := s.Container
-		var rtnRRA []interface{}
-		if c.DynamicHtml {
-			req, err := s.newReq(r, "html", "", nil, params.PanelState)
-			req.FeClientId = feClientId
-			htmlRRA, err := s.Client.DispatchLocalRequest(r.Context(), req)
-			if err != nil {
-				return nil, err
-			}
-			rtnRRA = append(rtnRRA, convertRRArr(htmlRRA, req.ReqId)...)
-		}
-		if c.OnloadHandler != "" {
-			req, err := s.newReq(r, "handler", c.OnloadHandler, nil, params.PanelState)
-			req.FeClientId = feClientId
-			onloadRRA, err := s.Client.DispatchLocalRequest(r.Context(), req)
-			if err != nil {
-				return nil, err
-			}
-			rtnRRA = append(rtnRRA, convertRRArr(onloadRRA, req.ReqId)...)
-		}
-		rtn["rra"] = rtnRRA
-		rtn["feclientid"] = feClientId
-	} else {
-		req, err := s.newReq(r, "handler", "/", nil, params.PanelState)
-		if err != nil {
-			return nil, err
-		}
+	c := s.Container
+	var rtnRRA []interface{}
+	if c.DynamicHtml {
+		req, err := s.newReq(r, "html", "", nil, params.PanelState)
 		req.FeClientId = feClientId
-		rra, err := s.Client.DispatchLocalRequest(r.Context(), req)
+		htmlRRA, err := s.Client.DispatchLocalRequest(r.Context(), req)
 		if err != nil {
 			return nil, err
 		}
-		rtn["rra"] = convertRRArr(rra, req.ReqId)
-		rtn["feclientid"] = feClientId
+		rtnRRA = append(rtnRRA, convertRRArr(htmlRRA, req.ReqId)...)
 	}
+	if c.OnloadHandler != "" {
+		req, err := s.newReq(r, "handler", c.OnloadHandler, nil, params.PanelState)
+		req.FeClientId = feClientId
+		onloadRRA, err := s.Client.DispatchLocalRequest(r.Context(), req)
+		if err != nil {
+			return nil, err
+		}
+		rtnRRA = append(rtnRRA, convertRRArr(onloadRRA, req.ReqId)...)
+	}
+	rtn["rra"] = rtnRRA
+	rtn["feclientid"] = feClientId
 	return rtn, nil
 }
 
@@ -442,7 +422,7 @@ func (s *localServer) handleDrainStreams(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		return nil, err
 	}
-	feClientId := r.Header.Get(FECLIENTID_HEADER)
+	feClientId := r.Header.Get(_FECLIENTID_HEADER)
 	if !dashutil.IsUUIDValid(feClientId) {
 		return nil, fmt.Errorf("No FeClientId")
 	}
@@ -481,7 +461,7 @@ func (s *localServer) handleStopStream(w http.ResponseWriter, r *http.Request) (
 	if err != nil {
 		return nil, err
 	}
-	feClientId := r.Header.Get(FECLIENTID_HEADER)
+	feClientId := r.Header.Get(_FECLIENTID_HEADER)
 	if feClientId == "" {
 		return nil, fmt.Errorf("/api2/stop-stream requires feClientId")
 	}
@@ -530,7 +510,24 @@ func (s *localServer) getLocalHtml() error {
 	return nil
 }
 
-func StartLocalServer(config *Config, client *LocalClient, container *Container) error {
+func (s *localServer) listenAndServe() error {
+	if s.Config.ShutdownCh != nil {
+		go func() {
+			<-s.Config.ShutdownCh
+			s.HttpServer.Shutdown(context.Background())
+		}()
+	}
+	log.Printf("Dashborg Local Container starting at http://%s\n", s.Config.Addr)
+	err := s.HttpServer.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+		log.Printf("Dashborg Local Server error:%v\n", err)
+		return err
+	}
+	log.Printf("Dashborg Local Server Shutdown\n")
+	return nil
+}
+
+func makeLocalServer(config *localServerConfig, client *localClient, container *containerImpl) (*localServer, error) {
 	if client == nil {
 		panic("LocalClient cannot be nil")
 	}
@@ -538,37 +535,27 @@ func StartLocalServer(config *Config, client *LocalClient, container *Container)
 		panic("Config cannot be nil")
 	}
 	if config.Addr == "" {
-		return fmt.Errorf("Addr not set in Config")
+		return nil, fmt.Errorf("Addr not set in Config")
 	}
 	if !dashutil.IsUUIDValid(container.Config.AccId) || !dashutil.IsZoneNameValid(container.Config.ZoneName) || !dashutil.IsPanelNameValid(container.getAppName()) {
-		return fmt.Errorf("Invalid Configuration AccId/ZoneName/PanelName")
+		return nil, fmt.Errorf("Invalid Configuration AccId/ZoneName/PanelName %s/%s/%s", container.Config.AccId, container.Config.ZoneName, container.getAppName())
 	}
-	s := makeLocalServer(config, container)
+	s := &localServer{
+		Config:    config,
+		Container: container,
+	}
 	s.Client = client
 	err := s.getLocalHtml()
 	if err != nil {
-		return fmt.Errorf("Cannot contact Dashborg Service to download HTML chrome for Local Server: %w", err)
+		return nil, fmt.Errorf("Cannot contact Dashborg Service to download HTML chrome for Local Server: %w", err)
 	}
 	smux := s.registerLocalHandlers()
-	httpServer := &http.Server{
+	s.HttpServer = &http.Server{
 		Addr:           s.Config.Addr,
-		ReadTimeout:    HTTP_READ_TIMEOUT,
-		WriteTimeout:   HTTP_WRITE_TIMEOUT,
-		MaxHeaderBytes: HTTP_MAX_HEADER_BYTES,
-		Handler:        http.TimeoutHandler(smux, HTTP_TIMEOUT_VAL, "Timeout"),
+		ReadTimeout:    _HTTP_READ_TIMEOUT,
+		WriteTimeout:   _HTTP_WRITE_TIMEOUT,
+		MaxHeaderBytes: _HTTP_MAX_HEADER_BYTES,
+		Handler:        http.TimeoutHandler(smux, _HTTP_TIMEOUT_VAL, "Timeout"),
 	}
-	if s.Config.ShutdownCh != nil {
-		go func() {
-			<-config.ShutdownCh
-			httpServer.Shutdown(context.Background())
-		}()
-	}
-	log.Printf("Dashborg Local Container starting at http://%s\n", s.Config.Addr)
-	err = httpServer.ListenAndServe()
-	if err != nil && err != http.ErrServerClosed {
-		log.Printf("Dashborg Local Server error:%v\n", err)
-		return err
-	}
-	log.Printf("Dashborg Local Server Shutdown\n")
-	return nil
+	return s, nil
 }

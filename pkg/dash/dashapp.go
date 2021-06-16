@@ -9,20 +9,17 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
-const APP_GUI = "gui"
-const APP_DATASERVICE = "dataservice"
-
-type ValueConfig struct {
-	ValueType   string `json:"valuetype"` // static or dynamic
-	StaticValue string `json:"staticvalue"`
-}
+const (
+	APP_GUI         = "gui"
+	APP_DATASERVICE = "dataservice"
+)
 
 type AppConfig struct {
 	AppName string
 	Options map[string]interface{}
 }
 
-type AppBuilder interface {
+type App interface {
 	SetHtml(html string)
 	SetHtmlFromFile(fileName string)
 	SetOnLoadHandler(path string)
@@ -36,33 +33,25 @@ type AppBuilder interface {
 	DataHandlerEx(path string, handlerFn interface{}) error
 
 	AppConfig() AppConfig
-}
 
-type AppRuntime interface {
 	RunHandler(req *PanelRequest) (interface{}, error)
 	GetAppName() string
 	GetClientVersion() string
 }
 
-type App interface {
-	AppBuilder
-	AppRuntime
-}
-
 type appImpl struct {
 	Lock     *sync.Mutex
 	AppName  string
-	Html     ValueType
+	Html     valueType
 	InitFn   func(req *PanelRequest) error
 	Handlers map[handlerKey]handlerType
 	Options  map[string]AppOption
 	Auth     []AllowedAuth
 }
 
-type ValueType interface {
+type valueType interface {
 	IsDynamic() bool
 	GetValue() (string, error)
-	GetValueConfig() (ValueConfig, error)
 }
 
 type funcValueType struct {
@@ -70,7 +59,7 @@ type funcValueType struct {
 	ValueFn func() (string, error)
 }
 
-func FileValue(fileName string, isDynamic bool) ValueType {
+func fileValue(fileName string, isDynamic bool) valueType {
 	return funcValueType{
 		Dyn: isDynamic,
 		ValueFn: func() (string, error) {
@@ -87,7 +76,7 @@ func FileValue(fileName string, isDynamic bool) ValueType {
 	}
 }
 
-func InterfaceValue(val interface{}) ValueType {
+func interfaceValue(val interface{}) valueType {
 	return funcValueType{
 		Dyn: false,
 		ValueFn: func() (string, error) {
@@ -96,7 +85,7 @@ func InterfaceValue(val interface{}) ValueType {
 	}
 }
 
-func FuncValue(fn func() (interface{}, error), isDynamic bool) ValueType {
+func funcValue(fn func() (interface{}, error), isDynamic bool) valueType {
 	return funcValueType{
 		Dyn: isDynamic,
 		ValueFn: func() (string, error) {
@@ -107,22 +96,6 @@ func FuncValue(fn func() (interface{}, error), isDynamic bool) ValueType {
 			return dashutil.MarshalJson(val)
 		},
 	}
-}
-
-func (fv funcValueType) GetValueConfig() (ValueConfig, error) {
-	rtn := ValueConfig{}
-	if fv.Dyn {
-		rtn.ValueType = "dynamic"
-	} else {
-		var err error
-		rtn.ValueType = "static"
-		sval, err := fv.GetValue()
-		if err != nil {
-			return rtn, err
-		}
-		rtn.StaticValue = sval
-	}
-	return rtn, nil
 }
 
 func (fv funcValueType) IsDynamic() bool {
@@ -193,7 +166,7 @@ func (app *appImpl) SetHtml(html string) {
 	app.Lock.Lock()
 	defer app.Lock.Unlock()
 
-	app.Html = InterfaceValue(html)
+	app.Html = interfaceValue(html)
 	htmlKey := handlerKey{HandlerType: "html", Path: ""}
 	app.Handlers[htmlKey] = handlerType{HandlerFn: app.htmlHandler}
 	app.setOption_nolock(HtmlOption{Type: "dynamic"})
@@ -203,7 +176,7 @@ func (app *appImpl) SetHtmlFromFile(fileName string) {
 	app.Lock.Lock()
 	defer app.Lock.Unlock()
 
-	app.Html = FileValue(fileName, true)
+	app.Html = fileValue(fileName, true)
 	htmlKey := handlerKey{HandlerType: "html", Path: ""}
 	app.Handlers[htmlKey] = handlerType{HandlerFn: app.htmlHandler}
 	app.setOption_nolock(HtmlOption{Type: "dynamic"})

@@ -12,7 +12,7 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
-const MAX_AUTH_EXP = 24 * time.Hour
+const _MAX_AUTH_EXP = 24 * time.Hour
 
 type authAtom struct {
 	Scope string      `json:"scope"`        // scope of this atom (panel:[zone]:[panel], zone:[zone], or acc)
@@ -444,7 +444,7 @@ func (req *PanelRequest) setAuthData(aa authAtom) {
 		aa.Scope = fmt.Sprintf("panel:%s:%s", globalClient.Config.ZoneName, req.PanelName)
 	}
 	if aa.Ts == 0 {
-		aa.Ts = dashutil.Ts() + int64(MAX_AUTH_EXP/time.Millisecond)
+		aa.Ts = dashutil.Ts() + int64(_MAX_AUTH_EXP/time.Millisecond)
 	}
 	if aa.Type == "" {
 		panic(fmt.Sprintf("Dashborg Invalid AuthAtom, no Type specified"))

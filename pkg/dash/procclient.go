@@ -26,14 +26,17 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-const EC_EOF = "EOF"
-const EC_UNKNOWN = "UNKNOWN"
-const EC_BADCONNID = "BADCONNID"
-const EC_ACCACCESS = "ACCACCESS"
-const EC_NOHANDLER = "NOHANDLER"
-const EC_UNAVAILABLE = "UNAVAILABLE"
+const (
+	EC_EOF         = "EOF"
+	EC_UNKNOWN     = "UNKNOWN"
+	EC_BADCONNID   = "BADCONNID"
+	EC_ACCACCESS   = "ACCACCESS"
+	EC_NOHANDLER   = "NOHANDLER"
+	EC_UNAVAILABLE = "UNAVAILABLE"
+)
 
 const CLIENT_VERSION = "go-0.5.2"
+
 const returnChSize = 20
 const smallDrainSleep = 5 * time.Millisecond
 

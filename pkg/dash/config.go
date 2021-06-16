@@ -87,8 +87,11 @@ func (c *Config) setDefaults() {
 }
 
 func (c *Config) SetupForProcClient() {
-	c.setDefaults()
-	c.loadKeys()
+	if !c.setupDone {
+		c.setDefaults()
+		c.loadKeys()
+		c.setupDone = true
+	}
 }
 
 func (c *Config) loadKeys() {

@@ -1,8 +1,10 @@
 package dash
 
-const OPTION_ONLOADHANDLER = "onloadhandler"
-const OPTION_HTML = "html"
-const OPTION_AUTH = "auth"
+const (
+	OPTION_ONLOADHANDLER = "onloadhandler"
+	OPTION_HTML          = "html"
+	OPTION_AUTH          = "auth"
+)
 
 type AppOption interface {
 	OptionName() string

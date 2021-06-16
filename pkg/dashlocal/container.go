@@ -3,9 +3,11 @@ package dashlocal
 import (
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/mitchellh/mapstructure"
 	"github.com/sawka/dashborg-go-sdk/pkg/dash"
+	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
@@ -20,39 +22,40 @@ type ContainerConfig struct {
 	Verbose    bool
 }
 
-type Container struct {
+type Container interface {
+	ConnectApp(app dash.App) error
+}
+
+type containerImpl struct {
+	Lock     *sync.Mutex
 	Config   ContainerConfig
 	App      dash.App
-	BindOpts BindOptions
 	RootHtml string
+
+	LocalClient dashproto.DashborgServiceClient
+	LocalServer *localServer
 
 	DynamicHtml   bool
 	OnloadHandler string
 }
 
-type BindOptions struct {
-}
-
-func (c *Container) getAppName() string {
+func (c *containerImpl) getAppName() string {
 	if c.App == nil {
 		return "noapp"
 	}
 	return c.App.GetAppName()
 }
 
-func (c *Container) getClientVersion() string {
+func (c *containerImpl) getClientVersion() string {
 	if c.App == nil {
 		return "noclient-0.0.0"
 	}
 	return c.App.GetClientVersion()
 }
 
-func (c *ContainerConfig) SetDefaults() {
+func (c *ContainerConfig) setDefaults() {
 	if c.Addr == "" {
 		c.Addr = "localhost:8082"
-	}
-	if c.AccId == "" {
-		c.AccId = "local-container"
 	}
 	if c.ZoneName == "" {
 		c.ZoneName = "default"
@@ -62,20 +65,12 @@ func (c *ContainerConfig) SetDefaults() {
 	}
 }
 
-func MakeContainer(config *ContainerConfig) (*Container, error) {
-	if config == nil {
-		config = &ContainerConfig{}
-	}
-	config.SetDefaults()
-	return &Container{Config: *config}, nil
-}
-
 func optJson(opt dash.AppOption) string {
 	rtn, _ := dashutil.MarshalJson(opt)
 	return rtn
 }
 
-func (c *Container) processHtmlOption(optData interface{}) error {
+func (c *containerImpl) processHtmlOption(optData interface{}) error {
 	var htmlOpt dash.HtmlOption
 	err := mapstructure.Decode(optData, &htmlOpt)
 	if err != nil {
@@ -89,7 +84,7 @@ func (c *Container) processHtmlOption(optData interface{}) error {
 	}
 }
 
-func (c *Container) processOnloadHandlerOption(optData interface{}) error {
+func (c *containerImpl) processOnloadHandlerOption(optData interface{}) error {
 	var loadOpt dash.OnloadHandlerOption
 	err := mapstructure.Decode(optData, &loadOpt)
 	if err != nil {
@@ -99,15 +94,11 @@ func (c *Container) processOnloadHandlerOption(optData interface{}) error {
 	return nil
 }
 
-func (c *Container) ConnectApp(app dash.App, bindOpts *BindOptions) error {
+func (c *containerImpl) ConnectApp(app dash.App) error {
 	if c.App != nil {
 		return fmt.Errorf("Cannot connect a second app to local container")
 	}
-	if bindOpts == nil {
-		bindOpts = &BindOptions{}
-	}
 	c.App = app
-	c.BindOpts = *bindOpts
 	appConfig := app.AppConfig()
 	for optName, opt := range appConfig.Options {
 		var optErr error
@@ -131,25 +122,42 @@ func (c *Container) ConnectApp(app dash.App, bindOpts *BindOptions) error {
 	return nil
 }
 
-func (c *Container) StartContainer() error {
-	config := &dash.Config{
+func StartContainer(config *ContainerConfig) (Container, error) {
+	if config == nil {
+		config = &ContainerConfig{}
+	}
+	config.setDefaults()
+	pcConfig := &dash.Config{
 		ZoneName:    "default",
 		LocalServer: true,
-		Env:         c.Config.Env,
-		Verbose:     c.Config.Verbose,
+		Env:         config.Env,
+		Verbose:     config.Verbose,
 	}
-	config.SetupForProcClient()
-	c.Config.AccId = config.AccId
-	c.Config.ZoneName = config.ZoneName
-	lsConfig := &Config{
-		Env:  c.Config.Env,
-		Addr: c.Config.Addr,
+	pcConfig.SetupForProcClient()
+	config.AccId = pcConfig.AccId
+	config.ZoneName = pcConfig.ZoneName
+	container := &containerImpl{Lock: &sync.Mutex{}, Config: *config}
+	lsConfig := &localServerConfig{
+		Env:  config.Env,
+		Addr: config.Addr,
 	}
-	dbService, err := MakeLocalClient(lsConfig, c)
+	dbService, err := makeLocalClient(lsConfig, container)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	config.LocalClient = dbService
-	dash.StartProcClient(config)
-	return nil
+	container.LocalClient = dbService
+	pcConfig.LocalClient = dbService
+	localServer, err := makeLocalServer(lsConfig, dbService, container)
+	if err != nil {
+		return nil, err
+	}
+	container.LocalServer = localServer
+	go func() {
+		serveErr := container.LocalServer.listenAndServe()
+		if serveErr != nil {
+			log.Printf("Dashborg ERROR starting local server: %v\n", serveErr)
+		}
+	}()
+	dash.StartProcClient(pcConfig)
+	return container, nil
 }

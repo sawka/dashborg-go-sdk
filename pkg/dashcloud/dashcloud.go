@@ -12,23 +12,20 @@ type Config struct {
 	ZoneName   string
 }
 
-type BindOptions struct {
-}
-
-type CloudContainer interface {
-	ConnectApp(app dash.App, bindOpts *BindOptions) error
+type Container interface {
+	ConnectApp(app dash.App) error
 }
 
 type containerImpl struct {
 	Config Config
 }
 
-func (c *containerImpl) ConnectApp(app dash.App, bindOpts *BindOptions) error {
+func (c *containerImpl) ConnectApp(app dash.App) error {
 	err := dash.ConnectApp(app)
 	return err
 }
 
-func StartClient(config *dash.Config) (CloudContainer, error) {
+func StartClient(config *dash.Config) (Container, error) {
 	dash.StartProcClient(config)
 	return &containerImpl{}, nil
 }

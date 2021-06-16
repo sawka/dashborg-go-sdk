@@ -19,7 +19,7 @@ import (
 )
 
 // must be divisible by 3 (for base64 encoding)
-const BLOB_READ_SIZE = 3 * 340 * 1024
+const _BLOB_READ_SIZE = 3 * 340 * 1024
 
 type Config struct {
 	// DASHBORG_ACCID, set to force an AccountId (must match certificate).  If not set, AccountId is set from certificate file.
@@ -63,6 +63,8 @@ type Config struct {
 	Env             string // DASHBORG_ENV
 	DashborgSrvHost string // DASHBORG_PROCHOST
 	DashborgSrvPort int    // DASHBORG_PROCPORT
+
+	setupDone bool // internal
 }
 
 type PanelOpts struct {
@@ -100,33 +102,33 @@ type PanelRequest struct {
 	IsBackendCall bool // true if this request originated from a backend data call
 }
 
-type ZoneReflection struct {
-	AccId    string                     `json:"accid"`
-	ZoneName string                     `json:"zonename"`
-	Procs    map[string]ProcReflection  `json:"procs"`
-	Panels   map[string]PanelReflection `json:"panels"`
-	Apps     map[string]AppReflection   `json:"apps"`
+type ReflectZoneType struct {
+	AccId    string                      `json:"accid"`
+	ZoneName string                      `json:"zonename"`
+	Procs    map[string]ReflectProcType  `json:"procs"`
+	Panels   map[string]ReflectPanelType `json:"panels"`
+	Apps     map[string]ReflectAppType   `json:"apps"`
 }
 
-type PanelReflection struct {
-	PanelName     string                       `json:"panelname"`
-	PanelHandlers map[string]HandlerReflection `json:"panelhandlers"`
-	DataHandlers  map[string]HandlerReflection `json:"datahandlers"`
+type ReflectPanelType struct {
+	PanelName     string                        `json:"panelname"`
+	PanelHandlers map[string]ReflectHandlerType `json:"panelhandlers"`
+	DataHandlers  map[string]ReflectHandlerType `json:"datahandlers"`
 }
 
-type AppReflection struct {
+type ReflectAppType struct {
 	AppName    string   `json:"appname"`
 	ProcRunIds []string `json:"procrunids"`
 }
 
-type ProcReflection struct {
+type ReflectProcType struct {
 	StartTs   int64             `json:"startts"`
 	ProcName  string            `json:"procname"`
 	ProcTags  map[string]string `json:"proctags"`
 	ProcRunId string            `json:"procrunid"`
 }
 
-type HandlerReflection struct {
+type ReflectHandlerType struct {
 	ProcRunIds []string `json:"procrunids"`
 }
 
@@ -256,7 +258,7 @@ func (req *PanelRequest) SetBlobData(path string, mimeType string, reader io.Rea
 	}
 	first := true
 	for {
-		buffer := make([]byte, BLOB_READ_SIZE)
+		buffer := make([]byte, _BLOB_READ_SIZE)
 		n, err := io.ReadFull(reader, buffer)
 		if err == io.EOF {
 			break
@@ -491,7 +493,7 @@ func BackendPush(panelName string, path string) error {
 	return globalClient.backendPush(m)
 }
 
-func ReflectZone() (*ZoneReflection, error) {
+func ReflectZone() (*ReflectZoneType, error) {
 	m := &dashproto.ReflectZoneMessage{Ts: dashutil.Ts()}
 	resp, err := globalClient.DBService.ReflectZone(globalClient.ctxWithMd(), m)
 	if err != nil {
@@ -503,7 +505,7 @@ func ReflectZone() (*ZoneReflection, error) {
 	if !resp.Success {
 		return nil, errors.New("Error calling ReflectZone()")
 	}
-	var rtn ZoneReflection
+	var rtn ReflectZoneType
 	err = json.Unmarshal([]byte(resp.JsonData), &rtn)
 	if err != nil {
 		return nil, err
