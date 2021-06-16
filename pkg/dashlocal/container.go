@@ -122,7 +122,7 @@ func (c *containerImpl) ConnectApp(app dash.App) error {
 	return nil
 }
 
-func StartContainer(config *ContainerConfig) (Container, error) {
+func MakeContainer(config *ContainerConfig) (Container, error) {
 	if config == nil {
 		config = &ContainerConfig{}
 	}

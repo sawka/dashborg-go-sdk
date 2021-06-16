@@ -14,6 +14,9 @@ type Config struct {
 
 type Container interface {
 	ConnectApp(app dash.App) error
+	ReflectZone() (*dash.ReflectZoneType, error)
+	BackendPush(appName string, path string, data interface{}) error
+	CallDataHandler(appName string, path string, data interface{}) (interface{}, error)
 }
 
 type containerImpl struct {
@@ -25,7 +28,19 @@ func (c *containerImpl) ConnectApp(app dash.App) error {
 	return err
 }
 
-func StartClient(config *dash.Config) (Container, error) {
+func (c *containerImpl) ReflectZone() (*dash.ReflectZoneType, error) {
+	return dash.ReflectZone()
+}
+
+func (c *containerImpl) BackendPush(appName string, path string, data interface{}) error {
+	return dash.BackendPush(appName, path)
+}
+
+func (c *containerImpl) CallDataHandler(appName string, path string, data interface{}) (interface{}, error) {
+	return dash.CallDataHandler(appName, path, data)
+}
+
+func MakeClient(config *dash.Config) (Container, error) {
 	dash.StartProcClient(config)
 	return &containerImpl{}, nil
 }

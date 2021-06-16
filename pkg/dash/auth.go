@@ -14,6 +14,11 @@ import (
 
 const _MAX_AUTH_EXP = 24 * time.Hour
 
+const (
+	AUTH_SCOPE_PANEL = "panel"
+	AUTH_SCOPE_ZONE  = "zone"
+)
+
 type authAtom struct {
 	Scope string      `json:"scope"`        // scope of this atom (panel:[zone]:[panel], zone:[zone], or acc)
 	Type  string      `json:"type"`         // auth type (password, noauth, dashborg, deauth, or user-defined)
@@ -492,14 +497,14 @@ func (req *PanelRequest) IsAuthenticated() bool {
 // req.Info.  They will not stop the execution of the function since
 // other auth methods might succeed.
 func (req *PanelRequest) CheckAuth(allowedAuths ...AllowedAuth) bool {
-	req.AuthImpl = true
+	req.authImpl = true
 	if req.IsAuthenticated() {
 		return true
 	}
 	for _, aa := range allowedAuths {
 		ok, err := aa.checkAuth(req)
 		if err != nil {
-			req.Info = append(req.Info, err.Error())
+			req.info = append(req.info, err.Error())
 		}
 		if ok {
 			return true

@@ -234,10 +234,8 @@ func (pc *procClient) connectGrpc() error {
 
 // returns numStreamClients, err
 func (pc *procClient) sendRequestResponse(req *PanelRequest, done bool) (int, error) {
-	if req.IsStream && pc.stream_hasZeroClients(req.ReqId) {
-		req.Lock.Lock()
-		req.RRActions = nil
-		req.Lock.Unlock()
+	if req.IsStream() && pc.stream_hasZeroClients(req.ReqId) {
+		req.clearActions()
 		return 0, nil
 	}
 
@@ -246,17 +244,14 @@ func (pc *procClient) sendRequestResponse(req *PanelRequest, done bool) (int, er
 		ReqId:        req.ReqId,
 		RequestType:  req.RequestType,
 		PanelName:    req.PanelName,
-		FeClientId:   req.FeClientId,
+		FeClientId:   req.feClientId,
 		ResponseDone: done,
 	}
-	if req.Err != nil {
-		m.Err = req.Err.Error()
+	if req.err != nil {
+		m.Err = req.err.Error()
 	}
 
-	req.Lock.Lock()
-	m.Actions = req.RRActions
-	req.RRActions = nil
-	req.Lock.Unlock()
+	m.Actions = req.clearActions()
 
 	if pc.ConnId.Load().(string) == "" {
 		return 0, fmt.Errorf("No Active ConnId")
@@ -332,14 +327,14 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 
 	preq := &PanelRequest{
 		StartTime:     time.Now(),
-		Ctx:           ctx,
-		Lock:          &sync.Mutex{},
+		ctx:           ctx,
+		lock:          &sync.Mutex{},
 		PanelName:     reqMsg.PanelName,
 		ReqId:         reqMsg.ReqId,
 		RequestType:   reqMsg.RequestType,
-		FeClientId:    reqMsg.FeClientId,
+		feClientId:    reqMsg.FeClientId,
 		Path:          reqMsg.Path,
-		IsBackendCall: reqMsg.IsBackendCall,
+		isBackendCall: reqMsg.IsBackendCall,
 	}
 	hkey := handlerKey{
 		PanelName: reqMsg.PanelName,
@@ -358,7 +353,7 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 		pc.stream_serverStop(preq.ReqId)
 		return // no response for streamclose
 	default:
-		preq.Err = fmt.Errorf("Invalid RequestMessage.RequestType [%s]", reqMsg.RequestType)
+		preq.err = fmt.Errorf("Invalid RequestMessage.RequestType [%s]", reqMsg.RequestType)
 		preq.Done()
 		return
 	}
@@ -369,7 +364,7 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	pc.CVar.L.Unlock()
 
 	if !ok && app == nil {
-		preq.Err = fmt.Errorf("No Handler found for path=%s", reqMsg.Path)
+		preq.err = fmt.Errorf("No Handler found for path=%s", reqMsg.Path)
 		preq.Done()
 		return
 	}
@@ -378,7 +373,7 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	if reqMsg.JsonData != "" {
 		err := json.Unmarshal([]byte(reqMsg.JsonData), &data)
 		if err != nil {
-			preq.Err = fmt.Errorf("Cannot unmarshal JsonData: %v", err)
+			preq.err = fmt.Errorf("Cannot unmarshal JsonData: %v", err)
 			preq.Done()
 			return
 		}
@@ -390,7 +385,7 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	if reqMsg.PanelStateData != "" {
 		err := json.Unmarshal([]byte(reqMsg.PanelStateData), &pstate)
 		if err != nil {
-			preq.Err = fmt.Errorf("Cannot unmarshal PanelStateData: %v", err)
+			preq.err = fmt.Errorf("Cannot unmarshal PanelStateData: %v", err)
 			preq.Done()
 			return
 		}
@@ -402,19 +397,19 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	if reqMsg.AuthData != "" {
 		err := json.Unmarshal([]byte(reqMsg.AuthData), &authData)
 		if err != nil {
-			preq.Err = fmt.Errorf("Cannot unmarshal AuthData: %v", err)
+			preq.err = fmt.Errorf("Cannot unmarshal AuthData: %v", err)
 			preq.Done()
 			return
 		}
 	}
 	preq.AuthData = authData
 
-	isAllowedBackendCall := preq.IsBackendCall && preq.RequestType == "data" && pc.Config.AllowBackendCalls
+	isAllowedBackendCall := preq.IsBackendCall() && preq.RequestType == "data" && pc.Config.AllowBackendCalls
 
 	// check-auth
 	if !isAllowedBackendCall && !preq.isRootReq() && preq.RequestType != "auth" {
 		if !preq.IsAuthenticated() {
-			preq.Err = fmt.Errorf("Request is not authenticated")
+			preq.err = fmt.Errorf("Request is not authenticated")
 			preq.Done()
 			return
 		}
@@ -423,21 +418,21 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	defer func() {
 		if panicErr := recover(); panicErr != nil {
 			log.Printf("Dashborg PANIC in Handler %v | %v\n", hkey, panicErr)
-			preq.Err = fmt.Errorf("PANIC in handler %v", panicErr)
+			preq.err = fmt.Errorf("PANIC in handler %v", panicErr)
 			debug.PrintStack()
 		}
 		preq.Done()
 	}()
 	var dataResult interface{}
 	if app != nil {
-		dataResult, preq.Err = app.RunHandler(preq)
+		dataResult, preq.err = app.RunHandler(preq)
 	} else {
-		dataResult, preq.Err = hval.HandlerFn(preq)
+		dataResult, preq.err = hval.HandlerFn(preq)
 	}
 	if hkey.HandlerType == "data" {
 		jsonData, err := dashutil.MarshalJson(dataResult)
 		if err != nil {
-			preq.Err = err
+			preq.err = err
 			return
 		}
 		rrAction := &dashproto.RRAction{
