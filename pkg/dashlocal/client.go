@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/sawka/dashborg-go-sdk/pkg/dashapp"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 	"google.golang.org/grpc"
@@ -29,8 +28,6 @@ type localClient struct {
 	ReqClient    *reqClient
 	LocalReqMap  map[string]*localReq
 	StreamClient *streamClient
-
-	LocalApp *dashapp.App
 }
 
 type localReq struct {

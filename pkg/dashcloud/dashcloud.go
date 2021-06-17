@@ -13,7 +13,7 @@ type Config struct {
 }
 
 type Container interface {
-	ConnectApp(app dash.App) error
+	ConnectApp(app dash.AppRuntime) error
 	ReflectZone() (*dash.ReflectZoneType, error)
 	BackendPush(appName string, path string, data interface{}) error
 	CallDataHandler(appName string, path string, data interface{}) (interface{}, error)
@@ -23,7 +23,7 @@ type containerImpl struct {
 	Config Config
 }
 
-func (c *containerImpl) ConnectApp(app dash.App) error {
+func (c *containerImpl) ConnectApp(app dash.AppRuntime) error {
 	err := dash.ConnectApp(app)
 	return err
 }

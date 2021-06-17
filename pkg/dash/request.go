@@ -2,6 +2,7 @@ package dash
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/mitchellh/mapstructure"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
@@ -30,7 +32,7 @@ type PanelRequest struct {
 	DataJson       string      // Raw JSON for Data (used for manual unmarshalling into custom struct)
 	PanelState     interface{} // json-unmarshaled panel state for this request
 	PanelStateJson string      // Raw JSON for PanelState (used for manual unmarshalling into custom struct)
-	AuthData       []*authAtom // authentication tokens associated with this request
+	AuthData       []*AuthAtom // authentication tokens associated with this request
 
 	info          []string              // debugging information
 	err           error                 // set if an error occured (when set, RRActions are not sent)
@@ -43,20 +45,12 @@ type PanelRequest struct {
 	isBackendCall bool                  // true if this request originated from a backend data call
 }
 
+type PanelRequestEx struct {
+	Req *PanelRequest
+}
+
 func (req *PanelRequest) Context() context.Context {
 	return req.ctx
-}
-
-func (req *PanelRequest) IsStream() bool {
-	return req.RequestType == "stream"
-}
-
-func (req *PanelRequest) IsDone() bool {
-	return req.isDone
-}
-
-func (req *PanelRequest) IsBackendCall() bool {
-	return req.isBackendCall
 }
 
 func (req *PanelRequest) appendRR(rrAction *dashproto.RRAction) {
@@ -89,10 +83,10 @@ func (req *PanelRequest) StartStream(streamOpts StreamOpts, streamFn func(ctx co
 	if !dashutil.IsUUIDValid(req.feClientId) {
 		return fmt.Errorf("No FeClientId, client does not support streaming")
 	}
-	if req.IsDone() {
+	if req.isDone {
 		return fmt.Errorf("Cannot call StartStream(), PanelRequest is already done")
 	}
-	if req.IsStream() {
+	if req.isStream() {
 		return fmt.Errorf("Cannot call StartStream(), PanelRequest is already streaming")
 	}
 	streamReqId, ctx, err := globalClient.startStream(req.PanelName, req.feClientId, streamOpts)
@@ -140,7 +134,7 @@ func (req *PanelRequest) StartStream(streamOpts StreamOpts, streamFn func(ctx co
 // SetBlobData sends blob data to the server.
 // Note that SetBlobData will flush any pending actions to the server
 func (req *PanelRequest) SetBlobData(path string, mimeType string, reader io.Reader) error {
-	if req.IsDone() {
+	if req.isDone {
 		return fmt.Errorf("Cannot call SetBlobData(), path=%s, PanelRequest is already done", path)
 	}
 	if !dashutil.IsMimeTypeValid(mimeType) {
@@ -194,7 +188,7 @@ func (req *PanelRequest) SetBlobDataFromFile(path string, mimeType string, fileN
 
 // SetData is used to return data to the client.  Will replace the contents of path with data.
 func (req *PanelRequest) SetData(path string, data interface{}) error {
-	if req.IsDone() {
+	if req.isDone {
 		return fmt.Errorf("Cannot call SetData(), path=%s, PanelRequest is already done", path)
 	}
 	jsonData, err := dashutil.MarshalJson(data)
@@ -212,7 +206,7 @@ func (req *PanelRequest) SetData(path string, data interface{}) error {
 }
 
 // SetHtml returns html to be rendered by the client.  Only valid for root handler requests (path = "/")
-func (req *PanelRequest) SetHtml(html string) error {
+func (req *PanelRequest) setHtml(html string) error {
 	ts := dashutil.Ts()
 	htmlAction := &dashproto.RRAction{
 		Ts:         ts,
@@ -224,7 +218,7 @@ func (req *PanelRequest) SetHtml(html string) error {
 }
 
 // Convience wrapper over SetHtml that returns the contents of a file.
-func (req *PanelRequest) SetHtmlFromFile(fileName string) error {
+func (req *PanelRequest) setHtmlFromFile(fileName string) error {
 	fd, err := os.Open(fileName)
 	if err != nil {
 		return err
@@ -234,7 +228,7 @@ func (req *PanelRequest) SetHtmlFromFile(fileName string) error {
 	if err != nil {
 		return err
 	}
-	return req.SetHtml(string(htmlBytes))
+	return PanelRequestEx{req}.SetHtml(string(htmlBytes))
 }
 
 func (req *PanelRequest) isRootReq() bool {
@@ -244,7 +238,7 @@ func (req *PanelRequest) isRootReq() bool {
 // Call from a handler to force the client to invalidate and re-pull data that matches path.
 // Path is a regular expression.
 func (req *PanelRequest) InvalidateData(path string) error {
-	if req.IsDone() {
+	if req.isDone {
 		return fmt.Errorf("Cannot call InvalidateData(), path=%s, PanelRequest is already done", path)
 	}
 	rrAction := &dashproto.RRAction{
@@ -257,7 +251,7 @@ func (req *PanelRequest) InvalidateData(path string) error {
 }
 
 func (req *PanelRequest) sendEvent(selector string, eventType string, data interface{}) error {
-	if req.IsDone() {
+	if req.isDone {
 		return fmt.Errorf("Cannot call SendEvent(), selector=%s, event=%s, PanelRequest is already done", selector, eventType)
 	}
 	jsonData, err := dashutil.MarshalJson(data)
@@ -276,14 +270,14 @@ func (req *PanelRequest) sendEvent(selector string, eventType string, data inter
 }
 
 func (req *PanelRequest) Flush() error {
-	if req.IsDone() {
+	if req.isDone {
 		return fmt.Errorf("Cannot Flush(), PanelRequest is already done")
 	}
 	numStreamClients, err := globalClient.sendRequestResponse(req, false)
-	if req.IsStream() && err != nil {
+	if req.isStream() && err != nil {
 		logV("Dashborg Flush() stream error %v\n", err)
 		globalClient.stream_serverStop(req.ReqId)
-	} else if req.IsStream() && numStreamClients == 0 {
+	} else if req.isStream() && numStreamClients == 0 {
 		globalClient.stream_handleZeroClients(req.ReqId)
 	}
 	return err
@@ -293,7 +287,7 @@ func (req *PanelRequest) Flush() error {
 // a handler/data-handler is run.  Only needs to be called explicitly if you'd like to return
 // your result earlier.
 func (req *PanelRequest) Done() error {
-	if req.IsDone() {
+	if req.isDone {
 		return nil
 	}
 	req.isDone = true
@@ -304,8 +298,114 @@ func (req *PanelRequest) Done() error {
 	if err != nil {
 		logV("Dashborg ERROR sending handler response: %v\n", err)
 	}
-	if req.IsStream() {
+	if req.isStream() {
 		globalClient.stream_clientStop(req.ReqId)
 	}
 	return err
+}
+
+func (req *PanelRequest) getAuthAtom(aType string) *AuthAtom {
+	for _, aa := range req.AuthData {
+		if aa.Type == aType {
+			return aa
+		}
+	}
+	return nil
+}
+
+func (req *PanelRequest) setAuthData(aa AuthAtom) {
+	if aa.Scope == "" {
+		aa.Scope = fmt.Sprintf("panel:%s:%s", globalClient.Config.ZoneName, req.PanelName)
+	}
+	if aa.Ts == 0 {
+		aa.Ts = dashutil.Ts() + int64(_MAX_AUTH_EXP/time.Millisecond)
+	}
+	if aa.Type == "" {
+		panic(fmt.Sprintf("Dashborg Invalid AuthAtom, no Type specified"))
+	}
+	jsonAa, _ := json.Marshal(aa)
+	rr := &dashproto.RRAction{
+		Ts:         dashutil.Ts(),
+		ActionType: "panelauth",
+		JsonData:   string(jsonAa),
+	}
+	req.appendRR(rr)
+}
+
+func (req *PanelRequest) appendPanelAuthChallenge(ch authChallenge) {
+	challengeJson, _ := json.Marshal(ch)
+	req.appendRR(&dashproto.RRAction{
+		Ts:         dashutil.Ts(),
+		ActionType: "panelauthchallenge",
+		JsonData:   string(challengeJson),
+	})
+	return
+}
+
+func (req *PanelRequest) getRawAuthData() []*AuthAtom {
+	if req.AuthData == nil {
+		return nil
+	}
+	var rawAuth []*AuthAtom
+	err := mapstructure.Decode(req.AuthData, &rawAuth)
+	if err != nil {
+		return nil
+	}
+	return rawAuth
+}
+
+// If AllowedAuth impelementations return an error they will be logged into
+// req.Info.  They will not stop the execution of the function since
+// other auth methods might succeed.
+func (req *PanelRequest) checkAuth(allowedAuths ...AllowedAuth) bool {
+	req.authImpl = true
+	if (PanelRequestEx{req}).IsAuthenticated() {
+		return true
+	}
+	for _, aa := range allowedAuths {
+		ok, err := aa.checkAuth(req)
+		if err != nil {
+			req.info = append(req.info, err.Error())
+		}
+		if ok {
+			return true
+		}
+	}
+	for _, aa := range allowedAuths {
+		if chAuth, ok := aa.(challengeAuth); ok {
+			ch := chAuth.returnChallenge(req)
+			if ch != nil {
+				req.appendPanelAuthChallenge(*ch)
+			}
+		}
+	}
+	return false
+}
+
+func (req *PanelRequest) isStream() bool {
+	return req.RequestType == "stream"
+}
+
+func (rex PanelRequestEx) SetHtml(html string) error {
+	return rex.Req.setHtml(html)
+}
+
+func (rex PanelRequestEx) CheckAuth(allowedAuths ...AllowedAuth) bool {
+	return rex.Req.checkAuth(allowedAuths...)
+}
+
+func (rex PanelRequestEx) IsDone() bool {
+	return rex.Req.isDone
+}
+
+func (rex PanelRequestEx) IsBackendCall() bool {
+	return rex.Req.isBackendCall
+}
+
+func (rex PanelRequestEx) IsAuthenticated() bool {
+	if globalClient.Config.LocalServer {
+		return true
+	}
+	rawAuth := rex.Req.getRawAuthData()
+	return len(rawAuth) > 0
 }

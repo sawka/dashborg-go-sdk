@@ -23,13 +23,13 @@ type ContainerConfig struct {
 }
 
 type Container interface {
-	ConnectApp(app dash.App) error
+	ConnectApp(app dash.AppRuntime) error
 }
 
 type containerImpl struct {
 	Lock     *sync.Mutex
 	Config   ContainerConfig
-	App      dash.App
+	App      dash.AppRuntime
 	RootHtml string
 
 	LocalClient dashproto.DashborgServiceClient
@@ -71,7 +71,7 @@ func optJson(opt dash.AppOption) string {
 }
 
 func (c *containerImpl) processHtmlOption(optData interface{}) error {
-	var htmlOpt dash.HtmlOption
+	var htmlOpt dash.GenericAppOption
 	err := mapstructure.Decode(optData, &htmlOpt)
 	if err != nil {
 		return err
@@ -85,7 +85,7 @@ func (c *containerImpl) processHtmlOption(optData interface{}) error {
 }
 
 func (c *containerImpl) processOnloadHandlerOption(optData interface{}) error {
-	var loadOpt dash.OnloadHandlerOption
+	var loadOpt dash.GenericAppOption
 	err := mapstructure.Decode(optData, &loadOpt)
 	if err != nil {
 		return err
@@ -94,7 +94,7 @@ func (c *containerImpl) processOnloadHandlerOption(optData interface{}) error {
 	return nil
 }
 
-func (c *containerImpl) ConnectApp(app dash.App) error {
+func (c *containerImpl) ConnectApp(app dash.AppRuntime) error {
 	if c.App != nil {
 		return fmt.Errorf("Cannot connect a second app to local container")
 	}

@@ -1,32 +1,21 @@
 package dash
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/mitchellh/mapstructure"
-	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
 const _MAX_AUTH_EXP = 24 * time.Hour
 
 const (
-	AUTH_SCOPE_PANEL = "panel"
-	AUTH_SCOPE_ZONE  = "zone"
+	AUTH_SCOPE_APP  = "app"
+	AUTH_SCOPE_ZONE = "zone"
 )
-
-type authAtom struct {
-	Scope string      `json:"scope"`        // scope of this atom (panel:[zone]:[panel], zone:[zone], or acc)
-	Type  string      `json:"type"`         // auth type (password, noauth, dashborg, deauth, or user-defined)
-	Ts    int64       `json:"ts,omitempty"` // expiration Ts (ms) of this auth atom
-	Id    string      `json:"id,omitempty"`
-	Role  string      `json:"role"`
-	Data  interface{} `json:"data,omitempty"`
-}
 
 type challengeField struct {
 	Label string `json:"label"` // label for challenge field in UI
@@ -129,16 +118,12 @@ type AuthSimpleLogin struct {
 	CheckFn func(user string, password string) (*AuthSimpleLoginResponse, error)
 }
 
-type AllowedAuth interface {
-	checkAuth(*PanelRequest) (bool, error) // should call setAuthData if returns true
-}
-
 type challengeAuth interface {
 	returnChallenge(*PanelRequest) *authChallenge //
 }
 
 func (AuthNone) checkAuth(req *PanelRequest) (bool, error) {
-	req.setAuthData(authAtom{
+	req.setAuthData(AuthAtom{
 		Type: "noauth",
 		Role: "user",
 	})
@@ -153,7 +138,7 @@ func (auth AuthPassword) checkAuth(req *PanelRequest) (bool, error) {
 	var challengeData challengeData
 	err := mapstructure.Decode(req.Data, &challengeData)
 	if err == nil && challengeData.ChallengeData["password"] == auth.Password {
-		req.setAuthData(authAtom{
+		req.setAuthData(AuthAtom{
 			Type: "password",
 			Role: "user",
 		})
@@ -240,7 +225,7 @@ func (auth AuthAccountJwt) checkAuthInternal(req *PanelRequest) (bool, error) {
 		}
 		role = claims.Role
 	}
-	req.setAuthData(authAtom{
+	req.setAuthData(AuthAtom{
 		Type: "accountjwt",
 		Id:   claims.Subject,
 		Role: role,
@@ -318,7 +303,7 @@ func (auth AuthSimpleJwt) checkAuthInternal(req *PanelRequest) (bool, error) {
 	if claims.Subject == "" {
 		return false, fmt.Errorf("JWT token '%s' does not contain a subject", auth.ParamName)
 	}
-	req.setAuthData(authAtom{
+	req.setAuthData(AuthAtom{
 		Type: "simplejwt",
 		Id:   claims.Subject,
 		Role: role,
@@ -351,7 +336,7 @@ func (aup AuthSimpleLogin) checkAuth(req *PanelRequest) (bool, error) {
 	if !dashutil.IsRoleValid(role) {
 		return false, errors.New("Invalid role for user, cannot authenticate")
 	}
-	req.setAuthData(authAtom{
+	req.setAuthData(AuthAtom{
 		Type: "login",
 		Id:   resp.Id,
 		Role: role,
@@ -433,90 +418,4 @@ func (aup AuthSimpleLogin) returnChallenge(req *PanelRequest) *authChallenge {
 		}
 	}
 	return ch
-}
-
-func (req *PanelRequest) getAuthAtom(aType string) *authAtom {
-	for _, aa := range req.AuthData {
-		if aa.Type == aType {
-			return aa
-		}
-	}
-	return nil
-}
-
-func (req *PanelRequest) setAuthData(aa authAtom) {
-	if aa.Scope == "" {
-		aa.Scope = fmt.Sprintf("panel:%s:%s", globalClient.Config.ZoneName, req.PanelName)
-	}
-	if aa.Ts == 0 {
-		aa.Ts = dashutil.Ts() + int64(_MAX_AUTH_EXP/time.Millisecond)
-	}
-	if aa.Type == "" {
-		panic(fmt.Sprintf("Dashborg Invalid AuthAtom, no Type specified"))
-	}
-	jsonAa, _ := json.Marshal(aa)
-	rr := &dashproto.RRAction{
-		Ts:         dashutil.Ts(),
-		ActionType: "panelauth",
-		JsonData:   string(jsonAa),
-	}
-	req.appendRR(rr)
-}
-
-func (req *PanelRequest) appendPanelAuthChallenge(ch authChallenge) {
-	challengeJson, _ := json.Marshal(ch)
-	req.appendRR(&dashproto.RRAction{
-		Ts:         dashutil.Ts(),
-		ActionType: "panelauthchallenge",
-		JsonData:   string(challengeJson),
-	})
-	return
-}
-
-func (req *PanelRequest) getRawAuthData() []*authAtom {
-	if req.AuthData == nil {
-		return nil
-	}
-	var rawAuth []*authAtom
-	err := mapstructure.Decode(req.AuthData, &rawAuth)
-	if err != nil {
-		return nil
-	}
-	return rawAuth
-}
-
-func (req *PanelRequest) IsAuthenticated() bool {
-	if globalClient.Config.LocalServer {
-		return true
-	}
-	rawAuth := req.getRawAuthData()
-	return len(rawAuth) > 0
-}
-
-// If AllowedAuth impelementations return an error they will be logged into
-// req.Info.  They will not stop the execution of the function since
-// other auth methods might succeed.
-func (req *PanelRequest) CheckAuth(allowedAuths ...AllowedAuth) bool {
-	req.authImpl = true
-	if req.IsAuthenticated() {
-		return true
-	}
-	for _, aa := range allowedAuths {
-		ok, err := aa.checkAuth(req)
-		if err != nil {
-			req.info = append(req.info, err.Error())
-		}
-		if ok {
-			return true
-		}
-	}
-	for _, aa := range allowedAuths {
-		if chAuth, ok := aa.(challengeAuth); ok {
-			ch := chAuth.returnChallenge(req)
-			if ch != nil {
-				req.appendPanelAuthChallenge(*ch)
-			}
-		}
-	}
-	return false
 }

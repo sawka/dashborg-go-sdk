@@ -250,7 +250,7 @@ func RegisterCallHandlerEx(panelName string, path string, handlerFn interface{},
 // unmarshal the raw JSON of PanelState and Data to the types in the handler signature using
 // the standard Go json.Unmarshal() function.  If an error occurs during unmarshalling it will
 // be returned to the Dashborg service (and your handler function will never run).
-func (app *appImpl) AppHandlerEx(path string, handlerFn interface{}) error {
+func (app *App) AppHandlerEx(path string, handlerFn interface{}) error {
 	hType := reflect.TypeOf(handlerFn)
 	if !checkOutput(hType, errType) {
 		return fmt.Errorf("Dashborg Panel Handler must return one error value")
@@ -281,7 +281,7 @@ func (app *appImpl) AppHandlerEx(path string, handlerFn interface{}) error {
 // unmarshal the raw JSON of PanelState and Data to the types in the handler signature using
 // the standard Go json.Unmarshal() function.  If an error occurs during unmarshalling it will
 // be returned to the Dashborg service (and your handler function will never run).
-func (app *appImpl) DataHandlerEx(path string, handlerFn interface{}) error {
+func (app *App) DataHandlerEx(path string, handlerFn interface{}) error {
 	hType := reflect.TypeOf(handlerFn)
 	if !checkOutput(hType, interfaceType, errType) {
 		return fmt.Errorf("Dashborg Data Handler must return two values (interface{}, error)")

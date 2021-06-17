@@ -80,7 +80,7 @@ type procClient struct {
 	ConnId       *atomic.Value
 	StreamMap    map[streamKey]streamControl // map streamKey -> streamControl
 	StreamKeyMap map[string]streamKey        // map reqid -> streamKey
-	AppMap       map[string]App              // map app-name -> app
+	AppMap       map[string]AppRuntime       // map app-name -> app
 }
 
 func newProcClient() *procClient {
@@ -93,7 +93,7 @@ func newProcClient() *procClient {
 	rtn.ConnId.Store("")
 	rtn.StreamMap = make(map[streamKey]streamControl)
 	rtn.StreamKeyMap = make(map[string]streamKey)
-	rtn.AppMap = make(map[string]App)
+	rtn.AppMap = make(map[string]AppRuntime)
 	return rtn
 }
 
@@ -112,7 +112,7 @@ func (pc *procClient) copyHandlerKeys() []*dashproto.HandlerKey {
 	return rtn
 }
 
-func makeAppMessage(app App) (*dashproto.ConnectAppMessage, error) {
+func makeAppMessage(app AppRuntime) (*dashproto.ConnectAppMessage, error) {
 	appConfig := app.AppConfig()
 	m := &dashproto.ConnectAppMessage{Ts: dashutil.Ts()}
 	m.AppName = appConfig.AppName
@@ -155,11 +155,6 @@ func StartProcClient(config *Config) {
 			panic("LocalServer mode without LocalClient defined")
 		}
 		client.DBService = client.Config.LocalClient
-
-		// err = client.connectLocalClient()
-		// if err != nil {
-		// 	panic(fmt.Sprintf("Cannot Create Dashborg LocalClient: %v", err))
-		// }
 	} else {
 		err = client.connectGrpc()
 	}
@@ -178,22 +173,6 @@ func (pc *procClient) registerHandlerFn(hkey handlerKey, protoHKey *dashproto.Ha
 	defer pc.CVar.L.Unlock()
 	pc.HandlerMap[hkey] = handlerVal{HandlerFn: handlerFn, ProtoHKey: protoHKey}
 }
-
-// func (pc *procClient) connectLocalClient() error {
-// 	config := pc.Config
-// 	lsConfig := &dashlocal.Config{
-// 		AccId:         config.AccId,
-// 		ZoneName:      config.ZoneName,
-// 		PanelName:     config.LocalServerPanelName,
-// 		Env:           config.Env,
-// 		Addr:          config.LocalServerAddr,
-// 		ClientVersion: CLIENT_VERSION,
-// 		PanelOpts:     config.LocalServerPanelOpts,
-// 	}
-// 	var err error
-// 	pc.DBService, err = dashlocal.MakeLocalClient(lsConfig)
-// 	return err
-// }
 
 func (pc *procClient) connectGrpc() error {
 	addr := pc.Config.DashborgSrvHost + ":" + strconv.Itoa(pc.Config.DashborgSrvPort)
@@ -234,7 +213,7 @@ func (pc *procClient) connectGrpc() error {
 
 // returns numStreamClients, err
 func (pc *procClient) sendRequestResponse(req *PanelRequest, done bool) (int, error) {
-	if req.IsStream() && pc.stream_hasZeroClients(req.ReqId) {
+	if req.isStream() && pc.stream_hasZeroClients(req.ReqId) {
 		req.clearActions()
 		return 0, nil
 	}
@@ -393,7 +372,7 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	preq.PanelState = pstate
 	preq.PanelStateJson = reqMsg.PanelStateData
 
-	var authData []*authAtom
+	var authData []*AuthAtom
 	if reqMsg.AuthData != "" {
 		err := json.Unmarshal([]byte(reqMsg.AuthData), &authData)
 		if err != nil {
@@ -404,11 +383,11 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	}
 	preq.AuthData = authData
 
-	isAllowedBackendCall := preq.IsBackendCall() && preq.RequestType == "data" && pc.Config.AllowBackendCalls
+	isAllowedBackendCall := preq.isBackendCall && preq.RequestType == "data" && pc.Config.AllowBackendCalls
 
 	// check-auth
 	if !isAllowedBackendCall && !preq.isRootReq() && preq.RequestType != "auth" {
-		if !preq.IsAuthenticated() {
+		if !(PanelRequestEx{preq}).IsAuthenticated() {
 			preq.err = fmt.Errorf("Request is not authenticated")
 			preq.Done()
 			return
@@ -682,7 +661,7 @@ func (pc *procClient) backendPush(m *dashproto.BackendPushMessage) error {
 	return nil
 }
 
-func (pc *procClient) connectApp(app App) {
+func (pc *procClient) connectApp(app AppRuntime) {
 	appName := app.GetAppName()
 	if !pc.Config.LocalServer {
 		log.Printf("Dashborg App Link [%s]: %s\n", appName, panelLink(appName))

@@ -61,9 +61,17 @@ type Config struct {
 	setupDone bool // internal
 }
 
-type PanelOpts struct {
-	NoChrome bool `json:"nochrome"`
-	NoNav    bool `json:"nonav"`
+type AuthAtom struct {
+	Scope string      `json:"scope"` // scope of this atom app or zone
+	Type  string      `json:"type"`  // auth type (password, noauth, dashborg, deauth, or user-defined)
+	Ts    int64       `json:"ts"`    // expiration Ts (ms) of this auth atom
+	Role  string      `json:"role"`
+	Id    string      `json:"id,omitempty"`
+	Data  interface{} `json:"data,omitempty"`
+}
+
+type AllowedAuth interface {
+	checkAuth(*PanelRequest) (bool, error) // should call setAuthData if returns true
 }
 
 type ReflectZoneType struct {
@@ -232,7 +240,7 @@ func ReflectZone() (*ReflectZoneType, error) {
 	return &rtn, nil
 }
 
-func ConnectApp(app App) error {
+func ConnectApp(app AppRuntime) error {
 	m, err := makeAppMessage(app)
 	if err != nil {
 		return err

@@ -14,39 +14,51 @@ const (
 	APP_DATASERVICE = "dataservice"
 )
 
+const (
+	OPTION_ONLOADHANDLER = "onloadhandler"
+	OPTION_HTML          = "html"
+	OPTION_AUTH          = "auth"
+)
+
 type AppConfig struct {
 	AppName string
 	Options map[string]interface{}
 }
 
-type App interface {
-	SetHtml(html string)
-	SetHtmlFromFile(fileName string)
-	SetOnLoadHandler(path string)
-	SetAuth(allowedAuths ...AllowedAuth)
-	SetOption(opt AppOption)
-	RemoveOption(optName string)
+type AppOption interface {
+	OptionName() string
+	OptionData() interface{}
+}
 
-	AppHandler(path string, handlerFn func(req *PanelRequest) error) error
-	AppHandlerEx(path string, handlerFn interface{}) error
-	DataHandler(path string, handlerFn func(req *PanelRequest) (interface{}, error)) error
-	DataHandlerEx(path string, handlerFn interface{}) error
+// super-set of all option fields for JSON marshaling/parsing
+type GenericAppOption struct {
+	Name string `json:"-"` // not marshaled as part of OptionData
+	Type string `json:"type,omitempty"`
+	Path string `json:"path,omitempty"`
+}
 
+func (opt GenericAppOption) OptionName() string {
+	return opt.Name
+}
+
+func (opt GenericAppOption) OptionData() interface{} {
+	return opt
+}
+
+type AppRuntime interface {
 	AppConfig() AppConfig
-
 	RunHandler(req *PanelRequest) (interface{}, error)
 	GetAppName() string
 	GetClientVersion() string
 }
 
-type appImpl struct {
-	Lock     *sync.Mutex
-	AppName  string
-	Html     valueType
-	InitFn   func(req *PanelRequest) error
-	Handlers map[handlerKey]handlerType
-	Options  map[string]AppOption
-	Auth     []AllowedAuth
+type App struct {
+	lock      *sync.Mutex
+	appName   string
+	html      valueType
+	handlers  map[handlerKey]handlerType
+	options   map[string]AppOption
+	localAuth []AllowedAuth
 }
 
 type valueType interface {
@@ -106,14 +118,15 @@ func (fv funcValueType) GetValue() (string, error) {
 	return fv.ValueFn()
 }
 
-func MakeApp(appName string) App {
-	rtn := &appImpl{
-		Lock:    &sync.Mutex{},
-		AppName: appName,
+func MakeApp(appName string) *App {
+	rtn := &App{
+		lock:    &sync.Mutex{},
+		appName: appName,
 	}
-	rtn.Handlers = make(map[handlerKey]handlerType)
-	rtn.Options = make(map[string]AppOption)
-	rtn.Handlers[handlerKey{HandlerType: "auth"}] = handlerType{HandlerFn: rtn.authHandler}
+	rtn.handlers = make(map[handlerKey]handlerType)
+	rtn.options = make(map[string]AppOption)
+	rtn.handlers[handlerKey{HandlerType: "auth"}] = handlerType{HandlerFn: rtn.authHandler}
+	rtn.handlers[handlerKey{HandlerType: "html"}] = handlerType{HandlerFn: rtn.htmlHandler}
 	return rtn
 }
 
@@ -122,12 +135,12 @@ type handlerType struct {
 	BoundHandlerKey *handlerKey
 }
 
-func (app *appImpl) AppConfig() AppConfig {
-	app.Lock.Lock()
-	defer app.Lock.Unlock()
-	rtn := AppConfig{AppName: app.AppName}
+func (app *App) AppConfig() AppConfig {
+	app.lock.Lock()
+	defer app.lock.Unlock()
+	rtn := AppConfig{AppName: app.appName}
 	rtn.Options = make(map[string]interface{})
-	for name, opt := range app.Options {
+	for name, opt := range app.options {
 		if name != opt.OptionName() {
 			panic(fmt.Sprintf("OptionName does not match hash key: %s:%s %v\n", name, opt.OptionName(), opt))
 		}
@@ -136,97 +149,97 @@ func (app *appImpl) AppConfig() AppConfig {
 	return rtn
 }
 
-func (app *appImpl) RemoveOption(optName string) {
-	app.Lock.Lock()
-	defer app.Lock.Unlock()
+func (app *App) RemoveOption(optName string) {
+	app.lock.Lock()
+	defer app.lock.Unlock()
 
-	delete(app.Options, optName)
+	delete(app.options, optName)
 }
 
-func (app *appImpl) SetOption(opt AppOption) {
-	app.Lock.Lock()
-	defer app.Lock.Unlock()
+func (app *App) SetOption(opt AppOption) {
+	app.lock.Lock()
+	defer app.lock.Unlock()
 
-	app.Options[opt.OptionName()] = opt
+	app.options[opt.OptionName()] = opt
 }
 
-func (app *appImpl) setOption_nolock(opt AppOption) {
-	app.Options[opt.OptionName()] = opt
+func (app *App) setOption_nolock(opt AppOption) {
+	app.options[opt.OptionName()] = opt
 }
 
-func (app *appImpl) SetAuth(allowedAuths ...AllowedAuth) {
-	app.Lock.Lock()
-	defer app.Lock.Unlock()
+func (app *App) SetAuth(allowedAuths ...AllowedAuth) {
+	app.lock.Lock()
+	defer app.lock.Unlock()
 
-	app.Auth = allowedAuths
-	app.setOption_nolock(AuthOption{Type: "dynamic"})
+	app.localAuth = allowedAuths
+	app.setOption_nolock(GenericAppOption{Name: OPTION_AUTH, Type: "dynamic"})
 }
 
-func (app *appImpl) SetHtml(html string) {
-	app.Lock.Lock()
-	defer app.Lock.Unlock()
+func (app *App) SetHtml(html string) {
+	app.lock.Lock()
+	defer app.lock.Unlock()
 
-	app.Html = interfaceValue(html)
-	htmlKey := handlerKey{HandlerType: "html", Path: ""}
-	app.Handlers[htmlKey] = handlerType{HandlerFn: app.htmlHandler}
-	app.setOption_nolock(HtmlOption{Type: "dynamic"})
+	app.html = interfaceValue(html)
+	app.setOption_nolock(GenericAppOption{Name: OPTION_HTML, Type: "dynamic"})
 }
 
-func (app *appImpl) SetHtmlFromFile(fileName string) {
-	app.Lock.Lock()
-	defer app.Lock.Unlock()
+func (app *App) SetHtmlFromFile(fileName string) {
+	app.lock.Lock()
+	defer app.lock.Unlock()
 
-	app.Html = fileValue(fileName, true)
-	htmlKey := handlerKey{HandlerType: "html", Path: ""}
-	app.Handlers[htmlKey] = handlerType{HandlerFn: app.htmlHandler}
-	app.setOption_nolock(HtmlOption{Type: "dynamic"})
+	app.html = fileValue(fileName, true)
+	app.setOption_nolock(GenericAppOption{Name: OPTION_HTML, Type: "dynamic"})
 }
 
-func (app *appImpl) SetOnLoadHandler(path string) {
-	app.SetOption(OnloadHandlerOption{Path: path})
+func (app *App) SetOnLoadHandler(path string) {
+	app.SetOption(GenericAppOption{Name: OPTION_ONLOADHANDLER, Path: path})
 }
 
-func (app *appImpl) AppHandler(path string, handlerFn func(req *PanelRequest) error) error {
+func (app *App) AppHandler(path string, handlerFn func(req *PanelRequest) error) error {
 	hkey := handlerKey{HandlerType: "handler", Path: path}
 	wrappedHandlerFn := func(req *PanelRequest) (interface{}, error) {
 		err := handlerFn(req)
 		return nil, err
 	}
-	app.Handlers[hkey] = handlerType{HandlerFn: wrappedHandlerFn}
+	app.handlers[hkey] = handlerType{HandlerFn: wrappedHandlerFn}
 	return nil
 }
 
-func (app *appImpl) htmlHandler(req *PanelRequest) (interface{}, error) {
-	if app.Html == nil {
+func (app *App) htmlHandler(req *PanelRequest) (interface{}, error) {
+	if app.html == nil {
 		return nil, nil
 	}
-	htmlValue, err := app.Html.GetValue()
+	htmlValue, err := app.html.GetValue()
 	if err != nil {
 		return nil, err
 	}
-	req.SetHtml(htmlValue)
+	PanelRequestEx{req}.SetHtml(htmlValue)
 	return nil, nil
 }
 
-func (app *appImpl) authHandler(req *PanelRequest) (interface{}, error) {
-	req.CheckAuth(AuthNone{})
+func (app *App) authHandler(req *PanelRequest) (interface{}, error) {
+	if len(app.localAuth) == 0 {
+		PanelRequestEx{req}.CheckAuth(AuthNone{})
+	} else {
+		PanelRequestEx{req}.CheckAuth(app.localAuth...)
+	}
 	return nil, nil
 }
 
-func (app *appImpl) DataHandler(path string, handlerFn func(req *PanelRequest) (interface{}, error)) error {
+func (app *App) DataHandler(path string, handlerFn func(req *PanelRequest) (interface{}, error)) error {
 	hkey := handlerKey{HandlerType: "data", Path: path}
-	app.Handlers[hkey] = handlerType{HandlerFn: handlerFn}
+	app.handlers[hkey] = handlerType{HandlerFn: handlerFn}
 	return nil
 }
 
-func (app *appImpl) RunHandler(req *PanelRequest) (interface{}, error) {
+func (app *App) RunHandler(req *PanelRequest) (interface{}, error) {
 	hkey := handlerKey{
 		HandlerType: req.RequestType,
 		Path:        req.Path,
 	}
-	app.Lock.Lock()
-	hval, ok := app.Handlers[hkey]
-	app.Lock.Unlock()
+	app.lock.Lock()
+	hval, ok := app.handlers[hkey]
+	app.lock.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("No handler found for %s:%s", req.PanelName, req.Path)
 	}
@@ -237,10 +250,10 @@ func (app *appImpl) RunHandler(req *PanelRequest) (interface{}, error) {
 	return rtn, nil
 }
 
-func (app *appImpl) GetAppName() string {
-	return app.AppName
+func (app *App) GetAppName() string {
+	return app.appName
 }
 
-func (app *appImpl) GetClientVersion() string {
+func (app *App) GetClientVersion() string {
 	return CLIENT_VERSION
 }
