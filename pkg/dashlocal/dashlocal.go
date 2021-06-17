@@ -16,19 +16,19 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sawka/dashborg-go-sdk/pkg/dash"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
-const LOCALSERVER_VERSION = "go-0.2.0"
-const _CSRF_COOKIE = "dashcsrf"
-const _CSRFTOKEN_HEADER = "X-Csrf-Token"
-const _FECLIENTID_HEADER = "X-Dashborg-FeClientId"
+const csrfCookie = "dashcsrf"
+const csrfTokenHeader = "X-Csrf-Token"
+const feClientIdHeader = "X-Dashborg-FeClientId"
 
-const _HTTP_READ_TIMEOUT = 5 * time.Second
-const _HTTP_WRITE_TIMEOUT = 21 * time.Second
-const _HTTP_MAX_HEADER_BYTES = 60000
-const _HTTP_TIMEOUT_VAL = 21 * time.Second
+const httpReadTimeout = 5 * time.Second
+const httpWriteTimeout = 21 * time.Second
+const httpMaxHeaderBytes = 60000
+const httpTimeoutVal = 21 * time.Second
 
 type errorResponse struct {
 	Success bool   `json:"success"`
@@ -85,8 +85,7 @@ func (s *localServer) getRootHtmlUrl() string {
 	}
 	rhUrl, _ := url.Parse(rhRoot)
 	q := rhUrl.Query()
-	q.Set("scope", s.Container.Config.AccId+":"+s.Container.Config.ZoneName)
-	q.Set("client", CONTAINER_VERSION)
+	q.Set("client", dash.ClientVersion)
 	rhUrl.RawQuery = q.Encode()
 	return rhUrl.String()
 }
@@ -136,7 +135,7 @@ func (s *localServer) newReq(r *http.Request, rtype string, path string, data in
 		PanelName:   s.Container.getAppName(),
 		Path:        path,
 	}
-	feClientId := r.Header.Get(_FECLIENTID_HEADER)
+	feClientId := r.Header.Get(feClientIdHeader)
 	if dashutil.IsUUIDValid(feClientId) {
 		rtn.FeClientId = feClientId
 	}
@@ -196,7 +195,7 @@ func jsonWrapper(handler func(w http.ResponseWriter, r *http.Request) (interface
 
 func setCsrfToken(w http.ResponseWriter, r *http.Request) string {
 	csrfToken := ""
-	cookie, _ := r.Cookie(_CSRF_COOKIE)
+	cookie, _ := r.Cookie(csrfCookie)
 	if cookie != nil {
 		csrfCookieVal := cookie.Value
 		if dashutil.IsUUIDValid(csrfCookieVal) {
@@ -207,7 +206,7 @@ func setCsrfToken(w http.ResponseWriter, r *http.Request) string {
 		csrfToken = uuid.New().String()
 	}
 	cookie = &http.Cookie{
-		Name:     _CSRF_COOKIE,
+		Name:     csrfCookie,
 		Value:    csrfToken,
 		Path:     "/",
 		Secure:   false,
@@ -219,7 +218,7 @@ func setCsrfToken(w http.ResponseWriter, r *http.Request) string {
 }
 
 func checkCsrf(r *http.Request) error {
-	cookie, err := r.Cookie(_CSRF_COOKIE)
+	cookie, err := r.Cookie(csrfCookie)
 	if err == http.ErrNoCookie || cookie == nil {
 		return fmt.Errorf("Bad Request: No CSRF Cookie Found")
 	}
@@ -227,7 +226,7 @@ func checkCsrf(r *http.Request) error {
 	if !dashutil.IsUUIDValid(csrfCookieVal) {
 		return fmt.Errorf("Bad Request: Malformed CSRF Cookie")
 	}
-	csrfHeaderVal := r.Header.Get(_CSRFTOKEN_HEADER)
+	csrfHeaderVal := r.Header.Get(csrfTokenHeader)
 	if !dashutil.IsUUIDValid(csrfHeaderVal) {
 		return fmt.Errorf("Bad Request: No CSRF Header Set")
 	}
@@ -422,7 +421,7 @@ func (s *localServer) handleDrainStreams(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		return nil, err
 	}
-	feClientId := r.Header.Get(_FECLIENTID_HEADER)
+	feClientId := r.Header.Get(feClientIdHeader)
 	if !dashutil.IsUUIDValid(feClientId) {
 		return nil, fmt.Errorf("No FeClientId")
 	}
@@ -461,7 +460,7 @@ func (s *localServer) handleStopStream(w http.ResponseWriter, r *http.Request) (
 	if err != nil {
 		return nil, err
 	}
-	feClientId := r.Header.Get(_FECLIENTID_HEADER)
+	feClientId := r.Header.Get(feClientIdHeader)
 	if feClientId == "" {
 		return nil, fmt.Errorf("/api2/stop-stream requires feClientId")
 	}
@@ -552,10 +551,10 @@ func makeLocalServer(config *localServerConfig, client *localClient, container *
 	smux := s.registerLocalHandlers()
 	s.HttpServer = &http.Server{
 		Addr:           s.Config.Addr,
-		ReadTimeout:    _HTTP_READ_TIMEOUT,
-		WriteTimeout:   _HTTP_WRITE_TIMEOUT,
-		MaxHeaderBytes: _HTTP_MAX_HEADER_BYTES,
-		Handler:        http.TimeoutHandler(smux, _HTTP_TIMEOUT_VAL, "Timeout"),
+		ReadTimeout:    httpReadTimeout,
+		WriteTimeout:   httpWriteTimeout,
+		MaxHeaderBytes: httpMaxHeaderBytes,
+		Handler:        http.TimeoutHandler(smux, httpTimeoutVal, "Timeout"),
 	}
 	return s, nil
 }

@@ -27,15 +27,15 @@ import (
 )
 
 const (
-	EC_EOF         = "EOF"
-	EC_UNKNOWN     = "UNKNOWN"
-	EC_BADCONNID   = "BADCONNID"
-	EC_ACCACCESS   = "ACCACCESS"
-	EC_NOHANDLER   = "NOHANDLER"
-	EC_UNAVAILABLE = "UNAVAILABLE"
+	ErrEOF         = "EOF"
+	ErrUnknown     = "UNKNOWN"
+	ErrBadConnId   = "BADCONNID"
+	ErrAccAccess   = "ACCACCESS"
+	ErrNoHandler   = "NOHANDLER"
+	ErrUnavailable = "UNAVAILABLE"
 )
 
-const CLIENT_VERSION = "go-0.5.2"
+const ClientVersion = "go-0.5.2"
 
 const returnChSize = 20
 const smallDrainSleep = 5 * time.Millisecond
@@ -450,7 +450,7 @@ func (pc *procClient) sendProcMessage() error {
 		StartTs:       pc.StartTs,
 		Handlers:      hkeys,
 		Apps:          apps,
-		ClientVersion: CLIENT_VERSION,
+		ClientVersion: ClientVersion,
 	}
 	resp, err := pc.DBService.Proc(pc.ctxWithMd(), m)
 	if err != nil {
@@ -557,7 +557,7 @@ func (pc *procClient) runRequestStreamLoop() {
 		if ranOk {
 			w.Reset()
 		}
-		if ec == EC_BADCONNID {
+		if ec == ErrBadConnId {
 			pc.ConnId.Store("")
 			continue
 		}
@@ -571,7 +571,7 @@ func (pc *procClient) runRequestStream() (bool, string) {
 	reqStreamClient, err := pc.DBService.RequestStream(pc.ctxWithMd(), m)
 	if err != nil {
 		log.Printf("Dashborg Error setting up gRPC RequestStream: %v\n", err)
-		return false, EC_UNKNOWN
+		return false, ErrUnknown
 	}
 	startTime := time.Now()
 	reqCounter := 0
@@ -580,17 +580,17 @@ func (pc *procClient) runRequestStream() (bool, string) {
 		reqMsg, err := reqStreamClient.Recv()
 		if err == io.EOF {
 			logV("Dashborg gRPC RequestStream done: EOF\n")
-			endingErrCode = EC_EOF
+			endingErrCode = ErrEOF
 			break
 		}
 		if err != nil {
 			logV("Dashborg gRPC RequestStream ERROR: %v\n", err)
-			endingErrCode = EC_UNKNOWN
+			endingErrCode = ErrUnknown
 			break
 		}
 		if reqMsg.ErrCode == dashproto.ErrorCode_EC_BADCONNID {
 			logV("Dashborg gRPC RequestStream BADCONNID\n")
-			endingErrCode = EC_BADCONNID
+			endingErrCode = ErrBadConnId
 			break
 		}
 		go func() {

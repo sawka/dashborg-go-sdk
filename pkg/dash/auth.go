@@ -10,11 +10,11 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
-const _MAX_AUTH_EXP = 24 * time.Hour
+const maxAuthExp = 24 * time.Hour
 
 const (
-	AUTH_SCOPE_APP  = "app"
-	AUTH_SCOPE_ZONE = "zone"
+	AuthScopeApp  = "app"
+	AuthScopeZone = "zone"
 )
 
 type challengeField struct {

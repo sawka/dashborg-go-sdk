@@ -22,12 +22,12 @@ import (
 )
 
 const (
-	TLS_KEY_FILENAME         = "dashborg-client.key"
-	TLS_CERT_FILENAME        = "dashborg-client.crt"
-	DEFAULT_PROCNAME         = "default"
-	DEFAULT_ZONENAME         = "default"
-	DEFAULT_PANELNAME        = "default"
-	DEFAULT_LOCALSERVER_ADDR = "localhost:8082"
+	TlsKeyFileName         = "dashborg-client.key"
+	TlsCertFileName        = "dashborg-client.crt"
+	DefaultProcName        = "default"
+	DefaultZoneName        = "default"
+	DefaultPanelName       = "default"
+	DefaultLocalServerAddr = "localhost:8082"
 )
 
 var cmdRegexp *regexp.Regexp = regexp.MustCompile("^.*/")
@@ -54,7 +54,7 @@ func envOverride(val bool, varName string) bool {
 
 func (c *Config) setDefaults() {
 	c.AccId = defaultString(c.AccId, os.Getenv("DASHBORG_ACCID"))
-	c.ZoneName = defaultString(c.ZoneName, os.Getenv("DASHBORG_ZONE"), DEFAULT_ZONENAME)
+	c.ZoneName = defaultString(c.ZoneName, os.Getenv("DASHBORG_ZONE"), DefaultZoneName)
 	c.Env = defaultString(c.Env, os.Getenv("DASHBORG_ENV"), "prod")
 	if c.Env == "prod" {
 		c.DashborgSrvHost = defaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "grpc.api.dashborg.net")
@@ -77,9 +77,9 @@ func (c *Config) setDefaults() {
 	if len(os.Args) > 0 {
 		cmdName = cmdRegexp.ReplaceAllString(os.Args[0], "")
 	}
-	c.ProcName = defaultString(c.ProcName, os.Getenv("DASHBORG_PROCNAME"), cmdName, DEFAULT_PROCNAME)
-	c.KeyFileName = defaultString(c.KeyFileName, os.Getenv("DASHBORG_KEYFILE"), TLS_KEY_FILENAME)
-	c.CertFileName = defaultString(c.CertFileName, os.Getenv("DASHBORG_CERTFILE"), TLS_CERT_FILENAME)
+	c.ProcName = defaultString(c.ProcName, os.Getenv("DASHBORG_PROCNAME"), cmdName, DefaultProcName)
+	c.KeyFileName = defaultString(c.KeyFileName, os.Getenv("DASHBORG_KEYFILE"), TlsKeyFileName)
+	c.CertFileName = defaultString(c.CertFileName, os.Getenv("DASHBORG_CERTFILE"), TlsCertFileName)
 	c.Verbose = envOverride(c.Verbose, "DASHBORG_VERBOSE")
 	if c.MinClearTimeout == 0 {
 		c.MinClearTimeout = 1 * time.Second

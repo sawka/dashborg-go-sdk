@@ -10,14 +10,14 @@ import (
 )
 
 const (
-	APP_GUI         = "gui"
-	APP_DATASERVICE = "dataservice"
+	AppGUI= "gui"
+	AppDataService = "dataservice"
 )
 
 const (
-	OPTION_ONLOADHANDLER = "onloadhandler"
-	OPTION_HTML          = "html"
-	OPTION_AUTH          = "auth"
+	OptionOnLoadHandler = "onloadhandler"
+	OptionHtml          = "html"
+	OptionAuth          = "auth"
 )
 
 type AppConfig struct {
@@ -172,7 +172,7 @@ func (app *App) SetAuth(allowedAuths ...AllowedAuth) {
 	defer app.lock.Unlock()
 
 	app.localAuth = allowedAuths
-	app.setOption_nolock(GenericAppOption{Name: OPTION_AUTH, Type: "dynamic"})
+	app.setOption_nolock(GenericAppOption{Name: OptionAuth, Type: "dynamic"})
 }
 
 func (app *App) SetHtml(html string) {
@@ -180,7 +180,7 @@ func (app *App) SetHtml(html string) {
 	defer app.lock.Unlock()
 
 	app.html = interfaceValue(html)
-	app.setOption_nolock(GenericAppOption{Name: OPTION_HTML, Type: "dynamic"})
+	app.setOption_nolock(GenericAppOption{Name: OptionHtml, Type: "dynamic"})
 }
 
 func (app *App) SetHtmlFromFile(fileName string) {
@@ -188,11 +188,11 @@ func (app *App) SetHtmlFromFile(fileName string) {
 	defer app.lock.Unlock()
 
 	app.html = fileValue(fileName, true)
-	app.setOption_nolock(GenericAppOption{Name: OPTION_HTML, Type: "dynamic"})
+	app.setOption_nolock(GenericAppOption{Name: OptionHtml, Type: "dynamic"})
 }
 
 func (app *App) SetOnLoadHandler(path string) {
-	app.SetOption(GenericAppOption{Name: OPTION_ONLOADHANDLER, Path: path})
+	app.SetOption(GenericAppOption{Name: OptionOnLoadHandler, Path: path})
 }
 
 func (app *App) AppHandler(path string, handlerFn func(req *PanelRequest) error) error {
@@ -255,5 +255,5 @@ func (app *App) GetAppName() string {
 }
 
 func (app *App) GetClientVersion() string {
-	return CLIENT_VERSION
+	return ClientVersion
 }

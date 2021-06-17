@@ -11,8 +11,6 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
-const CONTAINER_VERSION = "gocontainer-0.6.0"
-
 type ContainerConfig struct {
 	Addr       string        // defaults to localhost:8082
 	ShutdownCh chan struct{} // channel for shutting down server

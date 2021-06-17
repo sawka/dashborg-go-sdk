@@ -17,6 +17,9 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
+// must be divisible by 3 (for base64 encoding)
+const blobReadSize = 3 * 340 * 1024
+
 // PanelRequest encapsulates all the data about a Dashborg request.  Normally the only
 // fields that a handler needs to access are "Data" and "PanelState" in order to read
 // the parameters and UI state associated with this request.  The other fields are
@@ -141,7 +144,7 @@ func (req *PanelRequest) SetBlobData(path string, mimeType string, reader io.Rea
 	}
 	first := true
 	for {
-		buffer := make([]byte, _BLOB_READ_SIZE)
+		buffer := make([]byte, blobReadSize)
 		n, err := io.ReadFull(reader, buffer)
 		if err == io.EOF {
 			break
@@ -308,7 +311,7 @@ func (req *PanelRequest) setAuthData(aa AuthAtom) {
 		aa.Scope = fmt.Sprintf("panel:%s:%s", globalClient.Config.ZoneName, req.PanelName)
 	}
 	if aa.Ts == 0 {
-		aa.Ts = dashutil.Ts() + int64(_MAX_AUTH_EXP/time.Millisecond)
+		aa.Ts = dashutil.Ts() + int64(maxAuthExp/time.Millisecond)
 	}
 	if aa.Type == "" {
 		panic(fmt.Sprintf("Dashborg Invalid AuthAtom, no Type specified"))

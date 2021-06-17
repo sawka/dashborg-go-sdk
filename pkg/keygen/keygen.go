@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const P384_PARAMS = "BgUrgQQAIg=="
+const p384Params = "BgUrgQQAIg=="
 
 func CreateKeyPair(keyFileName string, certFileName string, accId string) error {
 	privateKey, err := CreatePrivateKey(keyFileName)
@@ -43,7 +43,7 @@ func CreatePrivateKey(keyFileName string) (*ecdsa.PrivateKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Error MarshalPKCS8PrivateKey err:%w", err)
 	}
-	paramsBytes, err := base64.StdEncoding.DecodeString(P384_PARAMS)
+	paramsBytes, err := base64.StdEncoding.DecodeString(p384Params)
 	if err != nil {
 		return nil, fmt.Errorf("Error decoding bytes for P-384 EC PARAMETERS err:%w", err)
 	}
