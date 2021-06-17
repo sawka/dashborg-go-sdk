@@ -123,7 +123,7 @@ type challengeAuth interface {
 }
 
 func (AuthNone) checkAuth(req *PanelRequest) (bool, error) {
-	req.setAuthData(AuthAtom{
+	PanelRequestEx{req}.SetAuthData(AuthAtom{
 		Type: "noauth",
 		Role: "user",
 	})
@@ -138,7 +138,7 @@ func (auth AuthPassword) checkAuth(req *PanelRequest) (bool, error) {
 	var challengeData challengeData
 	err := mapstructure.Decode(req.Data, &challengeData)
 	if err == nil && challengeData.ChallengeData["password"] == auth.Password {
-		req.setAuthData(AuthAtom{
+		PanelRequestEx{req}.SetAuthData(AuthAtom{
 			Type: "password",
 			Role: "user",
 		})
@@ -225,7 +225,7 @@ func (auth AuthAccountJwt) checkAuthInternal(req *PanelRequest) (bool, error) {
 		}
 		role = claims.Role
 	}
-	req.setAuthData(AuthAtom{
+	PanelRequestEx{req}.SetAuthData(AuthAtom{
 		Type: "accountjwt",
 		Id:   claims.Subject,
 		Role: role,
@@ -303,7 +303,7 @@ func (auth AuthSimpleJwt) checkAuthInternal(req *PanelRequest) (bool, error) {
 	if claims.Subject == "" {
 		return false, fmt.Errorf("JWT token '%s' does not contain a subject", auth.ParamName)
 	}
-	req.setAuthData(AuthAtom{
+	PanelRequestEx{req}.SetAuthData(AuthAtom{
 		Type: "simplejwt",
 		Id:   claims.Subject,
 		Role: role,
@@ -336,7 +336,7 @@ func (aup AuthSimpleLogin) checkAuth(req *PanelRequest) (bool, error) {
 	if !dashutil.IsRoleValid(role) {
 		return false, errors.New("Invalid role for user, cannot authenticate")
 	}
-	req.setAuthData(AuthAtom{
+	PanelRequestEx{req}.SetAuthData(AuthAtom{
 		Type: "login",
 		Id:   resp.Id,
 		Role: role,

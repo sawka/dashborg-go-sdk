@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/mitchellh/mapstructure"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
@@ -32,7 +31,7 @@ type PanelRequest struct {
 	DataJson       string      // Raw JSON for Data (used for manual unmarshalling into custom struct)
 	PanelState     interface{} // json-unmarshaled panel state for this request
 	PanelStateJson string      // Raw JSON for PanelState (used for manual unmarshalling into custom struct)
-	AuthData       []*AuthAtom // authentication tokens associated with this request
+	AuthData       *AuthAtom   // authentication tokens associated with this request
 
 	info          []string              // debugging information
 	err           error                 // set if an error occured (when set, RRActions are not sent)
@@ -304,15 +303,6 @@ func (req *PanelRequest) Done() error {
 	return err
 }
 
-func (req *PanelRequest) getAuthAtom(aType string) *AuthAtom {
-	for _, aa := range req.AuthData {
-		if aa.Type == aType {
-			return aa
-		}
-	}
-	return nil
-}
-
 func (req *PanelRequest) setAuthData(aa AuthAtom) {
 	if aa.Scope == "" {
 		aa.Scope = fmt.Sprintf("panel:%s:%s", globalClient.Config.ZoneName, req.PanelName)
@@ -340,18 +330,6 @@ func (req *PanelRequest) appendPanelAuthChallenge(ch authChallenge) {
 		JsonData:   string(challengeJson),
 	})
 	return
-}
-
-func (req *PanelRequest) getRawAuthData() []*AuthAtom {
-	if req.AuthData == nil {
-		return nil
-	}
-	var rawAuth []*AuthAtom
-	err := mapstructure.Decode(req.AuthData, &rawAuth)
-	if err != nil {
-		return nil
-	}
-	return rawAuth
 }
 
 // If AllowedAuth impelementations return an error they will be logged into
@@ -406,6 +384,9 @@ func (rex PanelRequestEx) IsAuthenticated() bool {
 	if globalClient.Config.LocalServer {
 		return true
 	}
-	rawAuth := rex.Req.getRawAuthData()
-	return len(rawAuth) > 0
+	return rex.Req.AuthData != nil
+}
+
+func (rex PanelRequestEx) SetAuthData(aa AuthAtom) {
+	rex.Req.setAuthData(aa)
 }

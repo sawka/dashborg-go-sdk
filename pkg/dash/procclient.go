@@ -372,7 +372,7 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 	preq.PanelState = pstate
 	preq.PanelStateJson = reqMsg.PanelStateData
 
-	var authData []*AuthAtom
+	var authData AuthAtom
 	if reqMsg.AuthData != "" {
 		err := json.Unmarshal([]byte(reqMsg.AuthData), &authData)
 		if err != nil {
@@ -380,8 +380,8 @@ func (pc *procClient) dispatchRequest(ctx context.Context, reqMsg *dashproto.Req
 			preq.Done()
 			return
 		}
+		preq.AuthData = &authData
 	}
-	preq.AuthData = authData
 
 	isAllowedBackendCall := preq.isBackendCall && preq.RequestType == "data" && pc.Config.AllowBackendCalls
 
