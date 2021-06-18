@@ -139,7 +139,8 @@ func (c *containerImpl) StartBareStream(appName string, streamOpts dash.StreamOp
 	if app == nil || app.GetAppName() != appName {
 		return nil, fmt.Errorf("No active app[%s] found for StartBareStream", appName)
 	}
-	return appClient.StartBareStream(appName, streamOpts)
+	req, _, err := appClient.StartStream(appName, streamOpts, "")
+	return req, err
 }
 
 func (c *containerImpl) BackendPush(panelName string, path string, data interface{}) error {

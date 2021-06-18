@@ -432,5 +432,6 @@ func (pc *dashCloudClient) startBareStream(appName string, streamOpts dash.Strea
 	if app == nil {
 		return nil, fmt.Errorf("No active app[%s] found for StartBareStream", appName)
 	}
-	return app.AppClient.StartBareStream(appName, streamOpts)
+	streamReq, _, err := app.AppClient.StartStream(appName, streamOpts, "")
+	return streamReq, err
 }

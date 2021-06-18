@@ -59,7 +59,8 @@ type streamKey struct {
 
 type AppClient interface {
 	DispatchRequest(ctx context.Context, reqMsg *dashproto.RequestMessage)
-	StartBareStream(panelName string, streamOpts StreamOpts) (*PanelRequest, error)
+	SendRequestResponse(req *PanelRequest, done bool) (int, error)
+	StartStream(appName string, streamOpts StreamOpts, feClientId string) (*PanelRequest, string, error)
 }
 
 type appClient struct {
@@ -88,7 +89,7 @@ func MakeAppClient(app AppRuntime, service dashproto.DashborgServiceClient, conf
 }
 
 // returns numStreamClients, err
-func (pc *appClient) sendRequestResponse(req *PanelRequest, done bool) (int, error) {
+func (pc *appClient) SendRequestResponse(req *PanelRequest, done bool) (int, error) {
 	if req.isStream() && pc.stream_hasZeroClients(req.ReqId) {
 		req.clearActions()
 		return 0, nil
@@ -277,43 +278,6 @@ func nonBlockingRecv(returnCh chan *dashproto.RRAction) *dashproto.RRAction {
 	default:
 		return nil
 	}
-}
-
-// returns a context (reqid, ctx, nil) if SDK should start a new stream.
-// returns reqid, nil, nil if successfully hooked this client up to the existing streaming function.
-// returns "", nil, err if there was an error.
-func (pc *appClient) startStream(panelName string, feClientId string, streamOpts StreamOpts) (string, context.Context, error) {
-	reqId := pc.stream_getReqId(streamKey{PanelName: panelName, StreamId: streamOpts.StreamId})
-	m := &dashproto.StartStreamMessage{
-		Ts:            dashutil.Ts(),
-		PanelName:     panelName,
-		FeClientId:    feClientId,
-		ExistingReqId: reqId,
-	}
-	resp, err := pc.DBService.StartStream(pc.ctxWithMd(), m)
-	if err != nil {
-		pc.logV("Dashborg procclient startStream error: %v\n", err)
-		return "", nil, fmt.Errorf("Dashborg procclient startStream error: %w", err)
-	}
-	if !resp.Success {
-		return "", nil, fmt.Errorf("Dashborg procclient startStream error: %s", resp.Err)
-	}
-	if reqId != "" && reqId != resp.ReqId {
-		return "", nil, fmt.Errorf("Dashborg procclient startStream returned reqid:%s does not match existing reqid:%s", resp.ReqId, reqId)
-	}
-	reqId = resp.ReqId
-	sc := streamControl{
-		PanelName:      panelName,
-		StreamOpts:     streamOpts,
-		ReqId:          reqId,
-		HasZeroClients: false,
-	}
-	var shouldStart bool
-	sc, shouldStart = pc.stream_clientStart(sc, feClientId)
-	if !shouldStart {
-		return sc.ReqId, nil, nil
-	}
-	return sc.ReqId, sc.Ctx, nil
 }
 
 func (pc *appClient) logV(fmtStr string, args ...interface{}) {

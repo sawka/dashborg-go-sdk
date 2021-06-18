@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
@@ -35,23 +36,6 @@ func (pc *appClient) stream_hasZeroClients(reqId string) bool {
 	return sc.HasZeroClients
 }
 
-func (pc *appClient) stream_clientStartBare(sc streamControl) (streamControl, error) {
-	pc.Lock.Lock()
-	defer pc.Lock.Unlock()
-
-	skey := sc.getStreamKey()
-	oldSc, ok := pc.StreamMap[skey]
-	if ok {
-		return oldSc, fmt.Errorf("Stream already exists")
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	sc.Ctx = ctx
-	sc.CancelFn = cancel
-	pc.StreamKeyMap[sc.ReqId] = skey
-	pc.StreamMap[skey] = sc
-	return sc, nil
-}
-
 func (pc *appClient) stream_getReqId(skey streamKey) string {
 	pc.Lock.Lock()
 	defer pc.Lock.Unlock()
@@ -68,20 +52,25 @@ func (pc *appClient) stream_clientStart(newSc streamControl, feClientId string) 
 	defer pc.Lock.Unlock()
 	skey := newSc.getStreamKey()
 	sc, ok := pc.StreamMap[skey]
-	var shouldStart bool
 	if ok {
-		shouldStart = false
-		sc.HasZeroClients = false
-	} else {
-		shouldStart = true
-		sc = newSc
-		ctx, cancel := context.WithCancel(context.Background())
-		sc.Ctx = ctx
-		sc.CancelFn = cancel
-		pc.StreamKeyMap[sc.ReqId] = skey
+		// stream exists
+		if feClientId == "" {
+			return sc, false
+		}
+		if sc.HasZeroClients {
+			sc.HasZeroClients = false
+			pc.StreamMap[skey] = sc
+		}
+		return sc, false
 	}
-	pc.StreamMap[skey] = sc
-	return sc, shouldStart
+
+	// stream does not exist, use newSc
+	ctx, cancel := context.WithCancel(context.Background())
+	newSc.Ctx = ctx
+	newSc.CancelFn = cancel
+	pc.StreamKeyMap[newSc.ReqId] = skey
+	pc.StreamMap[skey] = newSc
+	return newSc, true
 }
 
 func (pc *appClient) stream_clientStop(reqId string) {
@@ -139,32 +128,75 @@ func (pc *appClient) stream_deleteAndCancel_nolock(reqId string) {
 	delete(pc.StreamMap, skey)
 }
 
-func (pc *appClient) StartBareStream(panelName string, streamOpts StreamOpts) (*PanelRequest, error) {
-	if !streamOpts.NoServerCancel {
-		return nil, fmt.Errorf("BareStreams must have NoServerCancel set in StreamOpts")
+func (pc *appClient) connectStream(appName string, streamOpts StreamOpts, feClientId string) (string, error) {
+	existingReqId := pc.stream_getReqId(streamKey{PanelName: appName, StreamId: streamOpts.StreamId})
+	m := &dashproto.StartStreamMessage{
+		Ts:            dashutil.Ts(),
+		PanelName:     appName,
+		FeClientId:    feClientId,
+		ExistingReqId: existingReqId,
+	}
+	resp, err := pc.DBService.StartStream(pc.ctxWithMd(), m)
+	if err != nil {
+		pc.logV("Dashborg startStream error: %v\n", err)
+		return "", fmt.Errorf("Dashborg startStream error: %w", err)
+	}
+	if !resp.Success {
+		return "", fmt.Errorf("Dashborg startStream error: %s", resp.Err)
+	}
+	if existingReqId != "" && existingReqId != resp.ReqId {
+		return "", fmt.Errorf("Dashborg startStream returned reqid:%s does not match existing reqid:%s", resp.ReqId, existingReqId)
+	}
+	return resp.ReqId, nil
+}
+
+// If feClientId is "", then this starts a "bare" stream (not connected to any frontend client).
+// If feClientId is set, then, this will connect this stream to the server, caller must still send "streamopen" action.
+// returns (stream-req, stream-reqid, error)
+// if stream-req is nil, then the stream already exists with reqid = stream-reqid.
+// if stream-req is not nil, then this is a new stream (stream-reqid == stream-req.reqid)
+func (pc *appClient) StartStream(appName string, streamOpts StreamOpts, feClientId string) (*PanelRequest, string, error) {
+	if streamOpts.StreamId == "" {
+		streamOpts.StreamId = uuid.New().String()
 	}
 	if !dashutil.IsTagValid(streamOpts.StreamId) {
-		return nil, fmt.Errorf("Invalid StreamId")
+		return nil, "", fmt.Errorf("Invalid StreamId")
 	}
-	sc := streamControl{
-		PanelName:      panelName,
+	if feClientId == "" && !streamOpts.NoServerCancel {
+		return nil, "", fmt.Errorf("BareStreams (no FE client) must have NoServerCancel set in StreamOpts")
+	}
+	var reqId string
+	if feClientId != "" {
+		if !dashutil.IsUUIDValid(feClientId) {
+			return nil, "", fmt.Errorf("Invalid FeClientId")
+		}
+		var err error
+		reqId, err = pc.connectStream(appName, streamOpts, feClientId)
+		if err != nil {
+			return nil, "", err
+		}
+	} else {
+		reqId = uuid.New().String()
+	}
+	newSc := streamControl{
+		PanelName:      appName,
 		StreamOpts:     streamOpts,
-		ReqId:          uuid.New().String(),
-		HasZeroClients: true,
+		ReqId:          reqId,
+		HasZeroClients: (feClientId == ""),
 	}
-	var err error
-	sc, err = pc.stream_clientStartBare(sc)
-	if err != nil {
-		return nil, err
+	sc, shouldStart := pc.stream_clientStart(newSc, feClientId)
+	if !shouldStart {
+		return nil, sc.ReqId, nil
 	}
 	streamReq := &PanelRequest{
 		StartTime:   time.Now(),
 		ctx:         sc.Ctx,
 		lock:        &sync.Mutex{},
-		PanelName:   panelName,
+		PanelName:   appName,
 		ReqId:       sc.ReqId,
 		RequestType: "stream",
 		Path:        streamOpts.StreamId,
+		appClient:   pc,
 	}
-	return streamReq, nil
+	return streamReq, sc.ReqId, nil
 }

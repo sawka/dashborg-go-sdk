@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
@@ -77,23 +76,17 @@ func (req *PanelRequest) clearActions() []*dashproto.RRAction {
 // Note that StartStream will flush any pending actions to the server.
 // If the stream already exists, the existing StreamOpts will not change (keeps the old NoServerCancel setting).
 // streamFn may be nil (useful if you are intending to attach to an existing stream created with StartBareStream).
-func (req *PanelRequest) StartStream(streamOpts StreamOpts, streamFn func(ctx context.Context, req *PanelRequest)) error {
-	if streamOpts.StreamId == "" {
-		streamOpts.StreamId = uuid.New().String()
-	}
-	if !dashutil.IsTagValid(streamOpts.StreamId) {
-		return fmt.Errorf("Invalid StreamId")
-	}
-	if !dashutil.IsUUIDValid(req.feClientId) {
-		return fmt.Errorf("No FeClientId, client does not support streaming")
-	}
+func (req *PanelRequest) StartStream(streamOpts StreamOpts, streamFn func(req *PanelRequest)) error {
 	if req.isDone {
 		return fmt.Errorf("Cannot call StartStream(), PanelRequest is already done")
 	}
 	if req.isStream() {
 		return fmt.Errorf("Cannot call StartStream(), PanelRequest is already streaming")
 	}
-	streamReqId, ctx, err := req.appClient.startStream(req.PanelName, req.feClientId, streamOpts)
+	if !dashutil.IsUUIDValid(req.feClientId) {
+		return fmt.Errorf("No FeClientId, client does not support streaming")
+	}
+	streamReq, streamReqId, err := req.appClient.StartStream(req.PanelName, streamOpts, req.feClientId)
 	if err != nil {
 		return err
 	}
@@ -109,17 +102,7 @@ func (req *PanelRequest) StartStream(streamOpts StreamOpts, streamFn func(ctx co
 	}
 	req.appendRR(rrAction)
 	req.Flush() // TODO flush error
-	if ctx != nil {
-		streamReq := &PanelRequest{
-			StartTime:   time.Now(),
-			ctx:         ctx,
-			lock:        &sync.Mutex{},
-			PanelName:   req.PanelName,
-			ReqId:       streamReqId,
-			RequestType: "stream",
-			Path:        streamOpts.StreamId,
-			appClient:   req.appClient,
-		}
+	if streamReq != nil {
 		go func() {
 			defer func() {
 				if panicErr := recover(); panicErr != nil {
@@ -129,7 +112,7 @@ func (req *PanelRequest) StartStream(streamOpts StreamOpts, streamFn func(ctx co
 				streamReq.Done()
 			}()
 			if streamFn != nil {
-				streamFn(ctx, streamReq)
+				streamFn(streamReq)
 			}
 		}()
 	}
@@ -278,7 +261,7 @@ func (req *PanelRequest) Flush() error {
 	if req.isDone {
 		return fmt.Errorf("Cannot Flush(), PanelRequest is already done")
 	}
-	numStreamClients, err := req.appClient.sendRequestResponse(req, false)
+	numStreamClients, err := req.appClient.SendRequestResponse(req, false)
 	if req.isStream() && err != nil {
 		req.appClient.logV("Dashborg Flush() stream error %v\n", err)
 		req.appClient.stream_serverStop(req.ReqId)
@@ -299,7 +282,7 @@ func (req *PanelRequest) Done() error {
 	if !req.authImpl && req.isRootReq() && req.err == nil {
 		AuthNone{}.checkAuth(req)
 	}
-	_, err := req.appClient.sendRequestResponse(req, true)
+	_, err := req.appClient.SendRequestResponse(req, true)
 	if err != nil {
 		req.appClient.logV("Dashborg ERROR sending handler response: %v\n", err)
 	}
