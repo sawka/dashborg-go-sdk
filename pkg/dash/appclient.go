@@ -25,7 +25,7 @@ const (
 	ErrUnavailable = "UNAVAILABLE"
 )
 
-const ClientVersion = "go-0.5.2"
+const ClientVersion = "go-0.6.0"
 
 const returnChSize = 20
 const smallDrainSleep = 5 * time.Millisecond
@@ -155,7 +155,6 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 		pc.logV("Dashborg gRPC got error request: err=%s\n", reqMsg.Err)
 		return
 	}
-	pc.logV("Dashborg gRPC got request: panel=%s, type=%s, path=%s\n", reqMsg.PanelName, reqMsg.RequestType, reqMsg.Path)
 
 	preq := &PanelRequest{
 		StartTime:     time.Now(),

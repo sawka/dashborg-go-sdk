@@ -1,6 +1,8 @@
 package dashcloud
 
 import (
+	"log"
+
 	"github.com/sawka/dashborg-go-sdk/pkg/dash"
 )
 
@@ -18,7 +20,14 @@ type containerImpl struct {
 }
 
 func (c *containerImpl) ConnectApp(app dash.AppRuntime) error {
-	return c.CloudClient.connectApp(app)
+	err := c.CloudClient.connectApp(app)
+	if err != nil {
+		log.Printf("Dashborg CloudContainer, error connecting app: %v\n", err)
+		return err
+	}
+	appName := app.GetAppName()
+	log.Printf("Dashborg CloudContainer App Link [%s]: %s\n", appName, appLink(appName))
+	return nil
 }
 
 func (c *containerImpl) ReflectZone() (*dash.ReflectZoneType, error) {
@@ -37,7 +46,7 @@ func (c *containerImpl) StartBareStream(appName string, streamOpts dash.StreamOp
 	return c.CloudClient.startBareStream(appName, streamOpts)
 }
 
-func StartClient(config *dash.Config) (Container, error) {
+func MakeClient(config *dash.Config) (Container, error) {
 	config.SetupForProcClient()
 	c := &containerImpl{Config: config}
 	c.CloudClient = makeCloudClient(config)

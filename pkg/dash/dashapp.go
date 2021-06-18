@@ -120,14 +120,15 @@ func (fv funcValueType) GetValue() (string, error) {
 	return fv.ValueFn()
 }
 
-func MakeApp(appName string, appType string) *App {
+func MakeApp(appName string) *App {
 	rtn := &App{
 		lock:    &sync.Mutex{},
 		appName: appName,
-		appType: appType,
+		appType: AppTypeGUI,
 	}
 	rtn.handlers = make(map[handlerKey]handlerType)
 	rtn.options = make(map[string]AppOption)
+	rtn.setOption_nolock(GenericAppOption{Name: OptionAuth, Type: "none"})
 	rtn.handlers[handlerKey{HandlerType: "auth"}] = handlerType{HandlerFn: rtn.authHandler}
 	rtn.handlers[handlerKey{HandlerType: "html"}] = handlerType{HandlerFn: rtn.htmlHandler}
 	return rtn
@@ -141,7 +142,7 @@ type handlerType struct {
 func (app *App) AppConfig() AppConfig {
 	app.lock.Lock()
 	defer app.lock.Unlock()
-	rtn := AppConfig{AppName: app.appName}
+	rtn := AppConfig{AppName: app.appName, AppType: app.appType}
 	rtn.Options = make(map[string]interface{})
 	for name, opt := range app.options {
 		if name != opt.OptionName() {
@@ -259,4 +260,8 @@ func (app *App) GetAppName() string {
 
 func (app *App) GetClientVersion() string {
 	return ClientVersion
+}
+
+func (app *App) SetAppType(appType string) {
+	app.appType = appType
 }

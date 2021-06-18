@@ -101,6 +101,7 @@ func (c *containerImpl) processOnloadHandlerOption(optData interface{}) error {
 
 func (c *containerImpl) ConnectApp(app dash.AppRuntime) error {
 	if c.App != nil {
+		log.Printf("Dashborg LocalContainer cannot connect a second app to local container")
 		return fmt.Errorf("Cannot connect a second app to local container")
 	}
 	appConfig := app.AppConfig()

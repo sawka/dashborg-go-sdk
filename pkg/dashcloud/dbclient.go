@@ -194,9 +194,6 @@ func appLink(appName string) string {
 
 func (pc *dashCloudClient) connectApp(app dash.AppRuntime) error {
 	appName := app.GetAppName()
-	if !pc.Config.LocalServer {
-		log.Printf("Dashborg App Link [%s]: %s\n", appName, appLink(appName))
-	}
 	m, err := makeAppMessage(app)
 	if err != nil {
 		return err
@@ -225,6 +222,7 @@ func makeAppMessage(app dash.AppRuntime) (*dashproto.ConnectAppMessage, error) {
 	appConfig := app.AppConfig()
 	m := &dashproto.ConnectAppMessage{Ts: dashutil.Ts()}
 	m.AppName = appConfig.AppName
+	m.AppType = appConfig.AppType
 	m.Options = make(map[string]string)
 	for name, val := range appConfig.Options {
 		jsonVal, err := dashutil.MarshalJson(val)
@@ -320,6 +318,7 @@ func (pc *dashCloudClient) runRequestStream() (bool, string) {
 			endingErrCode = dash.ErrBadConnId
 			break
 		}
+		logV("Dashborg gRPC got request: app=%s, type=%s, path=%s\n", reqMsg.PanelName, reqMsg.RequestType, reqMsg.Path)
 		go func() {
 			atomic.AddInt64(&reqCounter, 1)
 			timeoutMs := reqMsg.TimeoutMs

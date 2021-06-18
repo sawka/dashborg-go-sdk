@@ -186,6 +186,8 @@ func (rc *reqClient) RecvMsg(m interface{}) error {
 //////////////////////////
 
 func (c *localClient) DispatchLocalRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) ([]*dashproto.RRAction, error) {
+	pc.logV("Dashborg local request: app=%s, type=%s, path=%s\n", reqMsg.PanelName, reqMsg.RequestType, reqMsg.Path)
+
 	c.Lock.Lock()
 	appClient := c.AppClient
 	c.Lock.Unlock()
