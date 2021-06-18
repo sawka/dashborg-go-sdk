@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"log"
 	"strconv"
 	"time"
 	"unicode"
@@ -19,6 +20,10 @@ type SortSpec struct {
 
 func Ts() int64 {
 	return time.Now().UnixNano() / 1000000
+}
+
+func DashTime(t time.Time) int64 {
+	return t.UnixNano() / 1000000
 }
 
 func GoTime(ts int64) time.Time {
@@ -112,4 +117,52 @@ func RemoveFromStringArr(arr []string, val string) []string {
 	}
 	arr[pos] = arr[len(arr)-1]
 	return arr[:len(arr)-1]
+}
+
+type ExpoWait struct {
+	ForceWait       bool
+	InitialWait     time.Time
+	CurWaitDeadline time.Time
+	LastOkMs        int64
+	WaitTimes       int
+}
+
+func (w *ExpoWait) Wait() bool {
+	hasInitialWait := !w.InitialWait.IsZero()
+	if w.InitialWait.IsZero() {
+		w.InitialWait = time.Now()
+	}
+	if w.ForceWait || hasInitialWait {
+		time.Sleep(1 * time.Second)
+		w.WaitTimes++
+		w.ForceWait = false
+	}
+	msWait := int64(time.Since(w.InitialWait)) / int64(time.Millisecond)
+	if !hasInitialWait {
+		w.LastOkMs = msWait
+		return true
+	}
+	diffWait := msWait - w.LastOkMs
+	var rtnOk bool
+	switch {
+	case msWait < 4000:
+		w.LastOkMs = msWait
+		rtnOk = true
+
+	case msWait < 60000 && diffWait > 4800:
+		w.LastOkMs = msWait
+		rtnOk = true
+
+	case diffWait > 29500:
+		w.LastOkMs = msWait
+		rtnOk = true
+	}
+	if rtnOk {
+		log.Printf("Dashborg procclient RunRequestStreamLoop trying to connect (%0.1fs) %d\n", float64(msWait)/1000, w.WaitTimes)
+	}
+	return rtnOk
+}
+
+func (w *ExpoWait) Reset() {
+	*w = ExpoWait{}
 }

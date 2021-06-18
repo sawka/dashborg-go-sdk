@@ -4,43 +4,43 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dash"
 )
 
-type Config struct {
-	ProcName   string
-	AccId      string
-	AnonAcc    bool
-	AutoKeygen bool
-	ZoneName   string
-}
-
 type Container interface {
 	ConnectApp(app dash.AppRuntime) error
 	ReflectZone() (*dash.ReflectZoneType, error)
 	BackendPush(appName string, path string, data interface{}) error
 	CallDataHandler(appName string, path string, data interface{}) (interface{}, error)
+	StartBareStream(panelName string, streamOpts dash.StreamOpts) (*dash.PanelRequest, error)
 }
 
 type containerImpl struct {
-	Config Config
+	Config      *dash.Config
+	CloudClient *dashCloudClient
 }
 
 func (c *containerImpl) ConnectApp(app dash.AppRuntime) error {
-	err := dash.ConnectApp(app)
-	return err
+	return c.CloudClient.connectApp(app)
 }
 
 func (c *containerImpl) ReflectZone() (*dash.ReflectZoneType, error) {
-	return dash.ReflectZone()
+	return c.CloudClient.ReflectZone()
 }
 
 func (c *containerImpl) BackendPush(appName string, path string, data interface{}) error {
-	return dash.BackendPush(appName, path)
+	return c.CloudClient.backendPush(appName, path)
 }
 
 func (c *containerImpl) CallDataHandler(appName string, path string, data interface{}) (interface{}, error) {
-	return dash.CallDataHandler(appName, path, data)
+	return c.CloudClient.callDataHandler(appName, path, data)
 }
 
-func MakeClient(config *dash.Config) (Container, error) {
-	dash.StartProcClient(config)
-	return &containerImpl{}, nil
+func (c *containerImpl) StartBareStream(appName string, streamOpts dash.StreamOpts) (*dash.PanelRequest, error) {
+	return c.CloudClient.startBareStream(appName, streamOpts)
+}
+
+func StartClient(config *dash.Config) (Container, error) {
+	config.SetupForProcClient()
+	c := &containerImpl{Config: config}
+	c.CloudClient = makeCloudClient(config)
+	c.CloudClient.startClient()
+	return c, nil
 }

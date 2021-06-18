@@ -1,10 +1,14 @@
 package dashlocal
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
+	"sync/atomic"
 
+	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 	"github.com/sawka/dashborg-go-sdk/pkg/dash"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
@@ -22,15 +26,18 @@ type ContainerConfig struct {
 
 type Container interface {
 	ConnectApp(app dash.AppRuntime) error
+	StartBareStream(appName string, streamOpts dash.StreamOpts) (*dash.PanelRequest, error)
+	BackendPush(appName string, path string, data interface{}) error
 }
 
 type containerImpl struct {
-	Lock     *sync.Mutex
-	Config   ContainerConfig
-	App      dash.AppRuntime
-	RootHtml string
+	Lock      *sync.Mutex
+	Config    ContainerConfig
+	App       dash.AppRuntime
+	AppClient dash.AppClient
+	RootHtml  string
 
-	LocalClient dashproto.DashborgServiceClient
+	LocalClient *localClient
 	LocalServer *localServer
 
 	DynamicHtml   bool
@@ -96,7 +103,6 @@ func (c *containerImpl) ConnectApp(app dash.AppRuntime) error {
 	if c.App != nil {
 		return fmt.Errorf("Cannot connect a second app to local container")
 	}
-	c.App = app
 	appConfig := app.AppConfig()
 	for optName, opt := range appConfig.Options {
 		var optErr error
@@ -115,8 +121,43 @@ func (c *containerImpl) ConnectApp(app dash.AppRuntime) error {
 			return optErr
 		}
 	}
-	dash.ConnectApp(c.App)
+	connId := &atomic.Value{}
+	connId.Store(uuid.New().String())
+	appClient := dash.MakeAppClient(app, c.LocalClient, &dash.Config{}, connId)
+	c.App = app
+	c.AppClient = appClient
+	c.LocalClient.SetAppClient(appClient)
 	log.Printf("Connected app[%s] to Local Container @ %s\n", c.App.GetAppName(), c.Config.Addr)
+	return nil
+}
+
+func (c *containerImpl) StartBareStream(appName string, streamOpts dash.StreamOpts) (*dash.PanelRequest, error) {
+	c.Lock.Lock()
+	app := c.App
+	appClient := c.AppClient
+	c.Lock.Unlock()
+	if app == nil || app.GetAppName() != appName {
+		return nil, fmt.Errorf("No active app[%s] found for StartBareStream", appName)
+	}
+	return appClient.StartBareStream(appName, streamOpts)
+}
+
+func (c *containerImpl) BackendPush(panelName string, path string, data interface{}) error {
+	m := &dashproto.BackendPushMessage{
+		Ts:        dashutil.Ts(),
+		PanelName: panelName,
+		Path:      path,
+	}
+	resp, err := c.LocalClient.BackendPush(context.Background(), m)
+	if err != nil {
+		return err
+	}
+	if resp.Err != "" {
+		return errors.New(resp.Err)
+	}
+	if !resp.Success {
+		return errors.New("Error calling BackendPush()")
+	}
 	return nil
 }
 
@@ -156,6 +197,5 @@ func MakeContainer(config *ContainerConfig) (Container, error) {
 			log.Printf("Dashborg ERROR starting local server: %v\n", serveErr)
 		}
 	}()
-	dash.StartProcClient(pcConfig)
 	return container, nil
 }

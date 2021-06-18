@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	AppGUI= "gui"
-	AppDataService = "dataservice"
+	AppTypeGUI         = "gui"
+	AppTypeDataService = "dataservice"
 )
 
 const (
@@ -22,6 +22,7 @@ const (
 
 type AppConfig struct {
 	AppName string
+	AppType string
 	Options map[string]interface{}
 }
 
@@ -55,6 +56,7 @@ type AppRuntime interface {
 type App struct {
 	lock      *sync.Mutex
 	appName   string
+	appType   string
 	html      valueType
 	handlers  map[handlerKey]handlerType
 	options   map[string]AppOption
@@ -118,10 +120,11 @@ func (fv funcValueType) GetValue() (string, error) {
 	return fv.ValueFn()
 }
 
-func MakeApp(appName string) *App {
+func MakeApp(appName string, appType string) *App {
 	rtn := &App{
 		lock:    &sync.Mutex{},
 		appName: appName,
+		appType: appType,
 	}
 	rtn.handlers = make(map[handlerKey]handlerType)
 	rtn.options = make(map[string]AppOption)
@@ -195,7 +198,7 @@ func (app *App) SetOnLoadHandler(path string) {
 	app.SetOption(GenericAppOption{Name: OptionOnLoadHandler, Path: path})
 }
 
-func (app *App) AppHandler(path string, handlerFn func(req *PanelRequest) error) error {
+func (app *App) Handler(path string, handlerFn func(req *PanelRequest) error) error {
 	hkey := handlerKey{HandlerType: "handler", Path: path}
 	wrappedHandlerFn := func(req *PanelRequest) (interface{}, error) {
 		err := handlerFn(req)

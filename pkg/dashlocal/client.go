@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sawka/dashborg-go-sdk/pkg/dash"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 	"google.golang.org/grpc"
@@ -23,11 +24,11 @@ func init() {
 type localClient struct {
 	Lock         *sync.Mutex
 	ConnId       string
-	HandlerMap   map[handlerKey]bool
 	LocalServer  *localServer
 	ReqClient    *reqClient
 	LocalReqMap  map[string]*localReq
 	StreamClient *streamClient
+	AppClient    dash.AppClient
 }
 
 type localReq struct {
@@ -51,7 +52,6 @@ func makeLocalClient(config *localServerConfig, container *containerImpl) (*loca
 	rtn := &localClient{
 		Lock: &sync.Mutex{},
 	}
-	rtn.HandlerMap = make(map[handlerKey]bool)
 	rtn.LocalReqMap = make(map[string]*localReq)
 	rtn.ReqClient = makeReqClient(config)
 	rtn.StreamClient = makeStreamClient(rtn.sendStreamClose)
@@ -114,11 +114,7 @@ func (c *localClient) RegisterHandler(ctx context.Context, in *dashproto.Registe
 	c.Lock.Lock()
 	defer c.Lock.Unlock()
 
-	for _, inH := range in.Handlers {
-		hkey := handlerKey{PanelName: inH.PanelName, HandlerType: inH.HandlerType, Path: inH.Path}
-		c.HandlerMap[hkey] = true
-	}
-	return &dashproto.RegisterHandlerResponse{Success: true}, nil
+	return &dashproto.RegisterHandlerResponse{Err: "unimplemented"}, nil
 }
 
 func (c *localClient) RequestStream(ctx context.Context, in *dashproto.RequestStreamMessage, opts ...grpc.CallOption) (dashproto.DashborgService_RequestStreamClient, error) {
@@ -190,17 +186,29 @@ func (rc *reqClient) RecvMsg(m interface{}) error {
 //////////////////////////
 
 func (c *localClient) DispatchLocalRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) ([]*dashproto.RRAction, error) {
-	select {
-	case c.ReqClient.ReqCh <- reqMsg:
-		break
-	default:
-		return nil, fmt.Errorf("Dashborg Cannot Dispatch Request, Queue Full")
+	c.Lock.Lock()
+	appClient := c.AppClient
+	c.Lock.Unlock()
+	if appClient == nil {
+		return nil, fmt.Errorf("No App Connected to Dashborg Local Container")
 	}
+	auth := &dash.AuthAtom{
+		Scope: "zone",
+		Type:  "local",
+		Ts:    dashutil.Ts() + int64(dash.MaxAuthExp/time.Millisecond),
+		Role:  "user",
+	}
+	authJson, _ := dashutil.MarshalJson(auth)
+	reqMsg.AuthData = authJson
 	reqId := reqMsg.ReqId
 	req := &localReq{Ctx: ctx, DoneCh: make(chan struct{})}
 	c.Lock.Lock()
 	c.LocalReqMap[reqId] = req
 	c.Lock.Unlock()
+
+	go func() {
+		appClient.DispatchRequest(ctx, reqMsg)
+	}()
 
 	select {
 	case <-ctx.Done():
@@ -238,4 +246,11 @@ func (c *localClient) sendStreamClose(reqId string) {
 	go func() {
 		c.DispatchLocalRequest(context.Background(), req)
 	}()
+}
+
+func (c *localClient) SetAppClient(appClient dash.AppClient) {
+	c.Lock.Lock()
+	defer c.Lock.Unlock()
+
+	c.AppClient = appClient
 }

@@ -322,6 +322,9 @@ func (s *localServer) handleLoadPanel(w http.ResponseWriter, r *http.Request) (i
 	}
 	rtn["rra"] = rtnRRA
 	rtn["feclientid"] = feClientId
+	if c.App == nil {
+		rtn["errcode"] = "NOHANDLERS"
+	}
 	return rtn, nil
 }
 

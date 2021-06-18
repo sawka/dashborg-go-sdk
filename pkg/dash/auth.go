@@ -10,7 +10,7 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
-const maxAuthExp = 24 * time.Hour
+const MaxAuthExp = 24 * time.Hour
 
 const (
 	AuthScopeApp  = "app"
@@ -123,7 +123,7 @@ type challengeAuth interface {
 }
 
 func (AuthNone) checkAuth(req *PanelRequest) (bool, error) {
-	PanelRequestEx{req}.SetAuthData(AuthAtom{
+	req.setAuthData(AuthAtom{
 		Type: "noauth",
 		Role: "user",
 	})
@@ -138,7 +138,7 @@ func (auth AuthPassword) checkAuth(req *PanelRequest) (bool, error) {
 	var challengeData challengeData
 	err := mapstructure.Decode(req.Data, &challengeData)
 	if err == nil && challengeData.ChallengeData["password"] == auth.Password {
-		PanelRequestEx{req}.SetAuthData(AuthAtom{
+		req.setAuthData(AuthAtom{
 			Type: "password",
 			Role: "user",
 		})
@@ -199,7 +199,7 @@ func (auth AuthAccountJwt) checkAuthInternal(req *PanelRequest) (bool, error) {
 		Role    string `json:"role"`
 		DashAcc string `json:"dash-acc"`
 	}
-	cert, err := readCertInfo(globalClient.Config.CertFileName)
+	cert, err := readCertInfo(req.appClient.Config.CertFileName)
 	if err != nil {
 		// strange given that the client is running.
 		return false, fmt.Errorf("Error Validating JWT account token")
@@ -225,7 +225,7 @@ func (auth AuthAccountJwt) checkAuthInternal(req *PanelRequest) (bool, error) {
 		}
 		role = claims.Role
 	}
-	PanelRequestEx{req}.SetAuthData(AuthAtom{
+	req.setAuthData(AuthAtom{
 		Type: "accountjwt",
 		Id:   claims.Subject,
 		Role: role,
@@ -303,7 +303,7 @@ func (auth AuthSimpleJwt) checkAuthInternal(req *PanelRequest) (bool, error) {
 	if claims.Subject == "" {
 		return false, fmt.Errorf("JWT token '%s' does not contain a subject", auth.ParamName)
 	}
-	PanelRequestEx{req}.SetAuthData(AuthAtom{
+	req.setAuthData(AuthAtom{
 		Type: "simplejwt",
 		Id:   claims.Subject,
 		Role: role,
@@ -336,7 +336,7 @@ func (aup AuthSimpleLogin) checkAuth(req *PanelRequest) (bool, error) {
 	if !dashutil.IsRoleValid(role) {
 		return false, errors.New("Invalid role for user, cannot authenticate")
 	}
-	PanelRequestEx{req}.SetAuthData(AuthAtom{
+	req.setAuthData(AuthAtom{
 		Type: "login",
 		Id:   resp.Id,
 		Role: role,

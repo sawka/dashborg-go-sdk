@@ -45,6 +45,8 @@ type PanelRequest struct {
 	ctx           context.Context       // gRPC context / streaming context
 	isDone        bool                  // set after Done() is called and response has been sent to server
 	isBackendCall bool                  // true if this request originated from a backend data call
+
+	appClient *appClient
 }
 
 type PanelRequestEx struct {
@@ -91,7 +93,7 @@ func (req *PanelRequest) StartStream(streamOpts StreamOpts, streamFn func(ctx co
 	if req.isStream() {
 		return fmt.Errorf("Cannot call StartStream(), PanelRequest is already streaming")
 	}
-	streamReqId, ctx, err := globalClient.startStream(req.PanelName, req.feClientId, streamOpts)
+	streamReqId, ctx, err := req.appClient.startStream(req.PanelName, req.feClientId, streamOpts)
 	if err != nil {
 		return err
 	}
@@ -116,6 +118,7 @@ func (req *PanelRequest) StartStream(streamOpts StreamOpts, streamFn func(ctx co
 			ReqId:       streamReqId,
 			RequestType: "stream",
 			Path:        streamOpts.StreamId,
+			appClient:   req.appClient,
 		}
 		go func() {
 			defer func() {
@@ -275,12 +278,12 @@ func (req *PanelRequest) Flush() error {
 	if req.isDone {
 		return fmt.Errorf("Cannot Flush(), PanelRequest is already done")
 	}
-	numStreamClients, err := globalClient.sendRequestResponse(req, false)
+	numStreamClients, err := req.appClient.sendRequestResponse(req, false)
 	if req.isStream() && err != nil {
-		logV("Dashborg Flush() stream error %v\n", err)
-		globalClient.stream_serverStop(req.ReqId)
+		req.appClient.logV("Dashborg Flush() stream error %v\n", err)
+		req.appClient.stream_serverStop(req.ReqId)
 	} else if req.isStream() && numStreamClients == 0 {
-		globalClient.stream_handleZeroClients(req.ReqId)
+		req.appClient.stream_handleZeroClients(req.ReqId)
 	}
 	return err
 }
@@ -296,22 +299,22 @@ func (req *PanelRequest) Done() error {
 	if !req.authImpl && req.isRootReq() && req.err == nil {
 		AuthNone{}.checkAuth(req)
 	}
-	_, err := globalClient.sendRequestResponse(req, true)
+	_, err := req.appClient.sendRequestResponse(req, true)
 	if err != nil {
-		logV("Dashborg ERROR sending handler response: %v\n", err)
+		req.appClient.logV("Dashborg ERROR sending handler response: %v\n", err)
 	}
 	if req.isStream() {
-		globalClient.stream_clientStop(req.ReqId)
+		req.appClient.stream_clientStop(req.ReqId)
 	}
 	return err
 }
 
 func (req *PanelRequest) setAuthData(aa AuthAtom) {
 	if aa.Scope == "" {
-		aa.Scope = fmt.Sprintf("panel:%s:%s", globalClient.Config.ZoneName, req.PanelName)
+		aa.Scope = fmt.Sprintf("panel:%s:%s", req.appClient.Config.ZoneName, req.PanelName)
 	}
 	if aa.Ts == 0 {
-		aa.Ts = dashutil.Ts() + int64(maxAuthExp/time.Millisecond)
+		aa.Ts = dashutil.Ts() + int64(MaxAuthExp/time.Millisecond)
 	}
 	if aa.Type == "" {
 		panic(fmt.Sprintf("Dashborg Invalid AuthAtom, no Type specified"))
@@ -340,7 +343,7 @@ func (req *PanelRequest) appendPanelAuthChallenge(ch authChallenge) {
 // other auth methods might succeed.
 func (req *PanelRequest) checkAuth(allowedAuths ...AllowedAuth) bool {
 	req.authImpl = true
-	if (PanelRequestEx{req}).IsAuthenticated() {
+	if req.isAuthenticated() {
 		return true
 	}
 	for _, aa := range allowedAuths {
@@ -367,6 +370,10 @@ func (req *PanelRequest) isStream() bool {
 	return req.RequestType == "stream"
 }
 
+func (req *PanelRequest) isAuthenticated() bool {
+	return req.appClient.Config.LocalServer || req.AuthData != nil
+}
+
 func (rex PanelRequestEx) SetHtml(html string) error {
 	return rex.Req.setHtml(html)
 }
@@ -381,15 +388,4 @@ func (rex PanelRequestEx) IsDone() bool {
 
 func (rex PanelRequestEx) IsBackendCall() bool {
 	return rex.Req.isBackendCall
-}
-
-func (rex PanelRequestEx) IsAuthenticated() bool {
-	if globalClient.Config.LocalServer {
-		return true
-	}
-	return rex.Req.AuthData != nil
-}
-
-func (rex PanelRequestEx) SetAuthData(aa AuthAtom) {
-	rex.Req.setAuthData(aa)
 }

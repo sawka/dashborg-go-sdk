@@ -155,8 +155,9 @@ message BackendPushResponse {
 
 message ConnectAppMessage {
     int64 Ts = 1;
-    string AppName = 4;
-    map<string,string> Options = 5;
+    string AppName = 2;
+    string AppType = 3;
+    map<string,string> Options = 4;
 }
 
 message ConnectAppResponse {

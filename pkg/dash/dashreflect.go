@@ -149,99 +149,37 @@ func unmarshalToType(jsonData string, rtnType reflect.Type) (reflect.Value, erro
 	return reflect.Zero(rtnType), nil
 }
 
-// RegisterPanelHandlerEx registers a panel handler using reflection. The handler function
-// must return exactly one error value.  It must also take between 1-3 arguments.
-// The first parameter must be a *dash.PanelRequest.  The second (optional)
-// parameter is PanelState, and the third (optional) parameter is Data.  Dashborg will attempt to
-// unmarshal the raw JSON of PanelState and Data to the types in the handler signature using
-// the standard Go json.Unmarshal() function.  If an error occurs during unmarshalling it will
-// be returned to the Dashborg service (and your handler function will never run).
-func RegisterPanelHandlerEx(panelName string, path string, handlerFn interface{}) error {
-	hType := reflect.TypeOf(handlerFn)
-	if !checkOutput(hType, errType) {
-		return fmt.Errorf("Dashborg Panel Handler must return one error value")
-	}
-	paramsOk := (hType.NumIn() >= 1 && hType.NumIn() <= 3) && hType.In(0) == panelReqType
-	if !paramsOk {
-		return fmt.Errorf("Dashborg Panel Handler must have 1-3 arguments (*dash.PanelRequest, stateType, dataType)")
-	}
-	hVal := reflect.ValueOf(handlerFn)
-	RegisterPanelHandler(panelName, path, func(req *PanelRequest) error {
-		args, err := makeCallArgs(hType, req)
-		if err != nil {
-			return err
-		}
-		rtnVals := hVal.Call(args)
-		if rtnVals[0].IsNil() {
-			return nil
-		}
-		return rtnVals[0].Interface().(error)
-	})
-	return nil
-}
-
-// RegisterPanelDataEx registers a panel handler using reflection.  The handler function must
-// return exactly two values (interface{}, error).  It must also take between 1-3 arguments.
-// The first parameter must be a *dash.PanelRequest.  The second (optional)
-// parameter is PanelState, and the third (optional) parameter is Data.  Dashborg will attempt to
-// unmarshal the raw JSON of PanelState and Data to the types in the handler signature using
-// the standard Go json.Unmarshal() function.  If an error occurs during unmarshalling it will
-// be returned to the Dashborg service (and your handler function will never run).
-func RegisterDataHandlerEx(panelName string, path string, handlerFn interface{}) error {
-	hType := reflect.TypeOf(handlerFn)
-	if !checkOutput(hType, interfaceType, errType) {
-		return fmt.Errorf("Dashborg Data Handler must return two values (interface{}, error)")
-	}
-	paramsOk := (hType.NumIn() >= 1 && hType.NumIn() <= 3) && hType.In(0) == panelReqType
-	if !paramsOk {
-		return fmt.Errorf("Dashborg Panel Handler must have 1-3 arguments (*dash.PanelRequest, stateType, dataType)")
-	}
-	hVal := reflect.ValueOf(handlerFn)
-	RegisterDataHandler(panelName, path, func(req *PanelRequest) (interface{}, error) {
-		args, err := makeCallArgs(hType, req)
-		if err != nil {
-			return nil, err
-		}
-		rtnVals := hVal.Call(args)
-		if rtnVals[1].IsNil() {
-			return rtnVals[0].Interface(), nil
-		}
-		return rtnVals[0].Interface(), rtnVals[1].Interface().(error)
-	})
-	return nil
-}
-
 type CallHandlerOpts struct {
 	StateType reflect.Type
 }
 
-func RegisterCallHandlerEx(panelName string, path string, handlerFn interface{}, opts *CallHandlerOpts) error {
-	if opts == nil {
-		opts = &CallHandlerOpts{}
-	}
-	hType := reflect.TypeOf(handlerFn)
-	if !checkOutput(hType, interfaceType, errType) {
-		return fmt.Errorf("Dashborg Call Handler must return two values (interface{}, error)")
-	}
-	if opts.StateType != nil {
-		if hType.NumIn() == 0 || !opts.StateType.AssignableTo(hType.In(0)) {
-			return fmt.Errorf("Dashborg Call Handler with StateType option must take StateType as first parameter")
-		}
-	}
-	hVal := reflect.ValueOf(handlerFn)
-	RegisterDataHandler(panelName, path, func(req *PanelRequest) (interface{}, error) {
-		args, err := makeCallArgs2(hType, *opts, req)
-		if err != nil {
-			return nil, err
-		}
-		rtnVals := hVal.Call(args)
-		if rtnVals[1].IsNil() {
-			return rtnVals[0].Interface(), nil
-		}
-		return rtnVals[0].Interface(), rtnVals[1].Interface().(error)
-	})
-	return nil
-}
+// func RegisterCallHandlerEx(panelName string, path string, handlerFn interface{}, opts *CallHandlerOpts) error {
+// 	if opts == nil {
+// 		opts = &CallHandlerOpts{}
+// 	}
+// 	hType := reflect.TypeOf(handlerFn)
+// 	if !checkOutput(hType, interfaceType, errType) {
+// 		return fmt.Errorf("Dashborg Call Handler must return two values (interface{}, error)")
+// 	}
+// 	if opts.StateType != nil {
+// 		if hType.NumIn() == 0 || !opts.StateType.AssignableTo(hType.In(0)) {
+// 			return fmt.Errorf("Dashborg Call Handler with StateType option must take StateType as first parameter")
+// 		}
+// 	}
+// 	hVal := reflect.ValueOf(handlerFn)
+// 	RegisterDataHandler(panelName, path, func(req *PanelRequest) (interface{}, error) {
+// 		args, err := makeCallArgs2(hType, *opts, req)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		rtnVals := hVal.Call(args)
+// 		if rtnVals[1].IsNil() {
+// 			return rtnVals[0].Interface(), nil
+// 		}
+// 		return rtnVals[0].Interface(), rtnVals[1].Interface().(error)
+// 	})
+// 	return nil
+// }
 
 // RegisterAppHandlerEx registers a panel handler using reflection. The handler function
 // must return exactly one error value.  It must also take between 1-3 arguments.
@@ -250,7 +188,7 @@ func RegisterCallHandlerEx(panelName string, path string, handlerFn interface{},
 // unmarshal the raw JSON of PanelState and Data to the types in the handler signature using
 // the standard Go json.Unmarshal() function.  If an error occurs during unmarshalling it will
 // be returned to the Dashborg service (and your handler function will never run).
-func (app *App) AppHandlerEx(path string, handlerFn interface{}) error {
+func (app *App) HandlerEx(path string, handlerFn interface{}) error {
 	hType := reflect.TypeOf(handlerFn)
 	if !checkOutput(hType, errType) {
 		return fmt.Errorf("Dashborg Panel Handler must return one error value")
@@ -260,7 +198,7 @@ func (app *App) AppHandlerEx(path string, handlerFn interface{}) error {
 		return fmt.Errorf("Dashborg Panel Handler must have 1-3 arguments (Request, stateType, dataType)")
 	}
 	hVal := reflect.ValueOf(handlerFn)
-	app.AppHandler(path, func(req *PanelRequest) error {
+	app.Handler(path, func(req *PanelRequest) error {
 		args, err := makeCallArgs(hType, req)
 		if err != nil {
 			return err
