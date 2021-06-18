@@ -72,9 +72,10 @@ type appClient struct {
 	ConnId       *atomic.Value
 	StreamMap    map[streamKey]streamControl // map streamKey -> streamControl
 	StreamKeyMap map[string]streamKey        // map reqid -> streamKey
+	Container    Container
 }
 
-func MakeAppClient(app AppRuntime, service dashproto.DashborgServiceClient, config *Config, connId *atomic.Value) AppClient {
+func MakeAppClient(container Container, app AppRuntime, service dashproto.DashborgServiceClient, config *Config, connId *atomic.Value) AppClient {
 	rtn := &appClient{
 		Lock:         &sync.Mutex{},
 		StartTs:      time.Now(),
@@ -84,6 +85,7 @@ func MakeAppClient(app AppRuntime, service dashproto.DashborgServiceClient, conf
 		ConnId:       connId,
 		StreamMap:    make(map[streamKey]streamControl),
 		StreamKeyMap: make(map[string]streamKey),
+		Container:    container,
 	}
 	return rtn
 }
@@ -167,6 +169,7 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 		Path:          reqMsg.Path,
 		isBackendCall: reqMsg.IsBackendCall,
 		appClient:     pc,
+		container:     pc.Container,
 	}
 	hkey := handlerKey{
 		PanelName: reqMsg.PanelName,
@@ -182,7 +185,7 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 	case "auth":
 		hkey.HandlerType = "auth"
 	case "streamclose":
-		// *** pc.stream_serverStop(preq.ReqId)
+		pc.stream_serverStop(preq.ReqId)
 		return // no response for streamclose
 	default:
 		preq.err = fmt.Errorf("Invalid RequestMessage.RequestType [%s]", reqMsg.RequestType)

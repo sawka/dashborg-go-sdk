@@ -192,7 +192,18 @@ func appLink(appName string) string {
 	return fmt.Sprintf("https://acc-%s.console.dashborg.net/zone/%s/%s", accId, zoneName, appName)
 }
 
-func (pc *dashCloudClient) connectApp(app dash.AppRuntime) error {
+func (pc *dashCloudClient) ConnectApp(app dash.AppRuntime) error {
+	err := pc.connectAppInternal(app)
+	if err != nil {
+		log.Printf("Dashborg CloudContainer, error connecting app: %v\n", err)
+		return err
+	}
+	appName := app.GetAppName()
+	log.Printf("Dashborg CloudContainer App Link [%s]: %s\n", appName, appLink(appName))
+	return nil
+}
+
+func (pc *dashCloudClient) connectAppInternal(app dash.AppRuntime) error {
 	appName := app.GetAppName()
 	m, err := makeAppMessage(app)
 	if err != nil {
@@ -211,7 +222,7 @@ func (pc *dashCloudClient) connectApp(app dash.AppRuntime) error {
 	for name, warning := range resp.OptionWarnings {
 		log.Printf("ConnectApp WARNING option[%s]: %s\n", name, warning)
 	}
-	appClient := dash.MakeAppClient(app, pc.DBService, pc.Config, pc.ConnId)
+	appClient := dash.MakeAppClient(pc, app, pc.DBService, pc.Config, pc.ConnId)
 	pc.Lock.Lock()
 	defer pc.Lock.Unlock()
 	pc.AppMap[appName] = &AppStruct{App: app, AppClient: appClient}
@@ -349,7 +360,7 @@ func logV(fmtStr string, args ...interface{}) {
 	}
 }
 
-func (pc *dashCloudClient) backendPush(panelName string, path string) error {
+func (pc *dashCloudClient) BackendPush(panelName string, path string, data interface{}) error {
 	m := &dashproto.BackendPushMessage{
 		Ts:        dashutil.Ts(),
 		PanelName: panelName,
@@ -388,7 +399,7 @@ func (pc *dashCloudClient) ReflectZone() (*dash.ReflectZoneType, error) {
 	return &rtn, nil
 }
 
-func (pc *dashCloudClient) callDataHandler(panelName string, path string, data interface{}) (interface{}, error) {
+func (pc *dashCloudClient) CallDataHandler(panelName string, path string, data interface{}) (interface{}, error) {
 	jsonData, err := dashutil.MarshalJson(data)
 	if err != nil {
 		return nil, err
@@ -424,7 +435,7 @@ func (pc *dashCloudClient) callDataHandler(panelName string, path string, data i
 // same StreamId.  An error will be returned if a stream with this StreamId has already started.
 // Unlike StartStream StreamId must be specified ("" will return an error).
 // Caller is responsible for calling req.Done() when the stream is finished.
-func (pc *dashCloudClient) startBareStream(appName string, streamOpts dash.StreamOpts) (*dash.PanelRequest, error) {
+func (pc *dashCloudClient) StartBareStream(appName string, streamOpts dash.StreamOpts) (*dash.PanelRequest, error) {
 	pc.Lock.Lock()
 	app := pc.AppMap[appName]
 	pc.Lock.Unlock()

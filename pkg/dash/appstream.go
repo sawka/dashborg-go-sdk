@@ -197,6 +197,7 @@ func (pc *appClient) StartStream(appName string, streamOpts StreamOpts, feClient
 		RequestType: "stream",
 		Path:        streamOpts.StreamId,
 		appClient:   pc,
+		container:   pc.Container,
 	}
 	return streamReq, sc.ReqId, nil
 }

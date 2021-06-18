@@ -6,6 +6,12 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 )
 
+type Container interface {
+	ConnectApp(app AppRuntime) error
+	StartBareStream(appName string, streamOpts StreamOpts) (*PanelRequest, error)
+	BackendPush(appName string, path string, data interface{}) error
+}
+
 type Config struct {
 	// DASHBORG_ACCID, set to force an AccountId (must match certificate).  If not set, AccountId is set from certificate file.
 	// If AccId is given and AutoKeygen is true, and key/cert files are not found, Dashborg will create a new self-signed

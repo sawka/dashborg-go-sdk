@@ -46,6 +46,7 @@ type PanelRequest struct {
 	isBackendCall bool                  // true if this request originated from a backend data call
 
 	appClient *appClient
+	container Container
 }
 
 type PanelRequestEx struct {
@@ -54,6 +55,10 @@ type PanelRequestEx struct {
 
 func (req *PanelRequest) Context() context.Context {
 	return req.ctx
+}
+
+func (req *PanelRequest) Container() Container {
+	return req.container
 }
 
 func (req *PanelRequest) appendRR(rrAction *dashproto.RRAction) {
