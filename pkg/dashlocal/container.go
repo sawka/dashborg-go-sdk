@@ -99,6 +99,18 @@ func (c *containerImpl) processOnloadHandlerOption(optData interface{}) error {
 	return nil
 }
 
+func (c *containerImpl) processAuthOption(optData interface{}) error {
+	var authOpt dash.GenericAppOption
+	err := mapstructure.Decode(optData, &authOpt)
+	if err != nil {
+		return err
+	}
+	if authOpt.Type == "none" {
+		return nil
+	}
+	return fmt.Errorf("Unsupported auth type[%s]", authOpt.Type)
+}
+
 func (c *containerImpl) ConnectApp(app dash.AppRuntime) error {
 	if c.App != nil {
 		log.Printf("Dashborg LocalContainer cannot connect a second app to local container")
@@ -113,6 +125,12 @@ func (c *containerImpl) ConnectApp(app dash.AppRuntime) error {
 
 		case "onloadhandler":
 			optErr = c.processOnloadHandlerOption(opt)
+
+		case "auth":
+			optErr = c.processAuthOption(opt)
+			if optErr != nil {
+				log.Printf("Dashborg LocalContainer WARNING opt[%s]: %s\n", optName, optErr.Error())
+			}
 
 		default:
 			log.Printf("Dashborg LocalContainer WARNING opt[%s]: unsupported option\n", optName)
@@ -194,6 +212,7 @@ func MakeContainer(config *ContainerConfig) (Container, error) {
 		return nil, err
 	}
 	container.LocalServer = localServer
+	log.Printf("Dashborg Local Container starting at http://%s\n", config.Addr)
 	go func() {
 		serveErr := container.LocalServer.listenAndServe()
 		if serveErr != nil {

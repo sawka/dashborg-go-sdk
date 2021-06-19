@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/sawka/dashborg-go-sdk/pkg/dash"
+	"github.com/sawka/dashborg-go-sdk/pkg/dashcloud"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
@@ -69,7 +70,7 @@ func (j *Job) CopyJob() *Job {
 	return rtn
 }
 
-func (j *Job) Run() {
+func (j *Job) Run(c dash.Container) {
 	defer j.StreamReq.Done()
 	for j.CurIter < j.RunLength {
 		time.Sleep(1 * time.Second)
@@ -89,7 +90,7 @@ func (j *Job) Run() {
 	j.Lock.Unlock()
 	j.StreamReq.SetData("$.seljob", j.CopyJob())
 	j.StreamReq.Flush()
-	dash.BackendPush("streaming", "/refresh-job-list")
+	c.BackendPush("streaming", "/refresh-job-list", nil)
 }
 
 func randomIncrement(bias bool) int {
@@ -187,7 +188,7 @@ func (m *StreamModel) StartJob(req *dash.PanelRequest, state PanelState, data St
 	}
 	job.UpdateDist()
 	var err error
-	job.StreamReq, err = dash.StartBareStream("streaming", dash.StreamOpts{StreamId: job.JobId, NoServerCancel: true})
+	job.StreamReq, err = req.Container().StartBareStream("streaming", dash.StreamOpts{StreamId: job.JobId, NoServerCancel: true})
 	if err != nil {
 		return err
 	}
@@ -206,35 +207,7 @@ func (m *StreamModel) StartJob(req *dash.PanelRequest, state PanelState, data St
 		req.StartStream(dash.StreamOpts{StreamId: job.JobId, ControlPath: cpath}, nil)
 	}
 
-	go job.Run()
-	return nil
-}
-
-func (m *StreamModel) RootHandler(req *dash.PanelRequest) error {
-	req.SetHtmlFromFile("cmd/streaming/streaming.html")
-	req.SetData("$state.streaming", true)
-	var job *Job
-	m.Lock.Lock()
-	for _, j := range m.RunningJobs {
-		if job == nil {
-			job = j
-			continue
-		}
-		if j.StartTs > job.StartTs {
-			job = j
-		}
-	}
-	m.Lock.Unlock()
-	if job == nil {
-		return nil
-	}
-	job = job.CopyJob()
-	req.SetData("$state.seljobid", job.JobId)
-	req.SetData("$.seljob", job)
-	if job.JobStatus == "running" {
-		cpath := fmt.Sprintf("$state.jobstreams['" + job.JobId + "']")
-		req.StartStream(dash.StreamOpts{StreamId: job.JobId, ControlPath: cpath}, nil)
-	}
+	go job.Run(req.Container())
 	return nil
 }
 
@@ -364,6 +337,36 @@ func (m *StreamModel) RefreshJobList(req *dash.PanelRequest) error {
 	return nil
 }
 
+func (m *StreamModel) Init(req *dash.PanelRequest) error {
+	req.SetData("$state.streaming", true)
+	var job *Job
+	m.Lock.Lock()
+	for _, j := range m.RunningJobs {
+		if job == nil {
+			job = j
+			continue
+		}
+		if j.StartTs > job.StartTs {
+			job = j
+		}
+	}
+	m.Lock.Unlock()
+	if job == nil {
+		return nil
+	}
+	job = job.CopyJob()
+	req.SetData("$state.seljobid", job.JobId)
+	req.SetData("$.seljob", job)
+	if job.JobStatus == "running" {
+		cpath := fmt.Sprintf("$state.jobstreams['" + job.JobId + "']")
+		err := req.StartStream(dash.StreamOpts{StreamId: job.JobId, ControlPath: cpath}, nil)
+		if err != nil {
+			fmt.Printf("hello error %v\n", err)
+		}
+	}
+	return nil
+}
+
 func main() {
 	model, err := CreateStreamModel()
 	if err != nil {
@@ -371,21 +374,25 @@ func main() {
 		return
 	}
 	rand.Seed(time.Now().Unix())
-	cfg := &dash.Config{ProcName: "streaming", AnonAcc: true, AutoKeygen: true}
-	dash.StartProcClient(cfg)
-	defer dash.WaitForClear()
 
-	dash.RegisterPanelHandler("streaming", "/", model.RootHandler)
-	dash.RegisterDataHandlerEx("streaming", "/get-job", model.GetJobById)
-	dash.RegisterDataHandlerEx("streaming", "/get-jobs", model.GetJobList)
-	dash.RegisterPanelHandlerEx("streaming", "/start-job", model.StartJob)
-	dash.RegisterPanelHandlerEx("streaming", "/select-job", model.SelectJob)
-	dash.RegisterPanelHandlerEx("streaming", "/toggle-streaming", model.ToggleStreaming)
-	dash.RegisterPanelHandlerEx("streaming", "/stop-job", model.StopJob)
-	dash.RegisterPanelHandlerEx("streaming", "/delete-job", model.DeleteJob)
-	dash.RegisterPanelHandlerEx("streaming", "/refresh-job-list", model.RefreshJobList)
+	app := dash.MakeApp("streaming")
+	app.SetHtmlFromFile("cmd/streaming/streaming.html")
+	app.HandlerEx("/init", model.Init)
+	app.DataHandlerEx("/get-job", model.GetJobById)
+	app.DataHandlerEx("/get-jobs", model.GetJobList)
+	app.HandlerEx("/start-job", model.StartJob)
+	app.HandlerEx("/select-job", model.SelectJob)
+	app.HandlerEx("/toggle-streaming", model.ToggleStreaming)
+	app.HandlerEx("/stop-job", model.StopJob)
+	app.HandlerEx("/delete-job", model.DeleteJob)
+	app.HandlerEx("/refresh-job-list", model.RefreshJobList)
+	app.SetOnLoadHandler("/init")
+
+	cfg := &dash.Config{ProcName: "streaming", AnonAcc: true, AutoKeygen: true}
+	container, _ := dashcloud.MakeClient(cfg)
+	container.ConnectApp(app)
 
 	time.Sleep(5 * time.Second)
-	dash.BackendPush("streaming", "/refresh-job-list")
+	container.BackendPush("streaming", "/refresh-job-list", nil)
 	select {}
 }

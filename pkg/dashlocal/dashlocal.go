@@ -520,7 +520,6 @@ func (s *localServer) listenAndServe() error {
 			s.HttpServer.Shutdown(context.Background())
 		}()
 	}
-	log.Printf("Dashborg Local Container starting at http://%s\n", s.Config.Addr)
 	err := s.HttpServer.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {
 		log.Printf("Dashborg Local Server error:%v\n", err)
