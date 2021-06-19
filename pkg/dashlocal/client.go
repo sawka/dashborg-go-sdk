@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"sync"
 	"time"
 
@@ -29,6 +30,7 @@ type localClient struct {
 	LocalReqMap  map[string]*localReq
 	StreamClient *streamClient
 	AppClient    dash.AppClient
+	Verbose      bool
 }
 
 type localReq struct {
@@ -55,6 +57,7 @@ func makeLocalClient(config *localServerConfig, container *containerImpl) (*loca
 	rtn.LocalReqMap = make(map[string]*localReq)
 	rtn.ReqClient = makeReqClient(config)
 	rtn.StreamClient = makeStreamClient(rtn.sendStreamClose)
+	rtn.Verbose = config.Verbose
 	return rtn, nil
 }
 
@@ -185,8 +188,14 @@ func (rc *reqClient) RecvMsg(m interface{}) error {
 
 //////////////////////////
 
+func (c *localClient) logV(fmtStr string, args ...interface{}) {
+	if c.Verbose {
+		log.Printf(fmtStr, args...)
+	}
+}
+
 func (c *localClient) DispatchLocalRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) ([]*dashproto.RRAction, error) {
-	pc.logV("Dashborg local request: app=%s, type=%s, path=%s\n", reqMsg.PanelName, reqMsg.RequestType, reqMsg.Path)
+	c.logV("Dashborg local request: app=%s, type=%s, path=%s\n", reqMsg.PanelName, reqMsg.RequestType, reqMsg.Path)
 
 	c.Lock.Lock()
 	appClient := c.AppClient

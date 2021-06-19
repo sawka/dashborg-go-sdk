@@ -90,6 +90,15 @@ func fileValue(fileName string, isDynamic bool) valueType {
 	}
 }
 
+func stringValue(val string) valueType {
+	return funcValueType{
+		Dyn: false,
+		ValueFn: func() (string, error) {
+			return val, nil
+		},
+	}
+}
+
 func interfaceValue(val interface{}) valueType {
 	return funcValueType{
 		Dyn: false,
@@ -183,7 +192,7 @@ func (app *App) SetHtml(html string) {
 	app.lock.Lock()
 	defer app.lock.Unlock()
 
-	app.html = interfaceValue(html)
+	app.html = stringValue(html)
 	app.setOption_nolock(GenericAppOption{Name: OptionHtml, Type: "dynamic"})
 }
 

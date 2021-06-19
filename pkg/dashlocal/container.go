@@ -124,7 +124,7 @@ func (c *containerImpl) ConnectApp(app dash.AppRuntime) error {
 	}
 	connId := &atomic.Value{}
 	connId.Store(uuid.New().String())
-	appClient := dash.MakeAppClient(app, c.LocalClient, &dash.Config{}, connId)
+	appClient := dash.MakeAppClient(c, app, c.LocalClient, &dash.Config{}, connId)
 	c.App = app
 	c.AppClient = appClient
 	c.LocalClient.SetAppClient(appClient)
@@ -179,8 +179,9 @@ func MakeContainer(config *ContainerConfig) (Container, error) {
 	config.ZoneName = pcConfig.ZoneName
 	container := &containerImpl{Lock: &sync.Mutex{}, Config: *config}
 	lsConfig := &localServerConfig{
-		Env:  config.Env,
-		Addr: config.Addr,
+		Env:     config.Env,
+		Addr:    config.Addr,
+		Verbose: config.Verbose,
 	}
 	dbService, err := makeLocalClient(lsConfig, container)
 	if err != nil {

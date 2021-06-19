@@ -366,6 +366,10 @@ func (rex PanelRequestEx) SetHtml(html string) error {
 	return rex.Req.setHtml(html)
 }
 
+func (rex PanelRequestEx) SetHtmlFromFile(fileName string) error {
+	return rex.Req.setHtmlFromFile(fileName)
+}
+
 func (rex PanelRequestEx) CheckAuth(allowedAuths ...AllowedAuth) bool {
 	return rex.Req.checkAuth(allowedAuths...)
 }

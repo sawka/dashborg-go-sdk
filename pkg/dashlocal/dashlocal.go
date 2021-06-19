@@ -44,6 +44,7 @@ type localServerConfig struct {
 	Addr       string        // defaults to localhost:8082
 	ShutdownCh chan struct{} // channel for shutting down server
 	Env        string
+	Verbose    bool
 }
 
 type localServer struct {
