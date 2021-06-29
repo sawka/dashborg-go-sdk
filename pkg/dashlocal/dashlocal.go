@@ -25,6 +25,9 @@ const csrfCookie = "dashcsrf"
 const csrfTokenHeader = "X-Csrf-Token"
 const feClientIdHeader = "X-Dashborg-FeClientId"
 
+const defaultAccId = "local-server"
+const defaultZoneName = "default"
+
 const httpReadTimeout = 5 * time.Second
 const httpWriteTimeout = 21 * time.Second
 const httpMaxHeaderBytes = 60000
@@ -93,8 +96,8 @@ func (s *localServer) getRootHtmlUrl() string {
 
 func (s *localServer) rootHandler(w http.ResponseWriter, r *http.Request) {
 	pconfig := &lsPanelConfig{
-		AccId:         s.Container.Config.AccId,
-		ZoneName:      s.Container.Config.ZoneName,
+		AccId:         defaultAccId,
+		ZoneName:      defaultZoneName,
 		PanelName:     s.Container.getAppName(),
 		ChromeVarName: "DashborgChromeState",
 		Id:            "dash-chromeroot",
@@ -129,10 +132,10 @@ func (s *localServer) rootHandler(w http.ResponseWriter, r *http.Request) {
 func (s *localServer) newReq(r *http.Request, rtype string, path string, data interface{}, panelState interface{}) (*dashproto.RequestMessage, error) {
 	rtn := &dashproto.RequestMessage{
 		Ts:          dashutil.Ts(),
-		AccId:       s.Container.Config.AccId,
+		AccId:       defaultAccId,
 		ReqId:       uuid.New().String(),
 		RequestType: rtype,
-		ZoneName:    s.Container.Config.ZoneName,
+		ZoneName:    defaultZoneName,
 		PanelName:   s.Container.getAppName(),
 		Path:        path,
 	}
@@ -247,8 +250,8 @@ func convertRR(rr *dashproto.RRAction, reqId string) map[string]interface{} {
 	if rr.Selector != "" {
 		rtn["selector"] = rr.Selector
 	}
-	if rr.EventType != "" {
-		rtn["eventtype"] = rr.EventType
+	if rr.OpType != "" {
+		rtn["optype"] = rr.OpType
 	}
 	if rr.JsonData != "" {
 		var dataI interface{}
@@ -522,7 +525,6 @@ func (s *localServer) listenAndServe() error {
 	}
 	err := s.HttpServer.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {
-		log.Printf("Dashborg Local Server error:%v\n", err)
 		return err
 	}
 	log.Printf("Dashborg Local Server Shutdown\n")
@@ -539,8 +541,8 @@ func makeLocalServer(config *localServerConfig, client *localClient, container *
 	if config.Addr == "" {
 		return nil, fmt.Errorf("Addr not set in Config")
 	}
-	if !dashutil.IsUUIDValid(container.Config.AccId) || !dashutil.IsZoneNameValid(container.Config.ZoneName) || !dashutil.IsPanelNameValid(container.getAppName()) {
-		return nil, fmt.Errorf("Invalid Configuration AccId/ZoneName/PanelName %s/%s/%s", container.Config.AccId, container.Config.ZoneName, container.getAppName())
+	if !dashutil.IsAppNameValid(container.getAppName()) {
+		return nil, fmt.Errorf("Invalid Configuration AppName '%s' is invalid", container.getAppName())
 	}
 	s := &localServer{
 		Config:    config,

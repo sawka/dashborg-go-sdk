@@ -37,14 +37,14 @@ type dashCloudClient struct {
 	Lock      *sync.Mutex
 	StartTime time.Time
 	ProcRunId string
-	Config    *dash.Config
+	Config    *Config
 	Conn      *grpc.ClientConn
 	DBService dashproto.DashborgServiceClient
 	ConnId    *atomic.Value
 	AppMap    map[string]*AppStruct
 }
 
-func makeCloudClient(config *dash.Config) *dashCloudClient {
+func makeCloudClient(config *Config) *dashCloudClient {
 	rtn := &dashCloudClient{
 		Lock:      &sync.Mutex{},
 		StartTime: time.Now(),
@@ -222,7 +222,16 @@ func (pc *dashCloudClient) connectAppInternal(app dash.AppRuntime) error {
 	for name, warning := range resp.OptionWarnings {
 		log.Printf("ConnectApp WARNING option[%s]: %s\n", name, warning)
 	}
-	appClient := dash.MakeAppClient(pc, app, pc.DBService, pc.Config, pc.ConnId)
+	certInfo, err := readCertInfo(pc.Config.CertFileName)
+	if err != nil {
+		// strange since client is already running
+		return fmt.Errorf("Error reading cert info: %w", err)
+	}
+	clientConfig := dash.AppClientConfig{
+		PublicKey: certInfo.PublicKey,
+		Verbose:   pc.Config.Verbose,
+	}
+	appClient := dash.MakeAppClient(pc, app, pc.DBService, clientConfig, pc.ConnId)
 	pc.Lock.Lock()
 	defer pc.Lock.Unlock()
 	pc.AppMap[appName] = &AppStruct{App: app, AppClient: appClient}
@@ -379,7 +388,7 @@ func (pc *dashCloudClient) BackendPush(panelName string, path string, data inter
 	return nil
 }
 
-func (pc *dashCloudClient) ReflectZone() (*dash.ReflectZoneType, error) {
+func (pc *dashCloudClient) ReflectZone() (*ReflectZoneType, error) {
 	m := &dashproto.ReflectZoneMessage{Ts: dashutil.Ts()}
 	resp, err := pc.DBService.ReflectZone(pc.ctxWithMd(), m)
 	if err != nil {
@@ -391,7 +400,7 @@ func (pc *dashCloudClient) ReflectZone() (*dash.ReflectZoneType, error) {
 	if !resp.Success {
 		return nil, errors.New("Error calling ReflectZone()")
 	}
-	var rtn dash.ReflectZoneType
+	var rtn ReflectZoneType
 	err = json.Unmarshal([]byte(resp.JsonData), &rtn)
 	if err != nil {
 		return nil, err

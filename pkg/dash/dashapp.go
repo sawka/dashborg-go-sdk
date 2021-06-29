@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"reflect"
 	"sync"
 
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
@@ -51,16 +52,17 @@ type AppRuntime interface {
 	RunHandler(req *PanelRequest) (interface{}, error)
 	GetAppName() string
 	GetClientVersion() string
+	CheckAuth(req *PanelRequest) error
 }
 
 type App struct {
-	lock      *sync.Mutex
-	appName   string
-	appType   string
-	html      valueType
-	handlers  map[handlerKey]handlerType
-	options   map[string]AppOption
-	localAuth []AllowedAuth
+	lock         *sync.Mutex
+	appName      string
+	appType      string
+	html         valueType
+	handlers     map[handlerKey]handlerType
+	options      map[string]AppOption
+	allowedRoles []string
 }
 
 type valueType interface {
@@ -137,8 +139,8 @@ func MakeApp(appName string) *App {
 	}
 	rtn.handlers = make(map[handlerKey]handlerType)
 	rtn.options = make(map[string]AppOption)
+	rtn.allowedRoles = []string{"user"}
 	rtn.setOption_nolock(GenericAppOption{Name: OptionAuth, Type: "none"})
-	rtn.handlers[handlerKey{HandlerType: "auth"}] = handlerType{HandlerFn: rtn.authHandler}
 	rtn.handlers[handlerKey{HandlerType: "html"}] = handlerType{HandlerFn: rtn.htmlHandler}
 	return rtn
 }
@@ -180,12 +182,40 @@ func (app *App) setOption_nolock(opt AppOption) {
 	app.options[opt.OptionName()] = opt
 }
 
-func (app *App) SetAuth(allowedAuths ...AllowedAuth) {
+func wrapHandler(handlerFn func(req *PanelRequest) error) func(req *PanelRequest) (interface{}, error) {
+	wrappedHandlerFn := func(req *PanelRequest) (interface{}, error) {
+		err := handlerFn(req)
+		return nil, err
+	}
+	return wrappedHandlerFn
+}
+
+func (app *App) CustomAuthHandler(authHandler func(req *PanelRequest) error) {
+	app.lock.Lock()
+	defer app.lock.Unlock()
+	app.handlers[handlerKey{HandlerType: "auth"}] = handlerType{HandlerFn: wrapHandler(authHandler)}
+	app.setOption_nolock(GenericAppOption{Name: OptionAuth, Type: "dynamic"})
+}
+
+func (app *App) SetAllowedRoles(roles []string) {
 	app.lock.Lock()
 	defer app.lock.Unlock()
 
-	app.localAuth = allowedAuths
-	app.setOption_nolock(GenericAppOption{Name: OptionAuth, Type: "dynamic"})
+	app.allowedRoles = roles
+}
+
+func (app *App) CheckAuth(req *PanelRequest) error {
+	aa := req.AuthData()
+	if aa == nil {
+		return fmt.Errorf("No AuthData")
+	}
+	role := aa.GetRole()
+	for _, allowedRole := range app.allowedRoles {
+		if role == "*" || role == allowedRole {
+			return nil
+		}
+	}
+	return fmt.Errorf("Not Authorized")
 }
 
 func (app *App) SetHtml(html string) {
@@ -204,17 +234,17 @@ func (app *App) SetHtmlFromFile(fileName string) {
 	app.setOption_nolock(GenericAppOption{Name: OptionHtml, Type: "dynamic"})
 }
 
+func (app *App) SetAppStateType(appStateType reflect.Type) {
+	return
+}
+
 func (app *App) SetOnLoadHandler(path string) {
 	app.SetOption(GenericAppOption{Name: OptionOnLoadHandler, Path: path})
 }
 
 func (app *App) Handler(path string, handlerFn func(req *PanelRequest) error) error {
 	hkey := handlerKey{HandlerType: "handler", Path: path}
-	wrappedHandlerFn := func(req *PanelRequest) (interface{}, error) {
-		err := handlerFn(req)
-		return nil, err
-	}
-	app.handlers[hkey] = handlerType{HandlerFn: wrappedHandlerFn}
+	app.handlers[hkey] = handlerType{HandlerFn: wrapHandler(handlerFn)}
 	return nil
 }
 
@@ -230,15 +260,6 @@ func (app *App) htmlHandler(req *PanelRequest) (interface{}, error) {
 	return nil, nil
 }
 
-func (app *App) authHandler(req *PanelRequest) (interface{}, error) {
-	if len(app.localAuth) == 0 {
-		PanelRequestEx{req}.CheckAuth(AuthNone{})
-	} else {
-		PanelRequestEx{req}.CheckAuth(app.localAuth...)
-	}
-	return nil, nil
-}
-
 func (app *App) DataHandler(path string, handlerFn func(req *PanelRequest) (interface{}, error)) error {
 	hkey := handlerKey{HandlerType: "data", Path: path}
 	app.handlers[hkey] = handlerType{HandlerFn: handlerFn}
@@ -247,14 +268,14 @@ func (app *App) DataHandler(path string, handlerFn func(req *PanelRequest) (inte
 
 func (app *App) RunHandler(req *PanelRequest) (interface{}, error) {
 	hkey := handlerKey{
-		HandlerType: req.RequestType,
-		Path:        req.Path,
+		HandlerType: req.info.RequestType,
+		Path:        req.info.Path,
 	}
 	app.lock.Lock()
 	hval, ok := app.handlers[hkey]
 	app.lock.Unlock()
 	if !ok {
-		return nil, fmt.Errorf("No handler found for %s:%s", req.PanelName, req.Path)
+		return nil, fmt.Errorf("No handler found for %s:%s", req.info.AppName, req.info.Path)
 	}
 	rtn, err := hval.HandlerFn(req)
 	if err != nil {

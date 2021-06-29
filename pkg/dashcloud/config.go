@@ -1,4 +1,4 @@
-package dash
+package dashcloud
 
 import (
 	"crypto/ecdsa"
@@ -32,34 +32,14 @@ const (
 
 var cmdRegexp *regexp.Regexp = regexp.MustCompile("^.*/")
 
-func defaultString(opts ...string) string {
-	for _, s := range opts {
-		if s != "" {
-			return s
-		}
-	}
-	return ""
-}
-
-func envOverride(val bool, varName string) bool {
-	envVal := os.Getenv(varName)
-	if envVal == "0" {
-		return false
-	}
-	if envVal == "" {
-		return val
-	}
-	return true
-}
-
 func (c *Config) setDefaults() {
-	c.AccId = defaultString(c.AccId, os.Getenv("DASHBORG_ACCID"))
-	c.ZoneName = defaultString(c.ZoneName, os.Getenv("DASHBORG_ZONE"), DefaultZoneName)
-	c.Env = defaultString(c.Env, os.Getenv("DASHBORG_ENV"), "prod")
+	c.AccId = dashutil.DefaultString(c.AccId, os.Getenv("DASHBORG_ACCID"))
+	c.ZoneName = dashutil.DefaultString(c.ZoneName, os.Getenv("DASHBORG_ZONE"), DefaultZoneName)
+	c.Env = dashutil.DefaultString(c.Env, os.Getenv("DASHBORG_ENV"), "prod")
 	if c.Env == "prod" {
-		c.DashborgSrvHost = defaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "grpc.api.dashborg.net")
+		c.DashborgSrvHost = dashutil.DefaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "grpc.api.dashborg.net")
 	} else {
-		c.DashborgSrvHost = defaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "localhost")
+		c.DashborgSrvHost = dashutil.DefaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "localhost")
 	}
 	if c.DashborgSrvPort == 0 {
 		if os.Getenv("DASHBORG_PROCPORT") != "" {
@@ -77,13 +57,10 @@ func (c *Config) setDefaults() {
 	if len(os.Args) > 0 {
 		cmdName = cmdRegexp.ReplaceAllString(os.Args[0], "")
 	}
-	c.ProcName = defaultString(c.ProcName, os.Getenv("DASHBORG_PROCNAME"), cmdName, DefaultProcName)
-	c.KeyFileName = defaultString(c.KeyFileName, os.Getenv("DASHBORG_KEYFILE"), TlsKeyFileName)
-	c.CertFileName = defaultString(c.CertFileName, os.Getenv("DASHBORG_CERTFILE"), TlsCertFileName)
-	c.Verbose = envOverride(c.Verbose, "DASHBORG_VERBOSE")
-	if c.MinClearTimeout == 0 {
-		c.MinClearTimeout = 1 * time.Second
-	}
+	c.ProcName = dashutil.DefaultString(c.ProcName, os.Getenv("DASHBORG_PROCNAME"), cmdName, DefaultProcName)
+	c.KeyFileName = dashutil.DefaultString(c.KeyFileName, os.Getenv("DASHBORG_KEYFILE"), TlsKeyFileName)
+	c.CertFileName = dashutil.DefaultString(c.CertFileName, os.Getenv("DASHBORG_CERTFILE"), TlsCertFileName)
+	c.Verbose = dashutil.EnvOverride(c.Verbose, "DASHBORG_VERBOSE")
 }
 
 func (c *Config) SetupForProcClient() {

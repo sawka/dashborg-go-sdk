@@ -17,8 +17,8 @@ message RRAction {
     string ActionType = 2;  // "setdata", "event", "invalidate", "html", "panelauth", "panelauthchallenge", "error", "blob", "blobext", "streamopen", "triggerdata", "backendpush"
     string Selector = 3;    // path, selector, controlid
     string JsonData = 4;
-    string EventType = 5;   // only set for "event" ActionType
-    string Html = 6;        // for "handler" ActionType
+    string OpType = 5;
+    string Html = 6;
     string Err = 7;
     bytes BlobBytes = 8;        // for "blob" / "blobext" ActionType
     string BlobMimeType = 9;    // for "blob" ActionType
@@ -108,6 +108,7 @@ message SendResponseResponse {
 
 message StartStreamMessage {
     int64 Ts = 1;
+
     string PanelName = 2;
     string FeClientId = 3;
     string ExistingReqId = 4;

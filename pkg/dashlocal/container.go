@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
@@ -15,27 +17,46 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
-type ContainerConfig struct {
-	Addr       string        // defaults to localhost:8082
-	ShutdownCh chan struct{} // channel for shutting down server
-	AccId      string
-	ZoneName   string
-	Env        string
-	Verbose    bool
+// Configuration structure for the local container.  If values are not set, they are read
+// from the environment variables specified in all-caps below, or set to the specified defaults.
+type Config struct {
+	// DASHBORG_LOCALADDR, defaults to "localhost:8082"
+	Addr string
+
+	// Channel for shutting down the server
+	ShutdownCh chan struct{}
+
+	// DASHBORG_VERBOSE, set to true for extra debugging information
+	Verbose bool
+
+	// For internal testing, DASHBORG_ENV
+	Env string // defaults to "prod"
 }
 
 type Container interface {
+	// Call to connect an app to this container.  The local container only supports one app,
+	// trying to connect a 2nd app will return an error.
 	ConnectApp(app dash.AppRuntime) error
+
+	// Returns an error when the container has be shutdown (or there was an http Serve error).
+	// a normal shutdown will return http.ErrServerClosed.  If the http server is still
+	// running, will return nil.
+	ServeErr() error
+
+	// Dashborg method for starting a bare stream that is not connected to a request or frontend.
 	StartBareStream(appName string, streamOpts dash.StreamOpts) (*dash.PanelRequest, error)
+
+	// Dashborg method for forcing all frontend clients to make the specified handler call.
 	BackendPush(appName string, path string, data interface{}) error
 }
 
 type containerImpl struct {
-	Lock      *sync.Mutex
-	Config    ContainerConfig
-	App       dash.AppRuntime
-	AppClient dash.AppClient
-	RootHtml  string
+	Lock          *sync.Mutex
+	ServeErrValue *atomic.Value
+	Config        Config
+	App           dash.AppRuntime
+	AppClient     dash.AppClient
+	RootHtml      string
 
 	LocalClient *localClient
 	LocalServer *localServer
@@ -51,23 +72,25 @@ func (c *containerImpl) getAppName() string {
 	return c.App.GetAppName()
 }
 
+func (c *containerImpl) ServeErr() error {
+	errIf := c.ServeErrValue.Load()
+	if errIf != nil {
+		return errIf.(error)
+	}
+	return nil
+}
+
 func (c *containerImpl) getClientVersion() string {
 	if c.App == nil {
-		return "noclient-0.0.0"
+		return "noapp-0.0.0"
 	}
 	return c.App.GetClientVersion()
 }
 
-func (c *ContainerConfig) setDefaults() {
-	if c.Addr == "" {
-		c.Addr = "localhost:8082"
-	}
-	if c.ZoneName == "" {
-		c.ZoneName = "default"
-	}
-	if c.Env == "" {
-		c.Env = "prod"
-	}
+func (c *Config) setDefaults() {
+	c.Addr = dashutil.DefaultString(c.Addr, os.Getenv("DASHBORG_LOCALADDR"), "localhost:8082")
+	c.Env = dashutil.DefaultString(c.Env, os.Getenv("DASHBORG_ENV"), "prod")
+	c.Verbose = dashutil.EnvOverride(c.Verbose, "DASHBORG_VERBOSE")
 }
 
 func optJson(opt dash.AppOption) string {
@@ -99,22 +122,14 @@ func (c *containerImpl) processOnloadHandlerOption(optData interface{}) error {
 	return nil
 }
 
-func (c *containerImpl) processAuthOption(optData interface{}) error {
-	var authOpt dash.GenericAppOption
-	err := mapstructure.Decode(optData, &authOpt)
-	if err != nil {
-		return err
-	}
-	if authOpt.Type == "none" {
-		return nil
-	}
-	return fmt.Errorf("Unsupported auth type[%s]", authOpt.Type)
-}
-
 func (c *containerImpl) ConnectApp(app dash.AppRuntime) error {
 	if c.App != nil {
 		log.Printf("Dashborg LocalContainer cannot connect a second app to local container")
 		return fmt.Errorf("Cannot connect a second app to local container")
+	}
+	if serveErr := c.ServeErr(); serveErr != nil {
+		log.Printf("Dashborg LocalContainer ERROR cannot connect app, server shutdown: %v", serveErr)
+		return fmt.Errorf("Cannot connect app, server shutdown: %w", serveErr)
 	}
 	appConfig := app.AppConfig()
 	for optName, opt := range appConfig.Options {
@@ -126,12 +141,6 @@ func (c *containerImpl) ConnectApp(app dash.AppRuntime) error {
 		case "onloadhandler":
 			optErr = c.processOnloadHandlerOption(opt)
 
-		case "auth":
-			optErr = c.processAuthOption(opt)
-			if optErr != nil {
-				log.Printf("Dashborg LocalContainer WARNING opt[%s]: %s\n", optName, optErr.Error())
-			}
-
 		default:
 			log.Printf("Dashborg LocalContainer WARNING opt[%s]: unsupported option\n", optName)
 		}
@@ -142,7 +151,11 @@ func (c *containerImpl) ConnectApp(app dash.AppRuntime) error {
 	}
 	connId := &atomic.Value{}
 	connId.Store(uuid.New().String())
-	appClient := dash.MakeAppClient(c, app, c.LocalClient, &dash.Config{}, connId)
+	clientConfig := dash.AppClientConfig{
+		PublicKey: nil,
+		Verbose:   c.Config.Verbose,
+	}
+	appClient := dash.MakeAppClient(c, app, c.LocalClient, clientConfig, connId)
 	c.App = app
 	c.AppClient = appClient
 	c.LocalClient.SetAppClient(appClient)
@@ -181,21 +194,14 @@ func (c *containerImpl) BackendPush(panelName string, path string, data interfac
 	return nil
 }
 
-func MakeContainer(config *ContainerConfig) (Container, error) {
+// Creates a local container.  Config may be nil, in which case the defaults
+// (or environment overrides) are used.
+func MakeContainer(config *Config) (Container, error) {
 	if config == nil {
-		config = &ContainerConfig{}
+		config = &Config{}
 	}
 	config.setDefaults()
-	pcConfig := &dash.Config{
-		ZoneName:    "default",
-		LocalServer: true,
-		Env:         config.Env,
-		Verbose:     config.Verbose,
-	}
-	pcConfig.SetupForProcClient()
-	config.AccId = pcConfig.AccId
-	config.ZoneName = pcConfig.ZoneName
-	container := &containerImpl{Lock: &sync.Mutex{}, Config: *config}
+	container := &containerImpl{Lock: &sync.Mutex{}, Config: *config, ServeErrValue: &atomic.Value{}}
 	lsConfig := &localServerConfig{
 		Env:     config.Env,
 		Addr:    config.Addr,
@@ -206,18 +212,23 @@ func MakeContainer(config *ContainerConfig) (Container, error) {
 		return nil, err
 	}
 	container.LocalClient = dbService
-	pcConfig.LocalClient = dbService
 	localServer, err := makeLocalServer(lsConfig, dbService, container)
 	if err != nil {
 		return nil, err
 	}
 	container.LocalServer = localServer
+
+	// code here to attempt to catch an immediate error return from http.ListenAndServe (e.g. bind port in use).
+	// we have to put a small sleep to yield the scheduler to the new go-routine.  note that there is a timing
+	// issue here, but it is unavoidable.  this works for the 90% case.
 	log.Printf("Dashborg Local Container starting at http://%s\n", config.Addr)
 	go func() {
 		serveErr := container.LocalServer.listenAndServe()
 		if serveErr != nil {
 			log.Printf("Dashborg ERROR starting local server: %v\n", serveErr)
 		}
+		container.ServeErrValue.Store(serveErr)
 	}()
-	return container, nil
+	time.Sleep(1 * time.Millisecond)
+	return container, container.ServeErr()
 }

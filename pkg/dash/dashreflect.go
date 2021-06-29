@@ -27,16 +27,16 @@ func makeCallArgs(hType reflect.Type, req *PanelRequest) ([]reflect.Value, error
 	rtn[0] = reflect.ValueOf(req)
 	if len(rtn) >= 2 {
 		// state-type
-		stateV, err := unmarshalToType(req.PanelStateJson, hType.In(1))
+		stateV, err := unmarshalToType(req.appStateJson, hType.In(1))
 		if err != nil {
-			return nil, fmt.Errorf("Cannot unmarshal PanelStateJson to type:%v err:%v", hType.In(1), err)
+			return nil, fmt.Errorf("Cannot unmarshal appStateJson to type:%v err:%v", hType.In(1), err)
 		}
 		rtn[1] = stateV
 	}
 	if len(rtn) >= 3 {
-		dataV, err := unmarshalToType(req.DataJson, hType.In(2))
+		dataV, err := unmarshalToType(req.rawDataJson, hType.In(2))
 		if err != nil {
-			return nil, fmt.Errorf("Cannot unmarshal DataJson to type:%v err:%v", hType.In(2), err)
+			return nil, fmt.Errorf("Cannot unmarshal rawDataJson to type:%v err:%v", hType.In(2), err)
 		}
 		rtn[2] = dataV
 	}
@@ -101,9 +101,9 @@ func makeCallArgs2(hType reflect.Type, opts CallHandlerOpts, req *PanelRequest) 
 		return rtn, nil
 	}
 	if opts.StateType != nil {
-		stateV, err := unmarshalToType(req.PanelStateJson, opts.StateType)
+		stateV, err := unmarshalToType(req.appStateJson, opts.StateType)
 		if err != nil {
-			return nil, fmt.Errorf("Cannot unmarshal PanelStateJson to type:%v err:%v", hType.In(1), err)
+			return nil, fmt.Errorf("Cannot unmarshal appStateJson to type:%v err:%v", hType.In(1), err)
 		}
 		rtn[argNum] = stateV
 		argNum++
@@ -111,15 +111,17 @@ func makeCallArgs2(hType reflect.Type, opts CallHandlerOpts, req *PanelRequest) 
 	if argNum == hType.NumIn() {
 		return rtn, nil
 	}
-	if req.Data == nil {
+	var dataInterface interface{}
+	req.BindData(&dataInterface)
+	if dataInterface == nil {
 		ca2_unmarshalNil(hType, rtn, argNum)
-	} else if reflect.ValueOf(req.Data).Kind() == reflect.Slice {
-		err := ca2_unmarshalMulti(hType, rtn, argNum, req.DataJson)
+	} else if reflect.ValueOf(dataInterface).Kind() == reflect.Slice {
+		err := ca2_unmarshalMulti(hType, rtn, argNum, req.rawDataJson)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		err := ca2_unmarshalSingle(hType, rtn, argNum, req.DataJson)
+		err := ca2_unmarshalSingle(hType, rtn, argNum, req.rawDataJson)
 		if err != nil {
 			return nil, err
 		}
@@ -184,8 +186,8 @@ type CallHandlerOpts struct {
 // RegisterAppHandlerEx registers a panel handler using reflection. The handler function
 // must return exactly one error value.  It must also take between 1-3 arguments.
 // The first parameter must be a Request.  The second (optional)
-// parameter is PanelState, and the third (optional) parameter is Data.  Dashborg will attempt to
-// unmarshal the raw JSON of PanelState and Data to the types in the handler signature using
+// parameter is appState, and the third (optional) parameter is Data.  Dashborg will attempt to
+// unmarshal the raw JSON of appState and Data to the types in the handler signature using
 // the standard Go json.Unmarshal() function.  If an error occurs during unmarshalling it will
 // be returned to the Dashborg service (and your handler function will never run).
 func (app *App) HandlerEx(path string, handlerFn interface{}) error {
@@ -215,8 +217,8 @@ func (app *App) HandlerEx(path string, handlerFn interface{}) error {
 // RegisterPanelDataEx registers a panel handler using reflection.  The handler function must
 // return exactly two values (interface{}, error).  It must also take between 1-3 arguments.
 // The first parameter must be a Request.  The second (optional)
-// parameter is PanelState, and the third (optional) parameter is Data.  Dashborg will attempt to
-// unmarshal the raw JSON of PanelState and Data to the types in the handler signature using
+// parameter is appState, and the third (optional) parameter is Data.  Dashborg will attempt to
+// unmarshal the raw JSON of appState and Data to the types in the handler signature using
 // the standard Go json.Unmarshal() function.  If an error occurs during unmarshalling it will
 // be returned to the Dashborg service (and your handler function will never run).
 func (app *App) DataHandlerEx(path string, handlerFn interface{}) error {

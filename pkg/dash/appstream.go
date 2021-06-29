@@ -14,7 +14,7 @@ import (
 const feStreamInactiveTimeout = 30 * time.Second
 
 func (sc streamControl) getStreamKey() streamKey {
-	return streamKey{PanelName: sc.PanelName, StreamId: sc.StreamOpts.StreamId}
+	return streamKey{AppName: sc.AppName, StreamId: sc.StreamOpts.StreamId}
 }
 
 func (pc *appClient) stream_lookup_nolock(reqId string) (streamControl, bool) {
@@ -91,7 +91,7 @@ func (pc *appClient) stream_handleZeroClients_nolock(reqId string) {
 		return
 	}
 	sc.HasZeroClients = true
-	pc.StreamMap[streamKey{sc.PanelName, sc.StreamOpts.StreamId}] = sc
+	pc.StreamMap[streamKey{sc.AppName, sc.StreamOpts.StreamId}] = sc
 	if sc.StreamOpts.NoServerCancel {
 		return
 	}
@@ -107,7 +107,7 @@ func (pc *appClient) stream_serverStop(reqId string) {
 	}
 	if sc.StreamOpts.NoServerCancel {
 		sc.HasZeroClients = true
-		pc.StreamMap[streamKey{sc.PanelName, sc.StreamOpts.StreamId}] = sc
+		pc.StreamMap[streamKey{sc.AppName, sc.StreamOpts.StreamId}] = sc
 		return
 	}
 	pc.stream_deleteAndCancel_nolock(reqId)
@@ -129,7 +129,7 @@ func (pc *appClient) stream_deleteAndCancel_nolock(reqId string) {
 }
 
 func (pc *appClient) connectStream(appName string, streamOpts StreamOpts, feClientId string) (string, error) {
-	existingReqId := pc.stream_getReqId(streamKey{PanelName: appName, StreamId: streamOpts.StreamId})
+	existingReqId := pc.stream_getReqId(streamKey{AppName: appName, StreamId: streamOpts.StreamId})
 	m := &dashproto.StartStreamMessage{
 		Ts:            dashutil.Ts(),
 		PanelName:     appName,
@@ -179,7 +179,7 @@ func (pc *appClient) StartStream(appName string, streamOpts StreamOpts, feClient
 		reqId = uuid.New().String()
 	}
 	newSc := streamControl{
-		PanelName:      appName,
+		AppName:        appName,
 		StreamOpts:     streamOpts,
 		ReqId:          reqId,
 		HasZeroClients: (feClientId == ""),
@@ -189,15 +189,17 @@ func (pc *appClient) StartStream(appName string, streamOpts StreamOpts, feClient
 		return nil, sc.ReqId, nil
 	}
 	streamReq := &PanelRequest{
-		StartTime:   time.Now(),
-		ctx:         sc.Ctx,
-		lock:        &sync.Mutex{},
-		PanelName:   appName,
-		ReqId:       sc.ReqId,
-		RequestType: "stream",
-		Path:        streamOpts.StreamId,
-		appClient:   pc,
-		container:   pc.Container,
+		info: RequestInfo{
+			StartTime:   time.Now(),
+			ReqId:       sc.ReqId,
+			RequestType: "stream",
+			Path:        streamOpts.StreamId,
+			AppName:     appName,
+		},
+		ctx:       sc.Ctx,
+		lock:      &sync.Mutex{},
+		appClient: pc,
+		container: pc.Container,
 	}
 	return streamReq, sc.ReqId, nil
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"os"
 	"strconv"
 	"time"
 	"unicode"
@@ -165,4 +166,24 @@ func (w *ExpoWait) Wait() bool {
 
 func (w *ExpoWait) Reset() {
 	*w = ExpoWait{}
+}
+
+func DefaultString(opts ...string) string {
+	for _, s := range opts {
+		if s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func EnvOverride(val bool, varName string) bool {
+	envVal := os.Getenv(varName)
+	if envVal == "0" {
+		return false
+	}
+	if envVal == "" {
+		return val
+	}
+	return true
 }

@@ -31,7 +31,7 @@ const returnChSize = 20
 const smallDrainSleep = 5 * time.Millisecond
 
 type handlerKey struct {
-	PanelName   string
+	AppName     string
 	HandlerType string // data, handler
 	Path        string
 }
@@ -44,7 +44,7 @@ type handlerVal struct {
 }
 
 type streamControl struct {
-	PanelName      string
+	AppName        string
 	StreamOpts     StreamOpts
 	ReqId          string
 	Ctx            context.Context
@@ -53,8 +53,8 @@ type streamControl struct {
 }
 
 type streamKey struct {
-	PanelName string
-	StreamId  string
+	AppName  string
+	StreamId string
 }
 
 type AppClient interface {
@@ -63,11 +63,16 @@ type AppClient interface {
 	StartStream(appName string, streamOpts StreamOpts, feClientId string) (*PanelRequest, string, error)
 }
 
+type AppClientConfig struct {
+	Verbose   bool
+	PublicKey interface{}
+}
+
 type appClient struct {
 	Lock         *sync.Mutex
 	StartTs      time.Time
 	App          AppRuntime
-	Config       *Config
+	Config       AppClientConfig
 	DBService    dashproto.DashborgServiceClient
 	ConnId       *atomic.Value
 	StreamMap    map[streamKey]streamControl // map streamKey -> streamControl
@@ -75,7 +80,7 @@ type appClient struct {
 	Container    Container
 }
 
-func MakeAppClient(container Container, app AppRuntime, service dashproto.DashborgServiceClient, config *Config, connId *atomic.Value) AppClient {
+func MakeAppClient(container Container, app AppRuntime, service dashproto.DashborgServiceClient, config AppClientConfig, connId *atomic.Value) AppClient {
 	rtn := &appClient{
 		Lock:         &sync.Mutex{},
 		StartTs:      time.Now(),
@@ -92,16 +97,16 @@ func MakeAppClient(container Container, app AppRuntime, service dashproto.Dashbo
 
 // returns numStreamClients, err
 func (pc *appClient) SendRequestResponse(req *PanelRequest, done bool) (int, error) {
-	if req.isStream() && pc.stream_hasZeroClients(req.ReqId) {
+	if req.isStream() && pc.stream_hasZeroClients(req.info.ReqId) {
 		req.clearActions()
 		return 0, nil
 	}
 
 	m := &dashproto.SendResponseMessage{
 		Ts:           dashutil.Ts(),
-		ReqId:        req.ReqId,
-		RequestType:  req.RequestType,
-		PanelName:    req.PanelName,
+		ReqId:        req.info.ReqId,
+		RequestType:  req.info.RequestType,
+		PanelName:    req.info.AppName,
 		FeClientId:   req.feClientId,
 		ResponseDone: done,
 	}
@@ -159,21 +164,22 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 	}
 
 	preq := &PanelRequest{
-		StartTime:     time.Now(),
-		ctx:           ctx,
-		lock:          &sync.Mutex{},
-		PanelName:     reqMsg.PanelName,
-		ReqId:         reqMsg.ReqId,
-		RequestType:   reqMsg.RequestType,
-		feClientId:    reqMsg.FeClientId,
-		Path:          reqMsg.Path,
-		isBackendCall: reqMsg.IsBackendCall,
-		appClient:     pc,
-		container:     pc.Container,
+		info: RequestInfo{
+			StartTime:   time.Now(),
+			ReqId:       reqMsg.ReqId,
+			RequestType: reqMsg.RequestType,
+			AppName:     reqMsg.PanelName,
+			Path:        reqMsg.Path,
+		},
+		ctx:        ctx,
+		lock:       &sync.Mutex{},
+		feClientId: reqMsg.FeClientId,
+		appClient:  pc,
+		container:  pc.Container,
 	}
 	hkey := handlerKey{
-		PanelName: reqMsg.PanelName,
-		Path:      reqMsg.Path,
+		AppName: reqMsg.PanelName,
+		Path:    reqMsg.Path,
 	}
 	switch reqMsg.RequestType {
 	case "data":
@@ -185,7 +191,7 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 	case "auth":
 		hkey.HandlerType = "auth"
 	case "streamclose":
-		pc.stream_serverStop(preq.ReqId)
+		pc.stream_serverStop(preq.info.ReqId)
 		return // no response for streamclose
 	default:
 		preq.err = fmt.Errorf("Invalid RequestMessage.RequestType [%s]", reqMsg.RequestType)
@@ -193,17 +199,7 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 		return
 	}
 
-	var data interface{}
-	if reqMsg.JsonData != "" {
-		err := json.Unmarshal([]byte(reqMsg.JsonData), &data)
-		if err != nil {
-			preq.err = fmt.Errorf("Cannot unmarshal JsonData: %v", err)
-			preq.Done()
-			return
-		}
-	}
-	preq.Data = data
-	preq.DataJson = reqMsg.JsonData
+	preq.rawDataJson = reqMsg.JsonData
 
 	var pstate interface{}
 	if reqMsg.PanelStateData != "" {
@@ -214,24 +210,22 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 			return
 		}
 	}
-	preq.PanelState = pstate
-	preq.PanelStateJson = reqMsg.PanelStateData
+	preq.appState = pstate
+	preq.appStateJson = reqMsg.PanelStateData
 
 	var authData AuthAtom
 	if reqMsg.AuthData != "" {
 		err := json.Unmarshal([]byte(reqMsg.AuthData), &authData)
 		if err != nil {
-			preq.err = fmt.Errorf("Cannot unmarshal AuthData: %v", err)
+			preq.err = fmt.Errorf("Cannot unmarshal authData: %v", err)
 			preq.Done()
 			return
 		}
-		preq.AuthData = &authData
+		preq.authData = &authData
 	}
 
-	isAllowedBackendCall := preq.isBackendCall && preq.RequestType == "data" && pc.Config.AllowBackendCalls
-
 	// check-auth
-	if !isAllowedBackendCall && preq.RequestType != "auth" {
+	if preq.info.RequestType != "auth" {
 		if !preq.isAuthenticated() {
 			preq.err = fmt.Errorf("Request is not authenticated")
 			preq.Done()
