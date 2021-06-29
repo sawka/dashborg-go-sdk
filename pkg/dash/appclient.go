@@ -224,15 +224,6 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 		preq.authData = &authData
 	}
 
-	// check-auth
-	if preq.info.RequestType != "auth" {
-		if !pc.isAuthenticated(preq) {
-			preq.err = fmt.Errorf("Request is not authenticated")
-			preq.Done()
-			return
-		}
-	}
-
 	defer func() {
 		if panicErr := recover(); panicErr != nil {
 			log.Printf("Dashborg PANIC in Handler %v | %v\n", hkey, panicErr)
@@ -256,10 +247,6 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 		}
 		preq.appendRR(rrAction)
 	}
-}
-
-func (pc *appClient) isAuthenticated(req *Request) bool {
-	return pc.App.CheckAuth(req) == nil
 }
 
 func nonBlockingSend(returnCh chan *dashproto.RRAction, rrAction *dashproto.RRAction) error {

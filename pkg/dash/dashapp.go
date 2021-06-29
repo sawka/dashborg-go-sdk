@@ -21,6 +21,7 @@ const (
 	OptionOnLoadHandler = "onloadhandler"
 	OptionHtml          = "html"
 	OptionAuth          = "auth"
+	OptionAllowedRoles  = "auth-allowedroles"
 )
 
 type AppConfig struct {
@@ -39,6 +40,8 @@ type GenericAppOption struct {
 	Name string `json:"-"` // not marshaled as part of OptionData
 	Type string `json:"type,omitempty"`
 	Path string `json:"path,omitempty"`
+
+	AllowedRoles []string `json:"allowedroles,omitempty"`
 }
 
 func (opt GenericAppOption) OptionName() string {
@@ -54,17 +57,15 @@ type AppRuntime interface {
 	RunHandler(req *Request) (interface{}, error)
 	GetAppName() string
 	GetClientVersion() string
-	CheckAuth(req *Request) error
 }
 
 type App struct {
-	lock         *sync.Mutex
-	appName      string
-	appType      string
-	html         valueType
-	handlers     map[handlerKey]handlerType
-	options      map[string]AppOption
-	allowedRoles []string
+	lock     *sync.Mutex
+	appName  string
+	appType  string
+	html     valueType
+	handlers map[handlerKey]handlerType
+	options  map[string]AppOption
 }
 
 type valueType interface {
@@ -141,8 +142,8 @@ func MakeApp(appName string) *App {
 	}
 	rtn.handlers = make(map[handlerKey]handlerType)
 	rtn.options = make(map[string]AppOption)
-	rtn.allowedRoles = []string{"user"}
 	rtn.setOption_nolock(GenericAppOption{Name: OptionAuth, Type: "none"})
+	rtn.setOption_nolock(GenericAppOption{Name: OptionAllowedRoles, AllowedRoles: []string{"user"}})
 	rtn.handlers[handlerKey{HandlerType: "html"}] = handlerType{HandlerFn: rtn.htmlHandler}
 	return rtn
 }
@@ -203,19 +204,7 @@ func (app *App) SetAllowedRoles(roles ...string) {
 	app.lock.Lock()
 	defer app.lock.Unlock()
 
-	app.allowedRoles = roles
-}
-
-// Checks AuthData against allowed roles.  Returns nil (success) if
-// role is "*", allowed role is "public", or role matches one of the allowed roles.
-func (app *App) CheckAuth(req *Request) error {
-	role := req.AuthData().GetRole() // nil AuthData has role of "public"
-	for _, allowedRole := range app.allowedRoles {
-		if role == "*" || role == allowedRole || allowedRole == "public" {
-			return nil
-		}
-	}
-	return notAuthorizedErr
+	app.setOption_nolock(GenericAppOption{Name: OptionAllowedRoles, AllowedRoles: roles})
 }
 
 func (app *App) SetHtml(html string) {
