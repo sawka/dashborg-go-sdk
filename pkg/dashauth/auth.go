@@ -19,11 +19,11 @@ type AuthPassword struct {
 }
 
 type AllowedAuth interface {
-	CheckAuth(*dash.PanelRequest) (bool, error)
+	CheckAuth(*dash.Request) (bool, error)
 }
 
 type ChallengeAuth interface {
-	ReturnChallenge(*dash.PanelRequest) *AuthChallenge
+	ReturnChallenge(*dash.Request) *AuthChallenge
 }
 
 type ChallengeField struct {
@@ -119,8 +119,8 @@ type AuthSimpleLogin struct {
 	CheckFn func(user string, password string) (*AuthSimpleLoginResponse, error)
 }
 
-func (AuthNone) CheckAuth(req *dash.PanelRequest) (bool, error) {
-	rex := dash.PanelRequestEx{req}
+func (AuthNone) CheckAuth(req *dash.Request) (bool, error) {
+	rex := dash.RequestEx{req}
 	rex.SetAuthData(dash.AuthAtom{
 		Type: "noauth",
 		Role: "user",
@@ -128,15 +128,15 @@ func (AuthNone) CheckAuth(req *dash.PanelRequest) (bool, error) {
 	return true, nil
 }
 
-func (AuthDashborg) CheckAuth(req *dash.PanelRequest) (bool, error) {
+func (AuthDashborg) CheckAuth(req *dash.Request) (bool, error) {
 	return false, nil
 }
 
-func (auth AuthPassword) CheckAuth(req *dash.PanelRequest) (bool, error) {
+func (auth AuthPassword) CheckAuth(req *dash.Request) (bool, error) {
 	var challengeData ChallengeData
 	err := req.BindData(&challengeData)
 	if err == nil && challengeData.ChallengeData["password"] == auth.Password {
-		rex := dash.PanelRequestEx{req}
+		rex := dash.RequestEx{req}
 		rex.SetAuthData(dash.AuthAtom{
 			Type: "password",
 			Role: "user",
@@ -146,8 +146,8 @@ func (auth AuthPassword) CheckAuth(req *dash.PanelRequest) (bool, error) {
 	return false, nil
 }
 
-func (auth AuthAccountJwt) CheckAuth(req *dash.PanelRequest) (bool, error) {
-	rex := dash.PanelRequestEx{req}
+func (auth AuthAccountJwt) CheckAuth(req *dash.Request) (bool, error) {
+	rex := dash.RequestEx{req}
 	ok, err := auth.checkAuthInternal(req)
 	if err != nil {
 		// send a message
@@ -175,7 +175,7 @@ func (auth AuthAccountJwt) CheckAuth(req *dash.PanelRequest) (bool, error) {
 	return true, nil
 }
 
-func (auth AuthAccountJwt) checkAuthInternal(req *dash.PanelRequest) (bool, error) {
+func (auth AuthAccountJwt) checkAuthInternal(req *dash.Request) (bool, error) {
 	type panelState struct {
 		UrlParams map[string]string `json:"urlparams"`
 		DbRequest map[string]string `json:"dbrequest"`
@@ -225,7 +225,7 @@ func (auth AuthAccountJwt) checkAuthInternal(req *dash.PanelRequest) (bool, erro
 		}
 		role = claims.Role
 	}
-	rex := dash.PanelRequestEx{req}
+	rex := dash.RequestEx{req}
 	rex.SetAuthData(dash.AuthAtom{
 		Type: "accountjwt",
 		Id:   claims.Subject,
@@ -234,8 +234,8 @@ func (auth AuthAccountJwt) checkAuthInternal(req *dash.PanelRequest) (bool, erro
 	return true, nil
 }
 
-func (auth AuthSimpleJwt) CheckAuth(req *dash.PanelRequest) (bool, error) {
-	rex := dash.PanelRequestEx{req}
+func (auth AuthSimpleJwt) CheckAuth(req *dash.Request) (bool, error) {
+	rex := dash.RequestEx{req}
 	ok, err := auth.checkAuthInternal(req)
 	if err != nil {
 		// send a message
@@ -261,8 +261,8 @@ func (auth AuthSimpleJwt) CheckAuth(req *dash.PanelRequest) (bool, error) {
 	return true, nil
 }
 
-func (auth AuthSimpleJwt) checkAuthInternal(req *dash.PanelRequest) (bool, error) {
-	rex := dash.PanelRequestEx{req}
+func (auth AuthSimpleJwt) checkAuthInternal(req *dash.Request) (bool, error) {
+	rex := dash.RequestEx{req}
 	type panelState struct {
 		UrlParams map[string]string `json:"urlparams"`
 	}
@@ -314,8 +314,8 @@ func (auth AuthSimpleJwt) checkAuthInternal(req *dash.PanelRequest) (bool, error
 	return true, nil
 }
 
-func (aup AuthSimpleLogin) CheckAuth(req *dash.PanelRequest) (bool, error) {
-	rex := dash.PanelRequestEx{req}
+func (aup AuthSimpleLogin) CheckAuth(req *dash.Request) (bool, error) {
+	rex := dash.RequestEx{req}
 	var challengeData ChallengeData
 	err := req.BindData(&challengeData)
 	if err != nil {
@@ -348,27 +348,27 @@ func (aup AuthSimpleLogin) CheckAuth(req *dash.PanelRequest) (bool, error) {
 	return true, nil
 }
 
-func (AuthDashborg) ReturnChallenge(req *dash.PanelRequest) *AuthChallenge {
+func (AuthDashborg) ReturnChallenge(req *dash.Request) *AuthChallenge {
 	return &AuthChallenge{
 		AllowedAuth: "dashborg",
 	}
 }
 
-func (auth AuthSimpleJwt) ReturnChallenge(req *dash.PanelRequest) *AuthChallenge {
+func (auth AuthSimpleJwt) ReturnChallenge(req *dash.Request) *AuthChallenge {
 	return &AuthChallenge{
 		AllowedAuth: "simplejwt",
 		RemoveParam: auth.ParamName,
 	}
 }
 
-func (auth AuthAccountJwt) ReturnChallenge(req *dash.PanelRequest) *AuthChallenge {
+func (auth AuthAccountJwt) ReturnChallenge(req *dash.Request) *AuthChallenge {
 	return &AuthChallenge{
 		AllowedAuth: "accountjwt",
 		RemoveParam: auth.ParamName,
 	}
 }
 
-func (auth AuthPassword) ReturnChallenge(req *dash.PanelRequest) *AuthChallenge {
+func (auth AuthPassword) ReturnChallenge(req *dash.Request) *AuthChallenge {
 	var challengeData ChallengeData
 	req.BindData(&challengeData) // don't check error
 	ch := &AuthChallenge{
@@ -389,7 +389,7 @@ func (auth AuthPassword) ReturnChallenge(req *dash.PanelRequest) *AuthChallenge 
 	return ch
 }
 
-func (aup AuthSimpleLogin) ReturnChallenge(req *dash.PanelRequest) *AuthChallenge {
+func (aup AuthSimpleLogin) ReturnChallenge(req *dash.Request) *AuthChallenge {
 	var challengeData ChallengeData
 	req.BindData(&challengeData) // don't check error
 	ch := &AuthChallenge{
@@ -424,9 +424,9 @@ func (aup AuthSimpleLogin) ReturnChallenge(req *dash.PanelRequest) *AuthChalleng
 	return ch
 }
 
-func MakeAuthHandler(allowedAuths ...AllowedAuth) func(req *dash.PanelRequest) error {
-	return func(req *dash.PanelRequest) error {
-		rex := dash.PanelRequestEx{req}
+func MakeAuthHandler(allowedAuths ...AllowedAuth) func(req *dash.Request) error {
+	return func(req *dash.Request) error {
+		rex := dash.RequestEx{req}
 		if req.AuthData() != nil {
 			return nil
 		}

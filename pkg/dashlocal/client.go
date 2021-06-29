@@ -30,7 +30,7 @@ type localClient struct {
 	LocalReqMap  map[string]*localReq
 	StreamClient *streamClient
 	AppClient    dash.AppClient
-	Verbose      bool
+	Container    *containerImpl
 }
 
 type localReq struct {
@@ -57,7 +57,7 @@ func makeLocalClient(config *localServerConfig, container *containerImpl) (*loca
 	rtn.LocalReqMap = make(map[string]*localReq)
 	rtn.ReqClient = makeReqClient(config)
 	rtn.StreamClient = makeStreamClient(rtn.sendStreamClose)
-	rtn.Verbose = config.Verbose
+	rtn.Container = container
 	return rtn, nil
 }
 
@@ -189,7 +189,7 @@ func (rc *reqClient) RecvMsg(m interface{}) error {
 //////////////////////////
 
 func (c *localClient) logV(fmtStr string, args ...interface{}) {
-	if c.Verbose {
+	if c.Container.Config.Verbose {
 		log.Printf(fmtStr, args...)
 	}
 }
@@ -203,14 +203,16 @@ func (c *localClient) DispatchLocalRequest(ctx context.Context, reqMsg *dashprot
 	if appClient == nil {
 		return nil, fmt.Errorf("No App Connected to Dashborg Local Container")
 	}
-	auth := &dash.AuthAtom{
-		Scope: "zone",
-		Type:  "local",
-		Ts:    dashutil.Ts() + int64(dash.MaxAuthExp/time.Millisecond),
-		Role:  "user",
+	if c.Container.Config.DefaultAuthRole != "" && c.Container.Config.DefaultAuthRole != "none" {
+		auth := &dash.AuthAtom{
+			Scope: "zone",
+			Type:  "local",
+			Ts:    dashutil.Ts() + int64(dash.MaxAuthExp/time.Millisecond),
+			Role:  c.Container.Config.DefaultAuthRole,
+		}
+		authJson, _ := dashutil.MarshalJson(auth)
+		reqMsg.AuthData = authJson
 	}
-	authJson, _ := dashutil.MarshalJson(auth)
-	reqMsg.AuthData = authJson
 	reqId := reqMsg.ReqId
 	req := &localReq{Ctx: ctx, DoneCh: make(chan struct{})}
 	c.Lock.Lock()

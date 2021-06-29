@@ -29,6 +29,12 @@ type Config struct {
 	// DASHBORG_VERBOSE, set to true for extra debugging information
 	Verbose bool
 
+	// The local container does not support auth, but apps still require it.
+	// This will set the default auth role that the container will provide to
+	// all apps it hosts.  Setting this to "none" will disable the automatic auth
+	// manual auth (and allowed role of "public").  Defaults to "user".
+	DefaultAuthRole string
+
 	// For internal testing, DASHBORG_ENV
 	Env string // defaults to "prod"
 }
@@ -44,7 +50,7 @@ type Container interface {
 	ServeErr() error
 
 	// Dashborg method for starting a bare stream that is not connected to a request or frontend.
-	StartBareStream(appName string, streamOpts dash.StreamOpts) (*dash.PanelRequest, error)
+	StartBareStream(appName string, streamOpts dash.StreamOpts) (*dash.Request, error)
 
 	// Dashborg method for forcing all frontend clients to make the specified handler call.
 	BackendPush(appName string, path string, data interface{}) error
@@ -90,6 +96,7 @@ func (c *containerImpl) getClientVersion() string {
 func (c *Config) setDefaults() {
 	c.Addr = dashutil.DefaultString(c.Addr, os.Getenv("DASHBORG_LOCALADDR"), "localhost:8082")
 	c.Env = dashutil.DefaultString(c.Env, os.Getenv("DASHBORG_ENV"), "prod")
+	c.DefaultAuthRole = dashutil.DefaultString(c.DefaultAuthRole, "user")
 	c.Verbose = dashutil.EnvOverride(c.Verbose, "DASHBORG_VERBOSE")
 }
 
@@ -163,7 +170,7 @@ func (c *containerImpl) ConnectApp(app dash.AppRuntime) error {
 	return nil
 }
 
-func (c *containerImpl) StartBareStream(appName string, streamOpts dash.StreamOpts) (*dash.PanelRequest, error) {
+func (c *containerImpl) StartBareStream(appName string, streamOpts dash.StreamOpts) (*dash.Request, error) {
 	c.Lock.Lock()
 	app := c.App
 	appClient := c.AppClient

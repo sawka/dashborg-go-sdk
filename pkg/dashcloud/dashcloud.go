@@ -58,7 +58,7 @@ type Container interface {
 	BackendPush(appName string, path string, data interface{}) error
 
 	// Dashborg method for starting a bare stream that is not connected to a request or frontend.
-	StartBareStream(panelName string, streamOpts dash.StreamOpts) (*dash.PanelRequest, error)
+	StartBareStream(panelName string, streamOpts dash.StreamOpts) (*dash.Request, error)
 }
 
 func MakeClient(config *Config) (Container, error) {

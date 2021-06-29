@@ -8,7 +8,7 @@ import (
 
 var errType = reflect.TypeOf((*error)(nil)).Elem()
 var interfaceType = reflect.TypeOf((*interface{})(nil)).Elem()
-var panelReqType = reflect.TypeOf(&PanelRequest{})
+var panelReqType = reflect.TypeOf(&Request{})
 
 func checkOutput(mType reflect.Type, outputTypes ...reflect.Type) bool {
 	if mType.NumOut() != len(outputTypes) {
@@ -22,7 +22,7 @@ func checkOutput(mType reflect.Type, outputTypes ...reflect.Type) bool {
 	return true
 }
 
-func makeCallArgs(hType reflect.Type, req *PanelRequest) ([]reflect.Value, error) {
+func makeCallArgs(hType reflect.Type, req *Request) ([]reflect.Value, error) {
 	rtn := make([]reflect.Value, hType.NumIn())
 	rtn[0] = reflect.ValueOf(req)
 	if len(rtn) >= 2 {
@@ -34,9 +34,9 @@ func makeCallArgs(hType reflect.Type, req *PanelRequest) ([]reflect.Value, error
 		rtn[1] = stateV
 	}
 	if len(rtn) >= 3 {
-		dataV, err := unmarshalToType(req.rawDataJson, hType.In(2))
+		dataV, err := unmarshalToType(req.dataJson, hType.In(2))
 		if err != nil {
-			return nil, fmt.Errorf("Cannot unmarshal rawDataJson to type:%v err:%v", hType.In(2), err)
+			return nil, fmt.Errorf("Cannot unmarshal dataJson to type:%v err:%v", hType.In(2), err)
 		}
 		rtn[2] = dataV
 	}
@@ -87,7 +87,7 @@ func ca2_unmarshalMulti(hType reflect.Type, args []reflect.Value, argNum int, js
 	return nil
 }
 
-func makeCallArgs2(hType reflect.Type, opts CallHandlerOpts, req *PanelRequest) ([]reflect.Value, error) {
+func makeCallArgs2(hType reflect.Type, opts CallHandlerOpts, req *Request) ([]reflect.Value, error) {
 	rtn := make([]reflect.Value, hType.NumIn())
 	if hType.NumIn() == 0 {
 		return rtn, nil
@@ -116,12 +116,12 @@ func makeCallArgs2(hType reflect.Type, opts CallHandlerOpts, req *PanelRequest) 
 	if dataInterface == nil {
 		ca2_unmarshalNil(hType, rtn, argNum)
 	} else if reflect.ValueOf(dataInterface).Kind() == reflect.Slice {
-		err := ca2_unmarshalMulti(hType, rtn, argNum, req.rawDataJson)
+		err := ca2_unmarshalMulti(hType, rtn, argNum, req.dataJson)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		err := ca2_unmarshalSingle(hType, rtn, argNum, req.rawDataJson)
+		err := ca2_unmarshalSingle(hType, rtn, argNum, req.dataJson)
 		if err != nil {
 			return nil, err
 		}
@@ -169,7 +169,7 @@ type CallHandlerOpts struct {
 // 		}
 // 	}
 // 	hVal := reflect.ValueOf(handlerFn)
-// 	RegisterDataHandler(panelName, path, func(req *PanelRequest) (interface{}, error) {
+// 	RegisterDataHandler(panelName, path, func(req *Request) (interface{}, error) {
 // 		args, err := makeCallArgs2(hType, *opts, req)
 // 		if err != nil {
 // 			return nil, err
@@ -200,7 +200,7 @@ func (app *App) HandlerEx(path string, handlerFn interface{}) error {
 		return fmt.Errorf("Dashborg Panel Handler must have 1-3 arguments (Request, stateType, dataType)")
 	}
 	hVal := reflect.ValueOf(handlerFn)
-	app.Handler(path, func(req *PanelRequest) error {
+	app.Handler(path, func(req *Request) error {
 		args, err := makeCallArgs(hType, req)
 		if err != nil {
 			return err
@@ -231,7 +231,7 @@ func (app *App) DataHandlerEx(path string, handlerFn interface{}) error {
 		return fmt.Errorf("Dashborg Data Handler must have 1-3 arguments (Request, stateType, dataType)")
 	}
 	hVal := reflect.ValueOf(handlerFn)
-	app.DataHandler(path, func(req *PanelRequest) (interface{}, error) {
+	app.DataHandler(path, func(req *Request) (interface{}, error) {
 		args, err := makeCallArgs(hType, req)
 		if err != nil {
 			return nil, err

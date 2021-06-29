@@ -19,7 +19,7 @@ import (
 // must be divisible by 3 (for base64 encoding)
 const blobReadSize = 3 * 340 * 1024
 
-// PanelRequest encapsulates all the data about a Dashborg request.  Normally the only
+// Request encapsulates all the data about a Dashborg request.  Normally the only
 // fields that a handler needs to access are "Data" and "appState" in order to read
 // the parameters and UI state associated with this request.  The other fields are
 // exported, but subject to change and should not be used except in advanced use cases.
@@ -30,61 +30,57 @@ type RequestInfo struct {
 	RequestType string // "data", "handler", or "stream"
 	Path        string // handler or data path
 	AppName     string // app name
+	FeClientId  string // unique id for client
 }
 
-type PanelRequest struct {
+type Request struct {
 	info RequestInfo
 
-	rawDataJson  string      // Raw JSON for Data (used for manual unmarshalling into custom struct)
+	dataJson     string      // Raw JSON for Data (used for manual unmarshalling into custom struct)
 	appState     interface{} // json-unmarshaled panel state for this request
 	appStateJson string      // Raw JSON for appState (used for manual unmarshalling into custom struct)
 	authData     *AuthAtom   // authentication tokens associated with this request
 
-	infoMsgs   []string              // debugging information
-	err        error                 // set if an error occured (when set, RRActions are not sent)
-	rrActions  []*dashproto.RRAction // output, these are the actions that will be returned
-	lock       *sync.Mutex           // synchronizes RRActions
-	feClientId string                // unique id for client
-	ctx        context.Context       // gRPC context / streaming context
-	isDone     bool                  // set after Done() is called and response has been sent to server
+	infoMsgs  []string              // debugging information
+	err       error                 // set if an error occured (when set, RRActions are not sent)
+	rrActions []*dashproto.RRAction // output, these are the actions that will be returned
+	lock      *sync.Mutex           // synchronizes RRActions
+	ctx       context.Context       // gRPC context / streaming context
+	isDone    bool                  // set after Done() is called and response has been sent to server
 
 	appClient *appClient
 	container Container
 }
 
-type PanelRequestEx struct {
-	Req *PanelRequest
+type RequestEx struct {
+	Req *Request
 }
 
-func (req *PanelRequest) RequestInfo() RequestInfo {
+func (req *Request) RequestInfo() RequestInfo {
 	return req.info
 }
 
-func (req *PanelRequest) Context() context.Context {
+func (req *Request) Context() context.Context {
 	return req.ctx
 }
 
-func (req *PanelRequest) Container() Container {
+func (req *Request) Container() Container {
 	return req.container
 }
 
-func (req *PanelRequest) AuthData() *AuthAtom {
+func (req *Request) AuthData() *AuthAtom {
 	return req.authData
 }
 
-func (req *PanelRequest) RawDataJson() string {
-	return req.rawDataJson
-}
-
-func (req *PanelRequest) BindData(obj interface{}) error {
-	if req.rawDataJson == "" {
+func (req *Request) BindData(obj interface{}) error {
+	if req.dataJson == "" {
 		return nil
 	}
-	err := json.Unmarshal([]byte(req.rawDataJson), obj)
+	err := json.Unmarshal([]byte(req.dataJson), obj)
 	return err
 }
 
-func (req *PanelRequest) BindAppState(obj interface{}) error {
+func (req *Request) BindAppState(obj interface{}) error {
 	if req.appStateJson == "" {
 		return nil
 	}
@@ -92,17 +88,17 @@ func (req *PanelRequest) BindAppState(obj interface{}) error {
 	return err
 }
 
-func (req *PanelRequest) AppState() interface{} {
+func (req *Request) AppState() interface{} {
 	return req.appState
 }
 
-func (req *PanelRequest) appendRR(rrAction *dashproto.RRAction) {
+func (req *Request) appendRR(rrAction *dashproto.RRAction) {
 	req.lock.Lock()
 	defer req.lock.Unlock()
 	req.rrActions = append(req.rrActions, rrAction)
 }
 
-func (req *PanelRequest) clearActions() []*dashproto.RRAction {
+func (req *Request) clearActions() []*dashproto.RRAction {
 	req.lock.Lock()
 	defer req.lock.Unlock()
 	rtn := req.rrActions
@@ -116,17 +112,17 @@ func (req *PanelRequest) clearActions() []*dashproto.RRAction {
 // Note that StartStream will flush any pending actions to the server.
 // If the stream already exists, the existing StreamOpts will not change (keeps the old NoServerCancel setting).
 // streamFn may be nil (useful if you are intending to attach to an existing stream created with StartBareStream).
-func (req *PanelRequest) StartStream(streamOpts StreamOpts, streamFn func(req *PanelRequest)) error {
+func (req *Request) StartStream(streamOpts StreamOpts, streamFn func(req *Request)) error {
 	if req.isDone {
-		return fmt.Errorf("Cannot call StartStream(), PanelRequest is already done")
+		return fmt.Errorf("Cannot call StartStream(), Request is already done")
 	}
 	if req.isStream() {
-		return fmt.Errorf("Cannot call StartStream(), PanelRequest is already streaming")
+		return fmt.Errorf("Cannot call StartStream(), Request is already streaming")
 	}
-	if !dashutil.IsUUIDValid(req.feClientId) {
+	if !dashutil.IsUUIDValid(req.info.FeClientId) {
 		return fmt.Errorf("No FeClientId, client does not support streaming")
 	}
-	streamReq, streamReqId, err := req.appClient.StartStream(req.info.AppName, streamOpts, req.feClientId)
+	streamReq, streamReqId, err := req.appClient.StartStream(req.info.AppName, streamOpts, req.info.FeClientId)
 	if err != nil {
 		return err
 	}
@@ -161,9 +157,9 @@ func (req *PanelRequest) StartStream(streamOpts StreamOpts, streamFn func(req *P
 
 // SetBlobData sends blob data to the server.
 // Note that SetBlobData will flush any pending actions to the server
-func (req *PanelRequest) SetBlobData(path string, mimeType string, reader io.Reader) error {
+func (req *Request) SetBlobData(path string, mimeType string, reader io.Reader) error {
 	if req.isDone {
-		return fmt.Errorf("Cannot call SetBlobData(), path=%s, PanelRequest is already done", path)
+		return fmt.Errorf("Cannot call SetBlobData(), path=%s, Request is already done", path)
 	}
 	if !dashutil.IsMimeTypeValid(mimeType) {
 		return fmt.Errorf("Invalid Mime-Type passed to SetBlobData mime-type=%s", mimeType)
@@ -205,7 +201,7 @@ func (req *PanelRequest) SetBlobData(path string, mimeType string, reader io.Rea
 	return nil
 }
 
-func (req *PanelRequest) SetBlobDataFromFile(path string, mimeType string, fileName string) error {
+func (req *Request) SetBlobDataFromFile(path string, mimeType string, fileName string) error {
 	fd, err := os.Open(fileName)
 	if err != nil {
 		return err
@@ -215,9 +211,9 @@ func (req *PanelRequest) SetBlobDataFromFile(path string, mimeType string, fileN
 }
 
 // SetData is used to return data to the client.  Will replace the contents of path with data.
-func (req *PanelRequest) DataOp(op string, path string, data interface{}) error {
+func (req *Request) DataOp(op string, path string, data interface{}) error {
 	if req.isDone {
-		return fmt.Errorf("Cannot call SetData(), path=%s, PanelRequest is already done", path)
+		return fmt.Errorf("Cannot call SetData(), path=%s, Request is already done", path)
 	}
 	jsonData, err := dashutil.MarshalJson(data)
 	if err != nil {
@@ -235,12 +231,12 @@ func (req *PanelRequest) DataOp(op string, path string, data interface{}) error 
 }
 
 // SetData is used to return data to the client.  Will replace the contents of path with data.
-func (req *PanelRequest) SetData(path string, data interface{}) error {
+func (req *Request) SetData(path string, data interface{}) error {
 	return req.DataOp("set", path, data)
 }
 
 // SetHtml returns html to be rendered by the client.  Only valid for root handler requests (path = "/")
-func (req *PanelRequest) setHtml(html string) error {
+func (req *Request) setHtml(html string) error {
 	ts := dashutil.Ts()
 	htmlAction := &dashproto.RRAction{
 		Ts:         ts,
@@ -252,7 +248,7 @@ func (req *PanelRequest) setHtml(html string) error {
 }
 
 // Convience wrapper over SetHtml that returns the contents of a file.
-func (req *PanelRequest) setHtmlFromFile(fileName string) error {
+func (req *Request) setHtmlFromFile(fileName string) error {
 	fd, err := os.Open(fileName)
 	if err != nil {
 		return err
@@ -262,18 +258,18 @@ func (req *PanelRequest) setHtmlFromFile(fileName string) error {
 	if err != nil {
 		return err
 	}
-	return PanelRequestEx{req}.SetHtml(string(htmlBytes))
+	return RequestEx{req}.SetHtml(string(htmlBytes))
 }
 
-func (req *PanelRequest) isRootReq() bool {
+func (req *Request) isRootReq() bool {
 	return req.info.RequestType == "handler" && req.info.AppName != "" && req.info.Path == "/"
 }
 
 // Call from a handler to force the client to invalidate and re-pull data that matches path.
 // Path is a regular expression. (e.g. use InvalidateData(".*") to invalidate all data).
-func (req *PanelRequest) InvalidateData(pathRegexp string) error {
+func (req *Request) InvalidateData(pathRegexp string) error {
 	if req.isDone {
-		return fmt.Errorf("Cannot call InvalidateData(), path=%s, PanelRequest is already done", pathRegexp)
+		return fmt.Errorf("Cannot call InvalidateData(), path=%s, Request is already done", pathRegexp)
 	}
 	rrAction := &dashproto.RRAction{
 		Ts:         dashutil.Ts(),
@@ -284,9 +280,9 @@ func (req *PanelRequest) InvalidateData(pathRegexp string) error {
 	return nil
 }
 
-func (req *PanelRequest) Flush() error {
+func (req *Request) Flush() error {
 	if req.isDone {
-		return fmt.Errorf("Cannot Flush(), PanelRequest is already done")
+		return fmt.Errorf("Cannot Flush(), Request is already done")
 	}
 	numStreamClients, err := req.appClient.SendRequestResponse(req, false)
 	if req.isStream() && err != nil {
@@ -299,9 +295,9 @@ func (req *PanelRequest) Flush() error {
 }
 
 // Done() ends a request and sends the results back to the client.  It is automatically called after
-// a handler/data-handler is run.  Only needs to be called explicitly if you'd like to return
-// your result earlier.
-func (req *PanelRequest) Done() error {
+// a handler is run.  Only needs to be called explicitly if you'd like to return
+// your result earlier, or for bare stream requests.
+func (req *Request) Done() error {
 	if req.isDone {
 		return nil
 	}
@@ -316,11 +312,7 @@ func (req *PanelRequest) Done() error {
 	return err
 }
 
-func (req *PanelRequest) IsDone() bool {
-	return req.isDone
-}
-
-func (req *PanelRequest) setAuthData(aa AuthAtom) {
+func (req *Request) setAuthData(aa AuthAtom) {
 	if aa.Ts == 0 {
 		aa.Ts = dashutil.Ts() + int64(MaxAuthExp/time.Millisecond)
 	}
@@ -336,27 +328,23 @@ func (req *PanelRequest) setAuthData(aa AuthAtom) {
 	req.appendRR(rr)
 }
 
-func (req *PanelRequest) isStream() bool {
+func (req *Request) isStream() bool {
 	return req.info.RequestType == "stream"
 }
 
-func (req *PanelRequest) isAuthenticated() bool {
-	return req.authData != nil
-}
-
-func (rex PanelRequestEx) SetAuthData(aa AuthAtom) {
+func (rex RequestEx) SetAuthData(aa AuthAtom) {
 	rex.Req.setAuthData(aa)
 }
 
-func (rex PanelRequestEx) SetHtml(html string) error {
+func (rex RequestEx) SetHtml(html string) error {
 	return rex.Req.setHtml(html)
 }
 
-func (rex PanelRequestEx) SetHtmlFromFile(fileName string) error {
+func (rex RequestEx) SetHtmlFromFile(fileName string) error {
 	return rex.Req.setHtmlFromFile(fileName)
 }
 
-func (rex PanelRequestEx) AppendPanelAuthChallenge(ch interface{}) error {
+func (rex RequestEx) AppendPanelAuthChallenge(ch interface{}) error {
 	challengeJson, err := dashutil.MarshalJson(ch)
 	if err != nil {
 		return err
@@ -369,6 +357,18 @@ func (rex PanelRequestEx) AppendPanelAuthChallenge(ch interface{}) error {
 	return nil
 }
 
-func (rex PanelRequestEx) AppendInfoMessage(message string) {
+func (rex RequestEx) AppendInfoMessage(message string) {
 	rex.Req.infoMsgs = append(rex.Req.infoMsgs, message)
+}
+
+func (rex RequestEx) RawDataJson() string {
+	return rex.Req.dataJson
+}
+
+func (rex RequestEx) RawAppStateJson() string {
+	return rex.Req.appStateJson
+}
+
+func (rex RequestEx) IsDone() bool {
+	return rex.Req.isDone
 }

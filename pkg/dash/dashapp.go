@@ -10,6 +10,8 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
+var notAuthorizedErr = fmt.Errorf("Not Authorized")
+
 const (
 	AppTypeGUI         = "gui"
 	AppTypeDataService = "dataservice"
@@ -49,10 +51,10 @@ func (opt GenericAppOption) OptionData() interface{} {
 
 type AppRuntime interface {
 	AppConfig() AppConfig
-	RunHandler(req *PanelRequest) (interface{}, error)
+	RunHandler(req *Request) (interface{}, error)
 	GetAppName() string
 	GetClientVersion() string
-	CheckAuth(req *PanelRequest) error
+	CheckAuth(req *Request) error
 }
 
 type App struct {
@@ -146,7 +148,7 @@ func MakeApp(appName string) *App {
 }
 
 type handlerType struct {
-	HandlerFn       func(req *PanelRequest) (interface{}, error)
+	HandlerFn       func(req *Request) (interface{}, error)
 	BoundHandlerKey *handlerKey
 }
 
@@ -182,40 +184,38 @@ func (app *App) setOption_nolock(opt AppOption) {
 	app.options[opt.OptionName()] = opt
 }
 
-func wrapHandler(handlerFn func(req *PanelRequest) error) func(req *PanelRequest) (interface{}, error) {
-	wrappedHandlerFn := func(req *PanelRequest) (interface{}, error) {
+func wrapHandler(handlerFn func(req *Request) error) func(req *Request) (interface{}, error) {
+	wrappedHandlerFn := func(req *Request) (interface{}, error) {
 		err := handlerFn(req)
 		return nil, err
 	}
 	return wrappedHandlerFn
 }
 
-func (app *App) CustomAuthHandler(authHandler func(req *PanelRequest) error) {
+func (app *App) CustomAuthHandler(authHandler func(req *Request) error) {
 	app.lock.Lock()
 	defer app.lock.Unlock()
 	app.handlers[handlerKey{HandlerType: "auth"}] = handlerType{HandlerFn: wrapHandler(authHandler)}
 	app.setOption_nolock(GenericAppOption{Name: OptionAuth, Type: "dynamic"})
 }
 
-func (app *App) SetAllowedRoles(roles []string) {
+func (app *App) SetAllowedRoles(roles ...string) {
 	app.lock.Lock()
 	defer app.lock.Unlock()
 
 	app.allowedRoles = roles
 }
 
-func (app *App) CheckAuth(req *PanelRequest) error {
-	aa := req.AuthData()
-	if aa == nil {
-		return fmt.Errorf("No AuthData")
-	}
-	role := aa.GetRole()
+// Checks AuthData against allowed roles.  Returns nil (success) if
+// role is "*", allowed role is "public", or role matches one of the allowed roles.
+func (app *App) CheckAuth(req *Request) error {
+	role := req.AuthData().GetRole() // nil AuthData has role of "public"
 	for _, allowedRole := range app.allowedRoles {
-		if role == "*" || role == allowedRole {
+		if role == "*" || role == allowedRole || allowedRole == "public" {
 			return nil
 		}
 	}
-	return fmt.Errorf("Not Authorized")
+	return notAuthorizedErr
 }
 
 func (app *App) SetHtml(html string) {
@@ -242,13 +242,13 @@ func (app *App) SetOnLoadHandler(path string) {
 	app.SetOption(GenericAppOption{Name: OptionOnLoadHandler, Path: path})
 }
 
-func (app *App) Handler(path string, handlerFn func(req *PanelRequest) error) error {
+func (app *App) Handler(path string, handlerFn func(req *Request) error) error {
 	hkey := handlerKey{HandlerType: "handler", Path: path}
 	app.handlers[hkey] = handlerType{HandlerFn: wrapHandler(handlerFn)}
 	return nil
 }
 
-func (app *App) htmlHandler(req *PanelRequest) (interface{}, error) {
+func (app *App) htmlHandler(req *Request) (interface{}, error) {
 	if app.html == nil {
 		return nil, nil
 	}
@@ -256,17 +256,17 @@ func (app *App) htmlHandler(req *PanelRequest) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	PanelRequestEx{req}.SetHtml(htmlValue)
+	RequestEx{req}.SetHtml(htmlValue)
 	return nil, nil
 }
 
-func (app *App) DataHandler(path string, handlerFn func(req *PanelRequest) (interface{}, error)) error {
+func (app *App) DataHandler(path string, handlerFn func(req *Request) (interface{}, error)) error {
 	hkey := handlerKey{HandlerType: "data", Path: path}
 	app.handlers[hkey] = handlerType{HandlerFn: handlerFn}
 	return nil
 }
 
-func (app *App) RunHandler(req *PanelRequest) (interface{}, error) {
+func (app *App) RunHandler(req *Request) (interface{}, error) {
 	hkey := handlerKey{
 		HandlerType: req.info.RequestType,
 		Path:        req.info.Path,

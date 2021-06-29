@@ -36,7 +36,7 @@ type handlerKey struct {
 	Path        string
 }
 
-type handlerFuncType = func(*PanelRequest) (interface{}, error)
+type handlerFuncType = func(*Request) (interface{}, error)
 
 type handlerVal struct {
 	ProtoHKey *dashproto.HandlerKey
@@ -59,8 +59,8 @@ type streamKey struct {
 
 type AppClient interface {
 	DispatchRequest(ctx context.Context, reqMsg *dashproto.RequestMessage)
-	SendRequestResponse(req *PanelRequest, done bool) (int, error)
-	StartStream(appName string, streamOpts StreamOpts, feClientId string) (*PanelRequest, string, error)
+	SendRequestResponse(req *Request, done bool) (int, error)
+	StartStream(appName string, streamOpts StreamOpts, feClientId string) (*Request, string, error)
 }
 
 type AppClientConfig struct {
@@ -96,7 +96,7 @@ func MakeAppClient(container Container, app AppRuntime, service dashproto.Dashbo
 }
 
 // returns numStreamClients, err
-func (pc *appClient) SendRequestResponse(req *PanelRequest, done bool) (int, error) {
+func (pc *appClient) SendRequestResponse(req *Request, done bool) (int, error) {
 	if req.isStream() && pc.stream_hasZeroClients(req.info.ReqId) {
 		req.clearActions()
 		return 0, nil
@@ -107,7 +107,7 @@ func (pc *appClient) SendRequestResponse(req *PanelRequest, done bool) (int, err
 		ReqId:        req.info.ReqId,
 		RequestType:  req.info.RequestType,
 		PanelName:    req.info.AppName,
-		FeClientId:   req.feClientId,
+		FeClientId:   req.info.FeClientId,
 		ResponseDone: done,
 	}
 	if req.err != nil {
@@ -163,19 +163,19 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 		return
 	}
 
-	preq := &PanelRequest{
+	preq := &Request{
 		info: RequestInfo{
 			StartTime:   time.Now(),
 			ReqId:       reqMsg.ReqId,
 			RequestType: reqMsg.RequestType,
 			AppName:     reqMsg.PanelName,
 			Path:        reqMsg.Path,
+			FeClientId:  reqMsg.FeClientId,
 		},
-		ctx:        ctx,
-		lock:       &sync.Mutex{},
-		feClientId: reqMsg.FeClientId,
-		appClient:  pc,
-		container:  pc.Container,
+		ctx:       ctx,
+		lock:      &sync.Mutex{},
+		appClient: pc,
+		container: pc.Container,
 	}
 	hkey := handlerKey{
 		AppName: reqMsg.PanelName,
@@ -199,7 +199,7 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 		return
 	}
 
-	preq.rawDataJson = reqMsg.JsonData
+	preq.dataJson = reqMsg.JsonData
 
 	var pstate interface{}
 	if reqMsg.PanelStateData != "" {
@@ -226,7 +226,7 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 
 	// check-auth
 	if preq.info.RequestType != "auth" {
-		if !preq.isAuthenticated() {
+		if !pc.isAuthenticated(preq) {
 			preq.err = fmt.Errorf("Request is not authenticated")
 			preq.Done()
 			return
@@ -256,6 +256,10 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 		}
 		preq.appendRR(rrAction)
 	}
+}
+
+func (pc *appClient) isAuthenticated(req *Request) bool {
+	return pc.App.CheckAuth(req) == nil
 }
 
 func nonBlockingSend(returnCh chan *dashproto.RRAction, rrAction *dashproto.RRAction) error {

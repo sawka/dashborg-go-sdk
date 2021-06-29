@@ -444,7 +444,7 @@ func (pc *dashCloudClient) CallDataHandler(panelName string, path string, data i
 // same StreamId.  An error will be returned if a stream with this StreamId has already started.
 // Unlike StartStream StreamId must be specified ("" will return an error).
 // Caller is responsible for calling req.Done() when the stream is finished.
-func (pc *dashCloudClient) StartBareStream(appName string, streamOpts dash.StreamOpts) (*dash.PanelRequest, error) {
+func (pc *dashCloudClient) StartBareStream(appName string, streamOpts dash.StreamOpts) (*dash.Request, error) {
 	pc.Lock.Lock()
 	app := pc.AppMap[appName]
 	pc.Lock.Unlock()
