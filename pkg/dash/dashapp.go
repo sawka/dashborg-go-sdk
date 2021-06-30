@@ -22,7 +22,11 @@ const (
 	OptionOnLoadHandler = "onloadhandler"
 	OptionHtml          = "html"
 	OptionAuth          = "auth"
-	OptionAllowedRoles  = "auth-allowedroles"
+
+	AuthTypeZone    = "zone"
+	AuthTypeZoneApp = "zone-app"
+	AuthTypeAppOnly = "app-only"
+	AuthTypePublic  = "public"
 )
 
 type AppConfig struct {
@@ -31,25 +35,30 @@ type AppConfig struct {
 	Options map[string]interface{}
 }
 
-func (acfg AppConfig) GetGenericOption(optName string) *GenericAppOption {
-	optVal := acfg.Options[optName]
-	if optVal == nil {
-		return nil
+func optionToGenericOption(optName string, opt interface{}) (*GenericAppOption, error) {
+	if opt == nil {
+		return nil, nil
 	}
-	if gopt, ok := optVal.(*GenericAppOption); ok {
-		return gopt
+	if gopt, ok := opt.(*GenericAppOption); ok {
+		return gopt, nil
 	}
-	jsonBytes, err := json.Marshal(optVal)
+	jsonBytes, err := json.Marshal(opt)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	var optData GenericAppOption
 	err = json.Unmarshal(jsonBytes, &optData)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	optData.Name = optName
-	return &optData
+	return &optData, nil
+}
+
+func (acfg AppConfig) GetGenericOption(optName string) *GenericAppOption {
+	opt := acfg.Options[optName]
+	genOpt, _ := optionToGenericOption(optName, opt)
+	return genOpt
 }
 
 type AppOption interface {
@@ -88,6 +97,9 @@ type App struct {
 	html     valueType
 	handlers map[handlerKey]handlerType
 	options  map[string]AppOption
+
+	authType         string
+	authAllowedRoles []string
 }
 
 type valueType interface {
@@ -164,8 +176,8 @@ func MakeApp(appName string) *App {
 	}
 	rtn.handlers = make(map[handlerKey]handlerType)
 	rtn.options = make(map[string]AppOption)
-	rtn.setOption_nolock(GenericAppOption{Name: OptionAuth, Type: "none"})
-	rtn.setOption_nolock(GenericAppOption{Name: OptionAllowedRoles, AllowedRoles: []string{"user"}})
+	rtn.authType = AuthTypeZone
+	rtn.authAllowedRoles = []string{"user"}
 	rtn.handlers[handlerKey{HandlerType: "html"}] = handlerType{HandlerFn: rtn.htmlHandler}
 	return rtn
 }
@@ -185,6 +197,9 @@ func (app *App) AppConfig() AppConfig {
 			panic(fmt.Sprintf("OptionName does not match hash key: %s:%s %v\n", name, opt.OptionName(), opt))
 		}
 		rtn.Options[name] = opt.OptionData()
+	}
+	if rtn.Options[OptionAuth] == nil {
+		rtn.Options[OptionAuth] = app.getAuthOpt()
 	}
 	return rtn
 }
@@ -218,15 +233,36 @@ func wrapHandler(handlerFn func(req *Request) error) func(req *Request) (interfa
 func (app *App) CustomAuthHandler(authHandler func(req *Request) error) {
 	app.lock.Lock()
 	defer app.lock.Unlock()
+	if app.authType != AuthTypeZoneApp && app.authType != AuthTypeAppOnly {
+		app.authType = AuthTypeZoneApp
+	}
 	app.handlers[handlerKey{HandlerType: "auth"}] = handlerType{HandlerFn: wrapHandler(authHandler)}
-	app.setOption_nolock(GenericAppOption{Name: OptionAuth, Type: "dynamic"})
+}
+
+func (app *App) getAuthOpt() GenericAppOption {
+	authOpt, _ := optionToGenericOption(OptionAuth, app.options[OptionAuth])
+	if authOpt == nil {
+		authOpt = &GenericAppOption{
+			Name:         OptionAuth,
+			Type:         app.authType,
+			AllowedRoles: app.authAllowedRoles,
+		}
+	}
+	return *authOpt
+}
+
+func (app *App) SetAuthType(authType string) {
+	app.lock.Lock()
+	defer app.lock.Unlock()
+
+	app.authType = authType
 }
 
 func (app *App) SetAllowedRoles(roles ...string) {
 	app.lock.Lock()
 	defer app.lock.Unlock()
 
-	app.setOption_nolock(GenericAppOption{Name: OptionAllowedRoles, AllowedRoles: roles})
+	app.authAllowedRoles = roles
 }
 
 func (app *App) SetHtml(html string) {

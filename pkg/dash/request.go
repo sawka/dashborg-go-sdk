@@ -37,7 +37,7 @@ type Request struct {
 	info RequestInfo
 
 	dataJson     string      // Raw JSON for Data (used for manual unmarshalling into custom struct)
-	appState     interface{} // json-unmarshaled panel state for this request
+	appState     interface{} // json-unmarshaled app state for this request
 	appStateJson string      // Raw JSON for appState (used for manual unmarshalling into custom struct)
 	authData     *AuthAtom   // authentication tokens associated with this request
 
@@ -222,9 +222,12 @@ func (req *Request) DataOp(op string, path string, data interface{}) error {
 	rrAction := &dashproto.RRAction{
 		Ts:         dashutil.Ts(),
 		ActionType: "setdata",
-		OpType:     op,
-		Selector:   path,
 		JsonData:   jsonData,
+	}
+	if op == "" || op == "set" {
+		rrAction.Selector = path
+	} else {
+		rrAction.Selector = op + ":" + path
 	}
 	req.appendRR(rrAction)
 	return nil
@@ -347,7 +350,7 @@ func (rex RequestEx) SetHtmlFromFile(fileName string) error {
 	return rex.Req.setHtmlFromFile(fileName)
 }
 
-func (rex RequestEx) AppendPanelAuthChallenge(ch interface{}) error {
+func (rex RequestEx) AppendAppAuthChallenge(ch interface{}) error {
 	challengeJson, err := dashutil.MarshalJson(ch)
 	if err != nil {
 		return err

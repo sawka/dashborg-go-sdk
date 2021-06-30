@@ -3,6 +3,7 @@ package dashauth
 import (
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
@@ -17,6 +18,11 @@ type AuthDashborg struct{}
 type AuthPassword struct {
 	Password string
 	Role     string // defaults to "user"
+}
+
+// allows multiple passwords.  each password can be associated with a different role (defaults to "user").
+type AuthMultiPassword struct {
+	Passwords []AuthPassword
 }
 
 type AllowedAuth interface {
@@ -35,6 +41,8 @@ type ChallengeField struct {
 
 type AuthChallenge struct {
 	AllowedAuth string `json:"allowedauth"` // "dashborg", "challenge", "message", "simplejwt", "removeparam"
+
+	ChallengeType string `json:"challengetype,omitempty"` // distinguish different challenge type forms
 
 	// These fields only apply when AllowedAuth = "challenge"
 	ChallengeMessage string           `json:"challengemessage,omitempty"` // message to show user for this auth
@@ -141,6 +149,28 @@ func (auth AuthPassword) CheckAuth(req *dash.Request) (*dash.AuthAtom, error) {
 	return nil, nil
 }
 
+func (auth AuthMultiPassword) CheckAuth(req *dash.Request) (*dash.AuthAtom, error) {
+	var challengeData ChallengeData
+	err := req.BindData(&challengeData)
+	if err != nil {
+		return nil, nil
+	}
+	chPassword := challengeData.ChallengeData["password"]
+	if chPassword == "" {
+		return nil, nil
+	}
+	for _, pauth := range auth.Passwords {
+		if chPassword == pauth.Password {
+			role := pauth.Role
+			if role == "" {
+				role = "user"
+			}
+			return &dash.AuthAtom{Type: "password", Role: role}, nil
+		}
+	}
+	return nil, nil
+}
+
 func (auth AuthAccountJwt) CheckAuth(req *dash.Request) (*dash.AuthAtom, error) {
 	rex := dash.RequestEx{req}
 	authAtom, err := auth.checkAuthInternal(req)
@@ -152,7 +182,7 @@ func (auth AuthAccountJwt) CheckAuth(req *dash.Request) (*dash.AuthAtom, error) 
 			MessageTitle: "External Sign In Error",
 			Message:      err.Error(),
 		}
-		rex.AppendPanelAuthChallenge(ac)
+		rex.AppendAppAuthChallenge(ac)
 		return nil, err
 	}
 	if authAtom == nil {
@@ -164,17 +194,17 @@ func (auth AuthAccountJwt) CheckAuth(req *dash.Request) (*dash.AuthAtom, error) 
 			AllowedAuth: "removeparam",
 			RemoveParam: auth.ParamName,
 		}
-		rex.AppendPanelAuthChallenge(ac)
+		rex.AppendAppAuthChallenge(ac)
 	}
 	return authAtom, nil
 }
 
 func (auth AuthAccountJwt) checkAuthInternal(req *dash.Request) (*dash.AuthAtom, error) {
-	type panelState struct {
+	type appState struct {
 		UrlParams map[string]string `json:"urlparams"`
 		DbRequest map[string]string `json:"dbrequest"`
 	}
-	var pstate panelState
+	var pstate appState
 	err := req.BindAppState(&pstate)
 	if err != nil {
 		return nil, nil
@@ -233,7 +263,7 @@ func (auth AuthSimpleJwt) CheckAuth(req *dash.Request) (*dash.AuthAtom, error) {
 			MessageTitle: "External Sign In Error",
 			Message:      err.Error(),
 		}
-		rex.AppendPanelAuthChallenge(ac)
+		rex.AppendAppAuthChallenge(ac)
 		return nil, err
 	}
 	if authAtom == nil {
@@ -245,15 +275,15 @@ func (auth AuthSimpleJwt) CheckAuth(req *dash.Request) (*dash.AuthAtom, error) {
 		AllowedAuth: "removeparam",
 		RemoveParam: auth.ParamName,
 	}
-	rex.AppendPanelAuthChallenge(ac)
+	rex.AppendAppAuthChallenge(ac)
 	return authAtom, nil
 }
 
 func (auth AuthSimpleJwt) checkAuthInternal(req *dash.Request) (*dash.AuthAtom, error) {
-	type panelState struct {
+	type appState struct {
 		UrlParams map[string]string `json:"urlparams"`
 	}
-	var pstate panelState
+	var pstate appState
 	err := req.BindAppState(&pstate)
 	if err != nil {
 		return nil, nil
@@ -348,17 +378,54 @@ func (auth AuthPassword) ReturnChallenge(req *dash.Request) *AuthChallenge {
 	var challengeData ChallengeData
 	req.BindData(&challengeData) // don't check error
 	ch := &AuthChallenge{
-		AllowedAuth: "challenge",
+		AllowedAuth:   "challenge",
+		ChallengeType: "password",
 		ChallengeFields: []ChallengeField{ChallengeField{
-			Label: "Panel Password",
+			Label: "App Password",
 			Name:  "password",
 			Type:  "password",
 		}},
 	}
-	if challengeData.ChallengeData["submitted"] == "1" {
-		if challengeData.ChallengeData["password"] == "" {
+	if challengeData.ChallengeData["submitted_challengetype"] == "password" {
+		chPassword := challengeData.ChallengeData["password"]
+		if chPassword == "" {
 			ch.ChallengeError = "Password cannot be blank"
-		} else if challengeData.ChallengeData["password"] != auth.Password {
+		} else if chPassword != auth.Password {
+			ch.ChallengeError = "Invalid password"
+		}
+	}
+	return ch
+}
+
+func (auth AuthMultiPassword) anyPasswordMatch(password string) bool {
+	if password == "" {
+		return false
+	}
+	for _, pauth := range auth.Passwords {
+		if pauth.Password == password {
+			return true
+		}
+	}
+	return false
+}
+
+func (auth AuthMultiPassword) ReturnChallenge(req *dash.Request) *AuthChallenge {
+	var challengeData ChallengeData
+	req.BindData(&challengeData) // don't check error
+	ch := &AuthChallenge{
+		AllowedAuth:   "challenge",
+		ChallengeType: "password",
+		ChallengeFields: []ChallengeField{ChallengeField{
+			Label: "App Password",
+			Name:  "password",
+			Type:  "password",
+		}},
+	}
+	if challengeData.ChallengeData["submitted_challengetype"] == "password" {
+		chPassword := challengeData.ChallengeData["password"]
+		if chPassword == "" {
+			ch.ChallengeError = "Password cannot be blank"
+		} else if !auth.anyPasswordMatch(chPassword) {
 			ch.ChallengeError = "Invalid password"
 		}
 	}
@@ -369,7 +436,8 @@ func (aup AuthSimpleLogin) ReturnChallenge(req *dash.Request) *AuthChallenge {
 	var challengeData ChallengeData
 	req.BindData(&challengeData) // don't check error
 	ch := &AuthChallenge{
-		AllowedAuth: "challenge",
+		AllowedAuth:   "challenge",
+		ChallengeType: "login",
 		ChallengeFields: []ChallengeField{
 			ChallengeField{
 				Label: "User",
@@ -383,7 +451,7 @@ func (aup AuthSimpleLogin) ReturnChallenge(req *dash.Request) *AuthChallenge {
 			},
 		},
 	}
-	if challengeData.ChallengeData["submitted"] == "1" {
+	if challengeData.ChallengeData["submitted_challengetype"] == "login" {
 		user := challengeData.ChallengeData["user"]
 		pw := challengeData.ChallengeData["password"]
 		resp, err := aup.CheckFn(user, pw)
@@ -411,13 +479,23 @@ func isAllowedRole(aa *dash.AuthAtom, allowedRoles []string) bool {
 }
 
 func MakeAuthHandler(authHandlers ...AllowedAuth) func(req *dash.Request) error {
+	challengeCount := 0
+	for _, auth := range authHandlers {
+		switch auth.(type) {
+		case AuthPassword, AuthMultiPassword, AuthSimpleLogin:
+			challengeCount++
+		}
+	}
+	if challengeCount > 1 {
+		log.Printf("Dashborg WARNING may only include one AuthPassword, AuthMultiPassword, or AuthSimpleLogin handler\n")
+	}
 	return func(req *dash.Request) error {
 		rex := dash.RequestEx{req}
-		allowedRolesOpt := rex.AppRuntime().AppConfig().GetGenericOption(dash.OptionAllowedRoles)
-		if allowedRolesOpt == nil || len(allowedRolesOpt.AllowedRoles) == 0 {
-			return fmt.Errorf("Cannot MakeAuthHandler for App without option:auth-allowedroles")
+		authOpt := rex.AppRuntime().AppConfig().GetGenericOption(dash.OptionAuth)
+		if authOpt == nil || len(authOpt.AllowedRoles) == 0 {
+			return fmt.Errorf("Cannot MakeAuthHandler for App without option:auth allowed roles")
 		}
-		if isAllowedRole(req.AuthData(), allowedRolesOpt.AllowedRoles) {
+		if isAllowedRole(req.AuthData(), authOpt.AllowedRoles) {
 			return nil
 		}
 		for _, auth := range authHandlers {
@@ -426,7 +504,7 @@ func MakeAuthHandler(authHandlers ...AllowedAuth) func(req *dash.Request) error 
 				rex.AppendInfoMessage(err.Error())
 			}
 			if authAtom != nil {
-				if isAllowedRole(authAtom, allowedRolesOpt.AllowedRoles) {
+				if isAllowedRole(authAtom, authOpt.AllowedRoles) {
 					rex.SetAuthData(authAtom)
 					return nil
 				} else {
@@ -435,7 +513,7 @@ func MakeAuthHandler(authHandlers ...AllowedAuth) func(req *dash.Request) error 
 						MessageTitle: "Not Authorized",
 						Message:      fmt.Sprintf("Role '%s' is not Authorized for this App", authAtom.GetRole()),
 					}
-					rex.AppendPanelAuthChallenge(ac)
+					rex.AppendAppAuthChallenge(ac)
 				}
 			}
 		}
@@ -443,7 +521,7 @@ func MakeAuthHandler(authHandlers ...AllowedAuth) func(req *dash.Request) error 
 			if chAuth, ok := auth.(ChallengeAuth); ok {
 				ch := chAuth.ReturnChallenge(req)
 				if ch != nil {
-					rex.AppendPanelAuthChallenge(*ch)
+					rex.AppendAppAuthChallenge(*ch)
 				}
 			}
 		}
