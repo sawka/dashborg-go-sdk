@@ -312,7 +312,10 @@ func (req *Request) Done() error {
 	return err
 }
 
-func (req *Request) setAuthData(aa AuthAtom) {
+func (req *Request) setAuthData(aa *AuthAtom) {
+	if aa == nil {
+		return
+	}
 	if aa.Ts == 0 {
 		aa.Ts = dashutil.Ts() + int64(MaxAuthExp/time.Millisecond)
 	}
@@ -332,7 +335,7 @@ func (req *Request) isStream() bool {
 	return req.info.RequestType == "stream"
 }
 
-func (rex RequestEx) SetAuthData(aa AuthAtom) {
+func (rex RequestEx) SetAuthData(aa *AuthAtom) {
 	rex.Req.setAuthData(aa)
 }
 
@@ -371,4 +374,8 @@ func (rex RequestEx) RawAppStateJson() string {
 
 func (rex RequestEx) IsDone() bool {
 	return rex.Req.isDone
+}
+
+func (rex RequestEx) AppRuntime() AppRuntime {
+	return rex.Req.appClient.App
 }

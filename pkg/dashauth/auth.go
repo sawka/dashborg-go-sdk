@@ -16,10 +16,11 @@ type AuthDashborg struct{}
 
 type AuthPassword struct {
 	Password string
+	Role     string // defaults to "user"
 }
 
 type AllowedAuth interface {
-	CheckAuth(*dash.Request) (bool, error)
+	CheckAuth(*dash.Request) (*dash.AuthAtom, error)
 }
 
 type ChallengeAuth interface {
@@ -119,36 +120,30 @@ type AuthSimpleLogin struct {
 	CheckFn func(user string, password string) (*AuthSimpleLoginResponse, error)
 }
 
-func (AuthNone) CheckAuth(req *dash.Request) (bool, error) {
-	rex := dash.RequestEx{req}
-	rex.SetAuthData(dash.AuthAtom{
-		Type: "noauth",
-		Role: "user",
-	})
-	return true, nil
+func (AuthNone) CheckAuth(req *dash.Request) (*dash.AuthAtom, error) {
+	return &dash.AuthAtom{Type: "noauth", Role: "user"}, nil
 }
 
-func (AuthDashborg) CheckAuth(req *dash.Request) (bool, error) {
-	return false, nil
+func (AuthDashborg) CheckAuth(req *dash.Request) (*dash.AuthAtom, error) {
+	return nil, nil
 }
 
-func (auth AuthPassword) CheckAuth(req *dash.Request) (bool, error) {
+func (auth AuthPassword) CheckAuth(req *dash.Request) (*dash.AuthAtom, error) {
 	var challengeData ChallengeData
 	err := req.BindData(&challengeData)
 	if err == nil && challengeData.ChallengeData["password"] == auth.Password {
-		rex := dash.RequestEx{req}
-		rex.SetAuthData(dash.AuthAtom{
-			Type: "password",
-			Role: "user",
-		})
-		return true, nil
+		role := auth.Role
+		if role == "" {
+			role = "user"
+		}
+		return &dash.AuthAtom{Type: "password", Role: role}, nil
 	}
-	return false, nil
+	return nil, nil
 }
 
-func (auth AuthAccountJwt) CheckAuth(req *dash.Request) (bool, error) {
+func (auth AuthAccountJwt) CheckAuth(req *dash.Request) (*dash.AuthAtom, error) {
 	rex := dash.RequestEx{req}
-	ok, err := auth.checkAuthInternal(req)
+	authAtom, err := auth.checkAuthInternal(req)
 	if err != nil {
 		// send a message
 		ac := AuthChallenge{
@@ -158,12 +153,11 @@ func (auth AuthAccountJwt) CheckAuth(req *dash.Request) (bool, error) {
 			Message:      err.Error(),
 		}
 		rex.AppendPanelAuthChallenge(ac)
-		return false, err
+		return nil, err
 	}
-	if !ok {
-		return false, nil
+	if authAtom == nil {
+		return nil, nil
 	}
-
 	// must remove param on success
 	if auth.ParamName != "" {
 		ac := AuthChallenge{
@@ -172,10 +166,10 @@ func (auth AuthAccountJwt) CheckAuth(req *dash.Request) (bool, error) {
 		}
 		rex.AppendPanelAuthChallenge(ac)
 	}
-	return true, nil
+	return authAtom, nil
 }
 
-func (auth AuthAccountJwt) checkAuthInternal(req *dash.Request) (bool, error) {
+func (auth AuthAccountJwt) checkAuthInternal(req *dash.Request) (*dash.AuthAtom, error) {
 	type panelState struct {
 		UrlParams map[string]string `json:"urlparams"`
 		DbRequest map[string]string `json:"dbrequest"`
@@ -183,7 +177,7 @@ func (auth AuthAccountJwt) checkAuthInternal(req *dash.Request) (bool, error) {
 	var pstate panelState
 	err := req.BindAppState(&pstate)
 	if err != nil {
-		return false, nil
+		return nil, nil
 	}
 	var jwtParam string
 	if auth.ParamName == "" {
@@ -192,7 +186,7 @@ func (auth AuthAccountJwt) checkAuthInternal(req *dash.Request) (bool, error) {
 		jwtParam = pstate.UrlParams[auth.ParamName]
 	}
 	if jwtParam == "" {
-		return false, nil
+		return nil, nil
 	}
 	type authJwtClaims struct {
 		jwt.StandardClaims
@@ -202,41 +196,35 @@ func (auth AuthAccountJwt) checkAuthInternal(req *dash.Request) (bool, error) {
 	// TODO publickey
 	var publicKey interface{}
 	if publicKey == nil {
-		return false, fmt.Errorf("No public key provided")
+		return nil, fmt.Errorf("No public key provided")
 	}
 	var claims authJwtClaims
 	_, err = jwt.ParseWithClaims(jwtParam, &claims, func(t *jwt.Token) (interface{}, error) {
 		return publicKey, nil
 	})
 	if err != nil {
-		return false, fmt.Errorf("Error Parsing JWT account token: %w", err)
+		return nil, fmt.Errorf("Error Parsing JWT account token: %w", err)
 	}
 	err = claims.Valid()
 	if err != nil {
-		return false, fmt.Errorf("Invalid JWT token: %w", err)
+		return nil, fmt.Errorf("Invalid JWT token: %w", err)
 	}
 	if claims.Audience != "dashborg-auth" {
-		return false, fmt.Errorf("Invalid JWT token, audience must be 'dashborg-auth'")
+		return nil, fmt.Errorf("Invalid JWT token, audience must be 'dashborg-auth'")
 	}
 	role := "user"
 	if claims.Role != "" {
 		if !dashutil.IsRoleValid(claims.Role) {
-			return false, fmt.Errorf("JWT account token has invalid role")
+			return nil, fmt.Errorf("JWT account token has invalid role")
 		}
 		role = claims.Role
 	}
-	rex := dash.RequestEx{req}
-	rex.SetAuthData(dash.AuthAtom{
-		Type: "accountjwt",
-		Id:   claims.Subject,
-		Role: role,
-	})
-	return true, nil
+	return &dash.AuthAtom{Type: "accountjwt", Id: claims.Subject, Role: role}, nil
 }
 
-func (auth AuthSimpleJwt) CheckAuth(req *dash.Request) (bool, error) {
+func (auth AuthSimpleJwt) CheckAuth(req *dash.Request) (*dash.AuthAtom, error) {
 	rex := dash.RequestEx{req}
-	ok, err := auth.checkAuthInternal(req)
+	authAtom, err := auth.checkAuthInternal(req)
 	if err != nil {
 		// send a message
 		ac := AuthChallenge{
@@ -246,10 +234,10 @@ func (auth AuthSimpleJwt) CheckAuth(req *dash.Request) (bool, error) {
 			Message:      err.Error(),
 		}
 		rex.AppendPanelAuthChallenge(ac)
-		return false, err
+		return nil, err
 	}
-	if !ok {
-		return false, nil
+	if authAtom == nil {
+		return nil, nil
 	}
 
 	// must remove param on success
@@ -258,22 +246,21 @@ func (auth AuthSimpleJwt) CheckAuth(req *dash.Request) (bool, error) {
 		RemoveParam: auth.ParamName,
 	}
 	rex.AppendPanelAuthChallenge(ac)
-	return true, nil
+	return authAtom, nil
 }
 
-func (auth AuthSimpleJwt) checkAuthInternal(req *dash.Request) (bool, error) {
-	rex := dash.RequestEx{req}
+func (auth AuthSimpleJwt) checkAuthInternal(req *dash.Request) (*dash.AuthAtom, error) {
 	type panelState struct {
 		UrlParams map[string]string `json:"urlparams"`
 	}
 	var pstate panelState
 	err := req.BindAppState(&pstate)
 	if err != nil {
-		return false, nil
+		return nil, nil
 	}
 	jwtParam := pstate.UrlParams[auth.ParamName]
 	if jwtParam == "" {
-		return false, nil
+		return nil, nil
 	}
 	type simpleJwtClaims struct {
 		Role string `json:"role"`
@@ -284,68 +271,57 @@ func (auth AuthSimpleJwt) checkAuthInternal(req *dash.Request) (bool, error) {
 		return auth.SigningKey, nil
 	})
 	if err != nil {
-		return false, fmt.Errorf("Error Parsing JWT token '%s': %w", auth.ParamName, err)
+		return nil, fmt.Errorf("Error Parsing JWT token '%s': %w", auth.ParamName, err)
 	}
 	err = claims.Valid()
 	if err != nil {
-		return false, fmt.Errorf("Invalid JWT token '%s': %w", auth.ParamName, err)
+		return nil, fmt.Errorf("Invalid JWT token '%s': %w", auth.ParamName, err)
 	}
 	if claims.Issuer != auth.Issuer {
-		return false, fmt.Errorf("Wrong issuer for JWT token '%s' got[%s] expected[%s]", auth.ParamName, claims.Issuer, auth.Issuer)
+		return nil, fmt.Errorf("Wrong issuer for JWT token '%s' got[%s] expected[%s]", auth.ParamName, claims.Issuer, auth.Issuer)
 	}
 	if auth.Audience != "" && claims.Audience != auth.Audience {
-		return false, fmt.Errorf("Wrong audience for JWT token '%s' got[%s] expected[%s]", auth.ParamName, claims.Audience, auth.Audience)
+		return nil, fmt.Errorf("Wrong audience for JWT token '%s' got[%s] expected[%s]", auth.ParamName, claims.Audience, auth.Audience)
 	}
 	role := "user"
 	if claims.Role != "" {
 		if !dashutil.IsRoleValid(claims.Role) {
-			return false, fmt.Errorf("JWT token '%s' has invalid role", auth.ParamName)
+			return nil, fmt.Errorf("JWT token '%s' has invalid role", auth.ParamName)
 		}
 		role = claims.Role
 	}
 	if claims.Subject == "" {
-		return false, fmt.Errorf("JWT token '%s' does not contain a subject", auth.ParamName)
+		return nil, fmt.Errorf("JWT token '%s' does not contain a subject", auth.ParamName)
 	}
-	rex.SetAuthData(dash.AuthAtom{
-		Type: "simplejwt",
-		Id:   claims.Subject,
-		Role: role,
-	})
-	return true, nil
+	return &dash.AuthAtom{Type: "simplejwt", Id: claims.Subject, Role: role}, nil
 }
 
-func (aup AuthSimpleLogin) CheckAuth(req *dash.Request) (bool, error) {
-	rex := dash.RequestEx{req}
+func (aup AuthSimpleLogin) CheckAuth(req *dash.Request) (*dash.AuthAtom, error) {
 	var challengeData ChallengeData
 	err := req.BindData(&challengeData)
 	if err != nil {
-		return false, nil
+		return nil, nil
 	}
 	user, userOk := challengeData.ChallengeData["user"]
 	pw, passwordOk := challengeData.ChallengeData["password"]
 	if !userOk || !passwordOk {
-		return false, nil
+		return nil, nil
 	}
 	resp, err := aup.CheckFn(user, pw)
 	if err != nil || resp == nil {
-		return false, err
+		return nil, err
 	}
 	if !resp.LoginOk {
-		return false, nil
+		return nil, nil
 	}
 	role := "user"
 	if resp.Role != "" {
 		role = resp.Role
 	}
 	if !dashutil.IsRoleValid(role) {
-		return false, errors.New("Invalid role for user, cannot authenticate")
+		return nil, errors.New("Invalid role for user, cannot authenticate")
 	}
-	rex.SetAuthData(dash.AuthAtom{
-		Type: "login",
-		Id:   resp.Id,
-		Role: role,
-	})
-	return true, nil
+	return &dash.AuthAtom{Type: "login", Id: resp.Id, Role: role}, nil
 }
 
 func (AuthDashborg) ReturnChallenge(req *dash.Request) *AuthChallenge {
@@ -382,7 +358,7 @@ func (auth AuthPassword) ReturnChallenge(req *dash.Request) *AuthChallenge {
 	if challengeData.ChallengeData["submitted"] == "1" {
 		if challengeData.ChallengeData["password"] == "" {
 			ch.ChallengeError = "Password cannot be blank"
-		} else {
+		} else if challengeData.ChallengeData["password"] != auth.Password {
 			ch.ChallengeError = "Invalid password"
 		}
 	}
@@ -424,23 +400,47 @@ func (aup AuthSimpleLogin) ReturnChallenge(req *dash.Request) *AuthChallenge {
 	return ch
 }
 
-func MakeAuthHandler(allowedAuths ...AllowedAuth) func(req *dash.Request) error {
+func isAllowedRole(aa *dash.AuthAtom, allowedRoles []string) bool {
+	role := aa.GetRole()
+	for _, allowedRole := range allowedRoles {
+		if allowedRole == "public" || role == "*" || role == allowedRole {
+			return true
+		}
+	}
+	return false
+}
+
+func MakeAuthHandler(authHandlers ...AllowedAuth) func(req *dash.Request) error {
 	return func(req *dash.Request) error {
 		rex := dash.RequestEx{req}
-		if req.AuthData() != nil {
+		allowedRolesOpt := rex.AppRuntime().AppConfig().GetGenericOption(dash.OptionAllowedRoles)
+		if allowedRolesOpt == nil || len(allowedRolesOpt.AllowedRoles) == 0 {
+			return fmt.Errorf("Cannot MakeAuthHandler for App without option:auth-allowedroles")
+		}
+		if isAllowedRole(req.AuthData(), allowedRolesOpt.AllowedRoles) {
 			return nil
 		}
-		for _, aa := range allowedAuths {
-			ok, err := aa.CheckAuth(req)
+		for _, auth := range authHandlers {
+			authAtom, err := auth.CheckAuth(req)
 			if err != nil {
 				rex.AppendInfoMessage(err.Error())
 			}
-			if ok {
-				return nil
+			if authAtom != nil {
+				if isAllowedRole(authAtom, allowedRolesOpt.AllowedRoles) {
+					rex.SetAuthData(authAtom)
+					return nil
+				} else {
+					ac := AuthChallenge{
+						AllowedAuth:  "message",
+						MessageTitle: "Not Authorized",
+						Message:      fmt.Sprintf("Role '%s' is not Authorized for this App", authAtom.GetRole()),
+					}
+					rex.AppendPanelAuthChallenge(ac)
+				}
 			}
 		}
-		for _, aa := range allowedAuths {
-			if chAuth, ok := aa.(ChallengeAuth); ok {
+		for _, auth := range authHandlers {
+			if chAuth, ok := auth.(ChallengeAuth); ok {
 				ch := chAuth.ReturnChallenge(req)
 				if ch != nil {
 					rex.AppendPanelAuthChallenge(*ch)

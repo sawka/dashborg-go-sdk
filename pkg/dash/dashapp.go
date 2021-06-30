@@ -1,6 +1,7 @@
 package dash
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -28,6 +29,27 @@ type AppConfig struct {
 	AppName string
 	AppType string
 	Options map[string]interface{}
+}
+
+func (acfg AppConfig) GetGenericOption(optName string) *GenericAppOption {
+	optVal := acfg.Options[optName]
+	if optVal == nil {
+		return nil
+	}
+	if gopt, ok := optVal.(*GenericAppOption); ok {
+		return gopt
+	}
+	jsonBytes, err := json.Marshal(optVal)
+	if err != nil {
+		return nil
+	}
+	var optData GenericAppOption
+	err = json.Unmarshal(jsonBytes, &optData)
+	if err != nil {
+		return nil
+	}
+	optData.Name = optName
+	return &optData
 }
 
 type AppOption interface {
