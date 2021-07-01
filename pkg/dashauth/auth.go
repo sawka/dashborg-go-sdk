@@ -337,6 +337,9 @@ func (aup AuthSimpleLogin) CheckAuth(req *dash.Request) (*dash.AuthAtom, error) 
 	if !userOk || !passwordOk {
 		return nil, nil
 	}
+	if aup.CheckFn == nil {
+		return nil, fmt.Errorf("No Login CheckFn")
+	}
 	resp, err := aup.CheckFn(user, pw)
 	if err != nil || resp == nil {
 		return nil, err
@@ -454,15 +457,19 @@ func (aup AuthSimpleLogin) ReturnChallenge(req *dash.Request) *AuthChallenge {
 	if challengeData.ChallengeData["submitted_challengetype"] == "login" {
 		user := challengeData.ChallengeData["user"]
 		pw := challengeData.ChallengeData["password"]
-		resp, err := aup.CheckFn(user, pw)
-		if err != nil {
-			ch.ChallengeError = err.Error()
-		} else if resp == nil {
-			ch.ChallengeError = "Invalid User/Password"
-		} else if resp.LoginOk && resp.Role != "" && !dashutil.IsRoleValid(resp.Role) {
-			ch.ChallengeError = "Invalid role for user, cannot authenticate"
+		if aup.CheckFn == nil {
+			ch.ChallengeError = "No Login CheckFn"
 		} else {
-			ch.ChallengeError = "Invalid User/Password"
+			resp, err := aup.CheckFn(user, pw)
+			if err != nil {
+				ch.ChallengeError = err.Error()
+			} else if resp == nil {
+				ch.ChallengeError = "Invalid User/Password"
+			} else if resp.LoginOk && resp.Role != "" && !dashutil.IsRoleValid(resp.Role) {
+				ch.ChallengeError = "Invalid role for user, cannot authenticate"
+			} else {
+				ch.ChallengeError = "Invalid User/Password"
+			}
 		}
 	}
 	return ch
@@ -479,15 +486,22 @@ func isAllowedRole(aa *dash.AuthAtom, allowedRoles []string) bool {
 }
 
 func MakeAuthHandler(authHandlers ...AllowedAuth) func(req *dash.Request) error {
-	challengeCount := 0
+	passwordCount := 0
+	loginCount := 0
 	for _, auth := range authHandlers {
 		switch auth.(type) {
-		case AuthPassword, AuthMultiPassword, AuthSimpleLogin:
-			challengeCount++
+		case AuthPassword, AuthMultiPassword:
+			passwordCount++
+
+		case AuthSimpleLogin:
+			loginCount++
 		}
 	}
-	if challengeCount > 1 {
-		log.Printf("Dashborg WARNING may only include one AuthPassword, AuthMultiPassword, or AuthSimpleLogin handler\n")
+	if passwordCount > 1 {
+		log.Printf("Dashborg WARNING may only include one AuthPassword, AuthMultiPassword handler\n")
+	}
+	if loginCount > 1 {
+		log.Printf("Dashborg WARNING may only include one AuthSimpleLogin handler\n")
 	}
 	return func(req *dash.Request) error {
 		rex := dash.RequestEx{req}

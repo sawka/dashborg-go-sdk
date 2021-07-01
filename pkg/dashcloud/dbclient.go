@@ -205,6 +205,20 @@ func (pc *dashCloudClient) ConnectApp(app dash.AppRuntime) error {
 
 func (pc *dashCloudClient) connectAppInternal(app dash.AppRuntime) error {
 	appName := app.GetAppName()
+	certInfo, err := readCertInfo(pc.Config.CertFileName)
+	if err != nil {
+		// strange since client is already running
+		return fmt.Errorf("Error reading cert info: %w", err)
+	}
+	clientConfig := dash.AppClientConfig{
+		PublicKey: certInfo.PublicKey,
+		Verbose:   pc.Config.Verbose,
+	}
+	appClient := dash.MakeAppClient(pc, app, pc.DBService, clientConfig, pc.ConnId)
+	pc.Lock.Lock()
+	pc.AppMap[appName] = &AppStruct{App: app, AppClient: appClient}
+	pc.Lock.Unlock()
+
 	m, err := makeAppMessage(app)
 	if err != nil {
 		return err
@@ -222,19 +236,6 @@ func (pc *dashCloudClient) connectAppInternal(app dash.AppRuntime) error {
 	for name, warning := range resp.OptionWarnings {
 		log.Printf("ConnectApp WARNING option[%s]: %s\n", name, warning)
 	}
-	certInfo, err := readCertInfo(pc.Config.CertFileName)
-	if err != nil {
-		// strange since client is already running
-		return fmt.Errorf("Error reading cert info: %w", err)
-	}
-	clientConfig := dash.AppClientConfig{
-		PublicKey: certInfo.PublicKey,
-		Verbose:   pc.Config.Verbose,
-	}
-	appClient := dash.MakeAppClient(pc, app, pc.DBService, clientConfig, pc.ConnId)
-	pc.Lock.Lock()
-	defer pc.Lock.Unlock()
-	pc.AppMap[appName] = &AppStruct{App: app, AppClient: appClient}
 	return nil
 }
 

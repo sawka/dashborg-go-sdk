@@ -62,7 +62,7 @@ type Container interface {
 }
 
 func MakeClient(config *Config) (Container, error) {
-	config.SetupForProcClient()
+	config.setDefaultsAndLoadKeys()
 	container := makeCloudClient(config)
 	container.startClient()
 	return container, nil

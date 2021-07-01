@@ -63,7 +63,7 @@ func (c *Config) setDefaults() {
 	c.Verbose = dashutil.EnvOverride(c.Verbose, "DASHBORG_VERBOSE")
 }
 
-func (c *Config) SetupForProcClient() {
+func (c *Config) setDefaultsAndLoadKeys() {
 	if !c.setupDone {
 		c.setDefaults()
 		c.loadKeys()
@@ -164,7 +164,7 @@ func (c *Config) loadPrivateKey() (interface{}, error) {
 
 // Creates a JWT token from the public/private keypair
 func (c *Config) MakeAccountJWT(validFor time.Duration, id string, role string) (string, error) {
-	c.SetupForProcClient()
+	c.setDefaultsAndLoadKeys()
 	ecKey, err := c.loadPrivateKey()
 	if err != nil {
 		return "", err
