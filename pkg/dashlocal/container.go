@@ -75,7 +75,7 @@ func (c *containerImpl) getAppName() string {
 	if c.App == nil {
 		return "noapp"
 	}
-	return c.App.GetAppName()
+	return c.App.AppConfig().AppName
 }
 
 func (c *containerImpl) ServeErr() error {
@@ -90,7 +90,7 @@ func (c *containerImpl) getClientVersion() string {
 	if c.App == nil {
 		return "noapp-0.0.0"
 	}
-	return c.App.GetClientVersion()
+	return c.App.AppConfig().ClientVersion
 }
 
 func (c *Config) setDefaults() {
@@ -159,14 +159,13 @@ func (c *containerImpl) ConnectApp(app dash.AppRuntime) error {
 	connId := &atomic.Value{}
 	connId.Store(uuid.New().String())
 	clientConfig := dash.AppClientConfig{
-		PublicKey: nil,
-		Verbose:   c.Config.Verbose,
+		Verbose: c.Config.Verbose,
 	}
 	appClient := dash.MakeAppClient(c, app, c.LocalClient, clientConfig, connId)
 	c.App = app
 	c.AppClient = appClient
 	c.LocalClient.SetAppClient(appClient)
-	log.Printf("Connected app[%s] to Local Container @ %s\n", c.App.GetAppName(), c.Config.Addr)
+	log.Printf("Connected app[%s] to Local Container @ %s\n", c.getAppName(), c.Config.Addr)
 	return nil
 }
 
@@ -175,7 +174,7 @@ func (c *containerImpl) StartBareStream(appName string, streamOpts dash.StreamOp
 	app := c.App
 	appClient := c.AppClient
 	c.Lock.Unlock()
-	if app == nil || app.GetAppName() != appName {
+	if app == nil || c.getAppName() != appName {
 		return nil, fmt.Errorf("No active app[%s] found for StartBareStream", appName)
 	}
 	req, _, err := appClient.StartStream(appName, streamOpts, "")

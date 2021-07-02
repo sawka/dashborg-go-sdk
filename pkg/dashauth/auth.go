@@ -218,38 +218,7 @@ func (auth AuthAccountJwt) checkAuthInternal(req *dash.Request) (*dash.AuthAtom,
 	if jwtParam == "" {
 		return nil, nil
 	}
-	type authJwtClaims struct {
-		jwt.StandardClaims
-		Role    string `json:"role"`
-		DashAcc string `json:"dash-acc"`
-	}
-	// TODO publickey
-	var publicKey interface{}
-	if publicKey == nil {
-		return nil, fmt.Errorf("No public key provided")
-	}
-	var claims authJwtClaims
-	_, err = jwt.ParseWithClaims(jwtParam, &claims, func(t *jwt.Token) (interface{}, error) {
-		return publicKey, nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("Error Parsing JWT account token: %w", err)
-	}
-	err = claims.Valid()
-	if err != nil {
-		return nil, fmt.Errorf("Invalid JWT token: %w", err)
-	}
-	if claims.Audience != "dashborg-auth" {
-		return nil, fmt.Errorf("Invalid JWT token, audience must be 'dashborg-auth'")
-	}
-	role := "user"
-	if claims.Role != "" {
-		if !dashutil.IsRoleValid(claims.Role) {
-			return nil, fmt.Errorf("JWT account token has invalid role")
-		}
-		role = claims.Role
-	}
-	return &dash.AuthAtom{Type: "accountjwt", Id: claims.Subject, Role: role}, nil
+	return CheckDashborgAccountJWT(jwtParam, nil)
 }
 
 func (auth AuthSimpleJwt) CheckAuth(req *dash.Request) (*dash.AuthAtom, error) {
@@ -541,4 +510,43 @@ func MakeAuthHandler(authHandlers ...AllowedAuth) func(req *dash.Request) error 
 		}
 		return nil
 	}
+}
+
+func CheckDashborgAccountJWT(jwtParam string, publicKeys []interface{}) (*dash.AuthAtom, error) {
+	if len(publicKeys) == 0 {
+		return nil, fmt.Errorf("No public key provided")
+	}
+	type authJwtClaims struct {
+		jwt.StandardClaims
+		Role    string `json:"role"`
+		DashAcc string `json:"dash-acc"`
+	}
+	var claims authJwtClaims
+	var parseErr error
+	for _, pk := range publicKeys {
+		_, parseErr = jwt.ParseWithClaims(jwtParam, &claims, func(t *jwt.Token) (interface{}, error) {
+			return pk, nil
+		})
+		if parseErr == nil {
+			break
+		}
+	}
+	if parseErr != nil {
+		return nil, fmt.Errorf("Error Parsing JWT account token: %w", parseErr)
+	}
+	err := claims.Valid()
+	if err != nil {
+		return nil, fmt.Errorf("Invalid JWT token: %w", err)
+	}
+	if claims.Audience != "dashborg-auth" {
+		return nil, fmt.Errorf("Invalid JWT token, audience must be 'dashborg-auth'")
+	}
+	role := "user"
+	if claims.Role != "" {
+		if !dashutil.IsRoleValid(claims.Role) {
+			return nil, fmt.Errorf("JWT account token has invalid role")
+		}
+		role = claims.Role
+	}
+	return &dash.AuthAtom{Type: "accountjwt", Id: claims.Subject, Role: role}, nil
 }

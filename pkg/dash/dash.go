@@ -1,5 +1,7 @@
 package dash
 
+const ClientVersion = "go-0.6.0"
+
 type Container interface {
 	ConnectApp(app AppRuntime) error
 	StartBareStream(appName string, streamOpts StreamOpts) (*Request, error)

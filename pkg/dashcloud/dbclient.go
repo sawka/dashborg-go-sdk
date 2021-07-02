@@ -183,36 +183,21 @@ func (pc *dashCloudClient) makeAppMessages() []*dashproto.ConnectAppMessage {
 	return rtn
 }
 
-func appLink(appName string) string {
-	accId := globalClient.Config.AccId
-	zoneName := globalClient.Config.ZoneName
-	if globalClient.Config.Env != "prod" {
-		return fmt.Sprintf("https://acc-%s.console.dashborg-dev.com:8080/zone/%s/%s", accId, zoneName, appName)
-	}
-	return fmt.Sprintf("https://acc-%s.console.dashborg.net/zone/%s/%s", accId, zoneName, appName)
-}
-
 func (pc *dashCloudClient) ConnectApp(app dash.AppRuntime) error {
 	err := pc.connectAppInternal(app)
 	if err != nil {
 		log.Printf("Dashborg CloudContainer, error connecting app: %v\n", err)
 		return err
 	}
-	appName := app.GetAppName()
-	log.Printf("Dashborg CloudContainer App Link [%s]: %s\n", appName, appLink(appName))
+	appName := app.AppConfig().AppName
+	log.Printf("Dashborg CloudContainer App Link [%s]: %s\n", appName, pc.Config.appLink(appName))
 	return nil
 }
 
 func (pc *dashCloudClient) connectAppInternal(app dash.AppRuntime) error {
-	appName := app.GetAppName()
-	certInfo, err := readCertInfo(pc.Config.CertFileName)
-	if err != nil {
-		// strange since client is already running
-		return fmt.Errorf("Error reading cert info: %w", err)
-	}
+	appName := app.AppConfig().AppName
 	clientConfig := dash.AppClientConfig{
-		PublicKey: certInfo.PublicKey,
-		Verbose:   pc.Config.Verbose,
+		Verbose: pc.Config.Verbose,
 	}
 	appClient := dash.MakeAppClient(pc, app, pc.DBService, clientConfig, pc.ConnId)
 	pc.Lock.Lock()

@@ -25,8 +25,6 @@ const (
 	ErrUnavailable = "UNAVAILABLE"
 )
 
-const ClientVersion = "go-0.6.0"
-
 const returnChSize = 20
 const smallDrainSleep = 5 * time.Millisecond
 
@@ -64,8 +62,7 @@ type AppClient interface {
 }
 
 type AppClientConfig struct {
-	Verbose   bool
-	PublicKey interface{}
+	Verbose bool
 }
 
 type appClient struct {
@@ -153,7 +150,7 @@ func (pc *appClient) sendWrongAppResponse(reqMsg *dashproto.RequestMessage) {
 }
 
 func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) {
-	if reqMsg.PanelName != pc.App.GetAppName() {
+	if reqMsg.PanelName != pc.App.AppConfig().AppName {
 		go pc.sendWrongAppResponse(reqMsg)
 		return
 	}

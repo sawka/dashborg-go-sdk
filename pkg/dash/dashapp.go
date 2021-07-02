@@ -30,9 +30,41 @@ const (
 )
 
 type AppConfig struct {
-	AppName string
-	AppType string
-	Options map[string]interface{}
+	AppName       string
+	AppType       string
+	ClientVersion string
+	Options       map[string]interface{}
+}
+
+type AppRuntime interface {
+	AppConfig() AppConfig
+	RunHandler(req *Request) (interface{}, error)
+}
+
+type AppOption interface {
+	OptionName() string
+	OptionData() interface{}
+}
+
+type App struct {
+	lock     *sync.Mutex
+	appName  string
+	appType  string
+	html     valueType
+	handlers map[handlerKey]handlerType
+	options  map[string]interface{}
+}
+
+// super-set of all option fields for easy JSON marshaling/parsing
+type GenericAppOption struct {
+	Name string `json:"-"` // not marshaled as part of OptionData
+	Type string `json:"type,omitempty"`
+	Path string `json:"path,omitempty"`
+
+	StrVal  string            `json:"strval,omitempty"`
+	StrTags map[string]string `json:"strtags,omitempty"`
+
+	AllowedRoles []string `json:"allowedroles,omitempty"`
 }
 
 func optionToGenericOption(optName string, opt interface{}) (*GenericAppOption, error) {
@@ -61,45 +93,12 @@ func (acfg AppConfig) GetGenericOption(optName string) *GenericAppOption {
 	return genOpt
 }
 
-type AppOption interface {
-	OptionName() string
-	OptionData() interface{}
-}
-
-// super-set of all option fields for JSON marshaling/parsing
-type GenericAppOption struct {
-	Name string `json:"-"` // not marshaled as part of OptionData
-	Type string `json:"type,omitempty"`
-	Path string `json:"path,omitempty"`
-
-	AllowedRoles []string `json:"allowedroles,omitempty"`
-}
-
 func (opt GenericAppOption) OptionName() string {
 	return opt.Name
 }
 
 func (opt GenericAppOption) OptionData() interface{} {
 	return opt
-}
-
-type AppRuntime interface {
-	AppConfig() AppConfig
-	RunHandler(req *Request) (interface{}, error)
-	GetAppName() string
-	GetClientVersion() string
-}
-
-type App struct {
-	lock     *sync.Mutex
-	appName  string
-	appType  string
-	html     valueType
-	handlers map[handlerKey]handlerType
-	options  map[string]AppOption
-
-	authType         string
-	authAllowedRoles []string
 }
 
 type valueType interface {
@@ -168,6 +167,15 @@ func (fv funcValueType) GetValue() (string, error) {
 	return fv.ValueFn()
 }
 
+func defaultAuthOpt() GenericAppOption {
+	authOpt := GenericAppOption{
+		Name:         OptionAuth,
+		Type:         AuthTypeZone,
+		AllowedRoles: []string{"user"},
+	}
+	return authOpt
+}
+
 func MakeApp(appName string) *App {
 	rtn := &App{
 		lock:    &sync.Mutex{},
@@ -175,9 +183,9 @@ func MakeApp(appName string) *App {
 		appType: AppTypeGUI,
 	}
 	rtn.handlers = make(map[handlerKey]handlerType)
-	rtn.options = make(map[string]AppOption)
-	rtn.authType = AuthTypeZone
-	rtn.authAllowedRoles = []string{"user"}
+	rtn.options = make(map[string]interface{})
+	authOpt := defaultAuthOpt()
+	rtn.options[authOpt.Name] = authOpt
 	rtn.handlers[handlerKey{HandlerType: "html"}] = handlerType{HandlerFn: rtn.htmlHandler}
 	return rtn
 }
@@ -190,18 +198,31 @@ type handlerType struct {
 func (app *App) AppConfig() AppConfig {
 	app.lock.Lock()
 	defer app.lock.Unlock()
-	rtn := AppConfig{AppName: app.appName, AppType: app.appType}
-	rtn.Options = make(map[string]interface{})
-	for name, opt := range app.options {
-		if name != opt.OptionName() {
-			panic(fmt.Sprintf("OptionName does not match hash key: %s:%s %v\n", name, opt.OptionName(), opt))
-		}
-		rtn.Options[name] = opt.OptionData()
-	}
-	if rtn.Options[OptionAuth] == nil {
-		rtn.Options[OptionAuth] = app.getAuthOpt()
+	rtn := AppConfig{
+		AppName:       app.appName,
+		AppType:       app.appType,
+		ClientVersion: ClientVersion,
+		Options:       app.options,
 	}
 	return rtn
+}
+
+func (app *App) RunHandler(req *Request) (interface{}, error) {
+	hkey := handlerKey{
+		HandlerType: req.info.RequestType,
+		Path:        req.info.Path,
+	}
+	app.lock.Lock()
+	hval, ok := app.handlers[hkey]
+	app.lock.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("No handler found for %s:%s", req.info.AppName, req.info.Path)
+	}
+	rtn, err := hval.HandlerFn(req)
+	if err != nil {
+		return nil, err
+	}
+	return rtn, nil
 }
 
 func (app *App) RemoveOption(optName string) {
@@ -233,36 +254,38 @@ func wrapHandler(handlerFn func(req *Request) error) func(req *Request) (interfa
 func (app *App) CustomAuthHandler(authHandler func(req *Request) error) {
 	app.lock.Lock()
 	defer app.lock.Unlock()
-	if app.authType != AuthTypeZoneApp && app.authType != AuthTypeAppOnly {
-		app.authType = AuthTypeZoneApp
+	authOpt := app.getAuthOpt()
+	if authOpt.Type == AuthTypeZone {
+		authOpt.Type = AuthTypeZoneApp
+		app.options[authOpt.Name] = authOpt
 	}
 	app.handlers[handlerKey{HandlerType: "auth"}] = handlerType{HandlerFn: wrapHandler(authHandler)}
 }
 
 func (app *App) getAuthOpt() GenericAppOption {
-	authOpt, _ := optionToGenericOption(OptionAuth, app.options[OptionAuth])
-	if authOpt == nil {
-		authOpt = &GenericAppOption{
-			Name:         OptionAuth,
-			Type:         app.authType,
-			AllowedRoles: app.authAllowedRoles,
-		}
+	authOptPtr, _ := optionToGenericOption(OptionAuth, app.options[OptionAuth])
+	if authOptPtr == nil {
+		return defaultAuthOpt()
 	}
-	return *authOpt
+	return *authOptPtr
 }
 
 func (app *App) SetAuthType(authType string) {
 	app.lock.Lock()
 	defer app.lock.Unlock()
 
-	app.authType = authType
+	authOpt := app.getAuthOpt()
+	authOpt.Type = authType
+	app.options[authOpt.Name] = authOpt
 }
 
 func (app *App) SetAllowedRoles(roles ...string) {
 	app.lock.Lock()
 	defer app.lock.Unlock()
 
-	app.authAllowedRoles = roles
+	authOpt := app.getAuthOpt()
+	authOpt.AllowedRoles = roles
+	app.options[authOpt.Name] = authOpt
 }
 
 func (app *App) SetHtml(html string) {
@@ -311,32 +334,6 @@ func (app *App) DataHandler(path string, handlerFn func(req *Request) (interface
 	hkey := handlerKey{HandlerType: "data", Path: path}
 	app.handlers[hkey] = handlerType{HandlerFn: handlerFn}
 	return nil
-}
-
-func (app *App) RunHandler(req *Request) (interface{}, error) {
-	hkey := handlerKey{
-		HandlerType: req.info.RequestType,
-		Path:        req.info.Path,
-	}
-	app.lock.Lock()
-	hval, ok := app.handlers[hkey]
-	app.lock.Unlock()
-	if !ok {
-		return nil, fmt.Errorf("No handler found for %s:%s", req.info.AppName, req.info.Path)
-	}
-	rtn, err := hval.HandlerFn(req)
-	if err != nil {
-		return nil, err
-	}
-	return rtn, nil
-}
-
-func (app *App) GetAppName() string {
-	return app.appName
-}
-
-func (app *App) GetClientVersion() string {
-	return ClientVersion
 }
 
 func (app *App) SetAppType(appType string) {

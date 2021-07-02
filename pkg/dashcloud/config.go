@@ -201,3 +201,38 @@ func (c *Config) MustMakeAccountJWT(validFor time.Duration, id string, role stri
 	}
 	return rtn
 }
+
+func (c *Config) appLink(appName string) string {
+	accId := c.AccId
+	zoneName := c.ZoneName
+	if c.Env != "prod" {
+		return fmt.Sprintf("https://acc-%s.console.dashborg-dev.com:8080/zone/%s/%s", accId, zoneName, appName)
+	}
+	return fmt.Sprintf("https://acc-%s.console.dashborg.net/zone/%s/%s", accId, zoneName, appName)
+}
+
+func (c *Config) MakeJWTAppLink(appName string, validTime time.Duration, userId string, roleName string) (string, error) {
+	if validTime == 0 {
+		validTime = 24 * time.Hour
+	}
+	if roleName == "" {
+		roleName = "user"
+	}
+	if userId == "" {
+		userId = "jwt-user"
+	}
+	jwtToken, err := c.MakeAccountJWT(validTime, userId, roleName)
+	link := c.appLink(appName)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s?jwt=%s", link, jwtToken), nil
+}
+
+func (c *Config) MustMakeJWTAppLink(appName string, validTime time.Duration, userId string, roleName string) string {
+	rtn, err := c.MakeJWTAppLink(appName, validTime, userId, roleName)
+	if err != nil {
+		panic(err)
+	}
+	return rtn
+}
