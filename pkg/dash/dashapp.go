@@ -41,11 +41,6 @@ type AppRuntime interface {
 	RunHandler(req *Request) (interface{}, error)
 }
 
-type AppOption interface {
-	OptionName() string
-	OptionData() interface{}
-}
-
 type App struct {
 	lock     *sync.Mutex
 	appName  string
@@ -91,14 +86,6 @@ func (acfg AppConfig) GetGenericOption(optName string) *GenericAppOption {
 	opt := acfg.Options[optName]
 	genOpt, _ := optionToGenericOption(optName, opt)
 	return genOpt
-}
-
-func (opt GenericAppOption) OptionName() string {
-	return opt.Name
-}
-
-func (opt GenericAppOption) OptionData() interface{} {
-	return opt
 }
 
 type valueType interface {
@@ -185,7 +172,7 @@ func MakeApp(appName string) *App {
 	rtn.handlers = make(map[handlerKey]handlerType)
 	rtn.options = make(map[string]interface{})
 	authOpt := defaultAuthOpt()
-	rtn.options[authOpt.Name] = authOpt
+	rtn.options[OptionAuth] = authOpt
 	rtn.handlers[handlerKey{HandlerType: "html"}] = handlerType{HandlerFn: rtn.htmlHandler}
 	return rtn
 }
@@ -232,15 +219,15 @@ func (app *App) RemoveOption(optName string) {
 	delete(app.options, optName)
 }
 
-func (app *App) SetOption(opt AppOption) {
+func (app *App) SetOption(optName string, opt interface{}) {
 	app.lock.Lock()
 	defer app.lock.Unlock()
 
-	app.options[opt.OptionName()] = opt
+	app.options[optName] = opt
 }
 
-func (app *App) setOption_nolock(opt AppOption) {
-	app.options[opt.OptionName()] = opt
+func (app *App) setOption_nolock(optName string, opt interface{}) {
+	app.options[optName] = opt
 }
 
 func wrapHandler(handlerFn func(req *Request) error) func(req *Request) (interface{}, error) {
@@ -257,7 +244,7 @@ func (app *App) CustomAuthHandler(authHandler func(req *Request) error) {
 	authOpt := app.getAuthOpt()
 	if authOpt.Type == AuthTypeZone {
 		authOpt.Type = AuthTypeZoneApp
-		app.options[authOpt.Name] = authOpt
+		app.options[OptionAuth] = authOpt
 	}
 	app.handlers[handlerKey{HandlerType: "auth"}] = handlerType{HandlerFn: wrapHandler(authHandler)}
 }
@@ -276,7 +263,7 @@ func (app *App) SetAuthType(authType string) {
 
 	authOpt := app.getAuthOpt()
 	authOpt.Type = authType
-	app.options[authOpt.Name] = authOpt
+	app.options[OptionAuth] = authOpt
 }
 
 func (app *App) SetAllowedRoles(roles ...string) {
@@ -285,7 +272,7 @@ func (app *App) SetAllowedRoles(roles ...string) {
 
 	authOpt := app.getAuthOpt()
 	authOpt.AllowedRoles = roles
-	app.options[authOpt.Name] = authOpt
+	app.options[OptionAuth] = authOpt
 }
 
 func (app *App) SetHtml(html string) {
@@ -293,7 +280,7 @@ func (app *App) SetHtml(html string) {
 	defer app.lock.Unlock()
 
 	app.html = stringValue(html)
-	app.setOption_nolock(GenericAppOption{Name: OptionHtml, Type: "dynamic"})
+	app.setOption_nolock(OptionHtml, GenericAppOption{Name: OptionHtml, Type: "dynamic"})
 }
 
 func (app *App) SetHtmlFromFile(fileName string) {
@@ -301,7 +288,7 @@ func (app *App) SetHtmlFromFile(fileName string) {
 	defer app.lock.Unlock()
 
 	app.html = fileValue(fileName, true)
-	app.setOption_nolock(GenericAppOption{Name: OptionHtml, Type: "dynamic"})
+	app.setOption_nolock(OptionHtml, GenericAppOption{Name: OptionHtml, Type: "dynamic"})
 }
 
 func (app *App) SetAppStateType(appStateType reflect.Type) {
@@ -309,7 +296,7 @@ func (app *App) SetAppStateType(appStateType reflect.Type) {
 }
 
 func (app *App) SetOnLoadHandler(path string) {
-	app.SetOption(GenericAppOption{Name: OptionOnLoadHandler, Path: path})
+	app.SetOption(OptionOnLoadHandler, GenericAppOption{Name: OptionOnLoadHandler, Path: path})
 }
 
 func (app *App) Handler(path string, handlerFn func(req *Request) error) error {

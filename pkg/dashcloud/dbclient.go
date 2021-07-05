@@ -42,6 +42,7 @@ type dashCloudClient struct {
 	DBService dashproto.DashborgServiceClient
 	ConnId    *atomic.Value
 	AppMap    map[string]*AppStruct
+	DoneCh    chan bool
 }
 
 func makeCloudClient(config *Config) *dashCloudClient {
@@ -52,6 +53,7 @@ func makeCloudClient(config *Config) *dashCloudClient {
 		Config:    config,
 		ConnId:    &atomic.Value{},
 		AppMap:    make(map[string]*AppStruct),
+		DoneCh:    make(chan bool),
 	}
 	rtn.ConnId.Store("")
 	globalClient = rtn
@@ -63,7 +65,13 @@ func (pc *dashCloudClient) startClient() {
 	if err != nil {
 		logV("Dashborg ERROR connecting gRPC client: %v\n", err)
 	}
-	log.Printf("Dashborg Initialized Client AccId:%s Zone:%s ProcName:%s ProcRunId:%s\n", pc.Config.AccId, pc.Config.ZoneName, pc.Config.ProcName, pc.ProcRunId)
+	if pc.Config.ShutdownCh != nil {
+		go func() {
+			<-pc.Config.ShutdownCh
+			pc.shutdown()
+		}()
+	}
+	log.Printf("Dashborg Initialized CloudClient AccId:%s Zone:%s ProcName:%s ProcRunId:%s\n", pc.Config.AccId, pc.Config.ZoneName, pc.Config.ProcName, pc.ProcRunId)
 	pc.sendProcMessage()
 	go pc.runRequestStreamLoop()
 }
@@ -77,6 +85,7 @@ func (pc *dashCloudClient) ctxWithMd() context.Context {
 
 func (pc *dashCloudClient) shutdown() {
 	if pc.Conn == nil {
+		logV("Dashborg ERROR shutting down, gRPC connection is not initialized\n")
 		return
 	}
 	err := pc.Conn.Close()
@@ -125,7 +134,7 @@ func (pc *dashCloudClient) sendProcMessage() error {
 	}
 	pc.ConnId.Store(resp.ConnId)
 	if pc.Config.Verbose {
-		log.Printf("procclient sendProcMessage success connid:%s\n", resp.ConnId)
+		log.Printf("procclient sendProcMessage success connid:%s acctype:%s\n", resp.ConnId, resp.AccType)
 	}
 	return nil
 }
@@ -185,12 +194,21 @@ func (pc *dashCloudClient) makeAppMessages() []*dashproto.ConnectAppMessage {
 
 func (pc *dashCloudClient) ConnectApp(app dash.AppRuntime) error {
 	err := pc.connectAppInternal(app)
+	appName := app.AppConfig().AppName
+	if pc.Config.NoShowJWT {
+		log.Printf("Dashborg CloudContainer App Link [%s]: %s\n", appName, pc.Config.appLink(appName))
+	} else {
+		appLink, err := pc.Config.MakeJWTAppLink(appName, pc.Config.JWTDuration, pc.Config.JWTUserId, pc.Config.JWTRole)
+		if err != nil {
+			log.Printf("Dashborg CloudContainer App Link [%s] Error: %v\n", appName, err)
+		} else {
+			log.Printf("Dashborg CloudContainer App Link [%s]: %s\n", appName, appLink)
+		}
+	}
 	if err != nil {
 		log.Printf("Dashborg CloudContainer, error connecting app: %v\n", err)
 		return err
 	}
-	appName := app.AppConfig().AppName
-	log.Printf("Dashborg CloudContainer App Link [%s]: %s\n", appName, pc.Config.appLink(appName))
 	return nil
 }
 
@@ -241,10 +259,7 @@ func makeAppMessage(app dash.AppRuntime) (*dashproto.ConnectAppMessage, error) {
 }
 
 func (pc *dashCloudClient) runRequestStreamLoop() {
-	if pc.Config.LocalServer {
-		pc.runRequestStream()
-		return
-	}
+	defer close(pc.DoneCh)
 
 	w := &dashutil.ExpoWait{}
 	for {
@@ -439,4 +454,9 @@ func (pc *dashCloudClient) StartBareStream(appName string, streamOpts dash.Strea
 	}
 	streamReq, _, err := app.AppClient.StartStream(appName, streamOpts, "")
 	return streamReq, err
+}
+
+func (pc *dashCloudClient) WaitForShutdown() error {
+	<-pc.DoneCh
+	return nil
 }

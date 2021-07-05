@@ -11,8 +11,6 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
-const feStreamInactiveTimeout = 30 * time.Second
-
 func (sc streamControl) getStreamKey() streamKey {
 	return streamKey{AppName: sc.AppName, StreamId: sc.StreamOpts.StreamId}
 }

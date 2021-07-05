@@ -67,7 +67,7 @@ type lsPanelConfig struct {
 	LocalServer   bool        `json:"localServer"`
 	LinkToUrl     bool        `json:"linkToUrl"`
 	ClientVersion string      `json:"clientVersion"`
-	PanelOpts     interface{} `json:"panelopts"`
+	PanelOpts     interface{} `json:"panelOpts"`
 	UseShadow     bool        `json:"useShadow"`
 }
 
@@ -105,7 +105,7 @@ func (s *localServer) rootHandler(w http.ResponseWriter, r *http.Request) {
 		ClientVersion: s.Container.getClientVersion(),
 		LinkToUrl:     false,
 		UseShadow:     false,
-		PanelOpts:     nil,
+		PanelOpts:     map[string]interface{}{"nonav": true},
 	}
 	w.Header().Set("Cache-Control", "no-cache")
 	configJson, err := json.MarshalIndent(pconfig, "", "  ")

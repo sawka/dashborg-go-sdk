@@ -114,7 +114,7 @@ func (c *Config) maybeMakeKeys(accId string) error {
 	if err != nil {
 		return fmt.Errorf("Cannot create keypair err:%v", err)
 	}
-	log.Printf("Dashborg created new self-signed keypair key:%s cert:%s for new accountid:%s\n", c.KeyFileName, c.CertFileName, accId)
+	log.Printf("Dashborg created new self-signed keypair %s / %s for new AccId:%s\n", c.KeyFileName, c.CertFileName, accId)
 	return nil
 }
 

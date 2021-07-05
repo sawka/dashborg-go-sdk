@@ -1,8 +1,9 @@
 package dashcloud
 
 import (
+	"time"
+
 	"github.com/sawka/dashborg-go-sdk/pkg/dash"
-	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 )
 
 type Config struct {
@@ -14,10 +15,6 @@ type Config struct {
 
 	// Set to true for unregistered accounts
 	AnonAcc bool
-
-	// Set to enable LocalServer mode
-	LocalServer bool
-	LocalClient dashproto.DashborgServiceClient
 
 	// DASHBORG_ZONE defaults to "default"
 	ZoneName string
@@ -39,12 +36,20 @@ type Config struct {
 	// DASHBORG_VERBOSE, set to true for extra debugging information
 	Verbose bool
 
+	// close this channel to force a shutdown of the Dashborg Cloud Client
+	ShutdownCh chan struct{}
+
 	// These are for internal testing, should not normally be set by clients.
 	Env             string // DASHBORG_ENV
 	DashborgSrvHost string // DASHBORG_PROCHOST
 	DashborgSrvPort int    // DASHBORG_PROCPORT
 
 	setupDone bool // internal
+
+	NoShowJWT   bool          // set to true to disable showing app-link with jwt param
+	JWTDuration time.Duration // defaults to 24*time.Hour
+	JWTUserId   string        // defaults to "jwt-user"
+	JWTRole     string        // defaults to "user"
 }
 
 type Container interface {
@@ -59,6 +64,9 @@ type Container interface {
 
 	// Dashborg method for starting a bare stream that is not connected to a request or frontend.
 	StartBareStream(panelName string, streamOpts dash.StreamOpts) (*dash.Request, error)
+
+	// Wait for shutdown
+	WaitForShutdown() error
 }
 
 func MakeClient(config *Config) (Container, error) {

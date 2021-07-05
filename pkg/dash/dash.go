@@ -6,6 +6,7 @@ type Container interface {
 	ConnectApp(app AppRuntime) error
 	StartBareStream(appName string, streamOpts StreamOpts) (*Request, error)
 	BackendPush(appName string, path string, data interface{}) error
+	WaitForShutdown() error
 }
 
 type StreamOpts struct {

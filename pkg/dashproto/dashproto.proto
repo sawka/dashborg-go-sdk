@@ -93,6 +93,7 @@ message ProcResponse {
     string Err = 2;
     ErrorCode ErrCode = 3;
     string ConnId = 4;
+    string AccType = 5;
 }
 
 message RequestStreamMessage {

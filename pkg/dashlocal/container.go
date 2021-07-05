@@ -54,6 +54,8 @@ type Container interface {
 
 	// Dashborg method for forcing all frontend clients to make the specified handler call.
 	BackendPush(appName string, path string, data interface{}) error
+
+	WaitForShutdown() error
 }
 
 type containerImpl struct {
@@ -69,6 +71,8 @@ type containerImpl struct {
 
 	DynamicHtml   bool
 	OnloadHandler string
+
+	DoneCh chan bool
 }
 
 func (c *containerImpl) getAppName() string {
@@ -98,11 +102,6 @@ func (c *Config) setDefaults() {
 	c.Env = dashutil.DefaultString(c.Env, os.Getenv("DASHBORG_ENV"), "prod")
 	c.DefaultAuthRole = dashutil.DefaultString(c.DefaultAuthRole, "user")
 	c.Verbose = dashutil.EnvOverride(c.Verbose, "DASHBORG_VERBOSE")
-}
-
-func optJson(opt dash.AppOption) string {
-	rtn, _ := dashutil.MarshalJson(opt)
-	return rtn
 }
 
 func (c *containerImpl) processHtmlOption(optData interface{}) error {
@@ -200,6 +199,11 @@ func (c *containerImpl) BackendPush(panelName string, path string, data interfac
 	return nil
 }
 
+func (c *containerImpl) WaitForShutdown() error {
+	<-c.DoneCh
+	return c.ServeErr()
+}
+
 // Creates a local container.  Config may be nil, in which case the defaults
 // (or environment overrides) are used.
 func MakeContainer(config *Config) (Container, error) {
@@ -208,10 +212,12 @@ func MakeContainer(config *Config) (Container, error) {
 	}
 	config.setDefaults()
 	container := &containerImpl{Lock: &sync.Mutex{}, Config: *config, ServeErrValue: &atomic.Value{}}
+	container.DoneCh = make(chan bool)
 	lsConfig := &localServerConfig{
-		Env:     config.Env,
-		Addr:    config.Addr,
-		Verbose: config.Verbose,
+		Env:        config.Env,
+		Addr:       config.Addr,
+		Verbose:    config.Verbose,
+		ShutdownCh: config.ShutdownCh,
 	}
 	dbService, err := makeLocalClient(lsConfig, container)
 	if err != nil {
@@ -229,11 +235,12 @@ func MakeContainer(config *Config) (Container, error) {
 	// issue here, but it is unavoidable.  this works for the 90% case.
 	log.Printf("Dashborg Local Container starting at http://%s\n", config.Addr)
 	go func() {
+		defer close(container.DoneCh)
 		serveErr := container.LocalServer.listenAndServe()
 		if serveErr != nil {
 			log.Printf("Dashborg ERROR starting local server: %v\n", serveErr)
+			container.ServeErrValue.Store(serveErr)
 		}
-		container.ServeErrValue.Store(serveErr)
 	}()
 	time.Sleep(1 * time.Millisecond)
 	return container, container.ServeErr()
