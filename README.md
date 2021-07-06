@@ -1,80 +1,97 @@
 # Dashborg Go SDK
 
-Modern internal tools.  Defined, controlled, and deployed directly from backend code.  No JavaScript.  Secure.
-* Define your UI in HTML
-* Define handlers in Go/Python
-* Run your program to deploy your app
+Dashborg is an alternative web framework to create and deploy bite-sized internal tools without overhead, scaffolding, or JavaScript!
 
-Dashborg was built to be the simplest way to create secure web-based internal tools from backend code.  Define your UI and control it *completely* within your backend code.  All backend communication is secured with public/private key encryption.  Add client password or user-account authentication with one line of code.
+## Why?
 
-## Documentation
+Creating good looking, modern, secure admin tools should be easy.  But, there is a huge amount of overhead, configuration, and scaffolding to set up a JavaScript stack, add security/authentication, and create good looking UI components.  Then there is the operational overhead of deployment (opening ports, domain names, and load balancers).
 
-* Doc Site: https://docs.dashborg.net/
-* Tutorials: https://docs.dashborg.net/tutorials/t1/
-* Binding Data to Your HTML: https://docs.dashborg.net/docs/binding-data/
-* GoDoc (pkg.go.dev): https://pkg.go.dev/github.com/sawka/dashborg-go-sdk/pkg/dash
-* Demo Site: https://acc-421d595f-9e30-4178-bcc3-b853f890fb8e.console.dashborg.net/zone/default/default
-* Slack: [Join the Dashborg Slack Channel](https://join.slack.com/t/dashborgworkspace/shared_invite/zt-pja2sjtz-hSPviQUDDXFzln78b_2u1w)
+Simple tools might only need 50-lines of real application logic, but your application server code, UI templates, and configuration files can add 10-20 new files and directories!  If you set up a JavaScript stack, you'll add a package.json, webpack.config, .babelrc, and literally *hundreds of megabytes* of node_modules just to run ReactJS.
 
-## Key Features
+This is crazy.
 
-* **No Javascript** - No context switching.  Write your dashboards using pure HTML and backend code.  No JavaScript environment to set up, no messing with NPM, Yarn, Webpack, Babel, React, Angular, etc.
-* **No Open Ports** - No webhooks, firewall configuration, IP whitelists, or open ports required for your backend.
-* **No Frontend Hosting** - You get a secure, internet accessible frontend out of the box.  No web server configuration, domain name, load balancer, or WAF setup and configuration required.
-* **No Shared Passwords** - No incoming connections to your infrastructure.  Dashborg does not require or store your database passwords or API keys.  It does not access any 3rd party service on your behalf.
-* **Built For Real Developers** - Use the editor, libraries, and frameworks that you already use to write your tools -- no 3rd-party GUI tools to learn, or typing code into text boxes on a website.  Easy to get started, but powerful enough to build complex tools and interactions.
-* **Secure** - All backend connections are secured using SSL public/private key encryption with client auth.  HTTPS on the frontend.  Secure your dashboards with a simple password or user accounts.  SSO coming soon.
-* **Control** - Dashborg panels are 100% defined from your backend code.  That means you can version them in your own code repository, and run and test them in your current dev, staging, and production environments.
-* **Modern Frontend Controls** - Tables, Lists, Forms, Inputs, and Buttons all out of the box, with more to come!  No Javascript or CSS frameworks required.  All styled to look good and work together.
+Dashborg is simple.  One HTML file (which can be inlined) for your UI and a couple of lines of code
+to create handlers to call your backend functions.  And, if you use the Dashborg Cloud service, you get
+https, pluggable authentication, and instant deployment to a secure public URL.
 
 ## Dashborg Hello World
 
-The code below is the complete code for your first Dashborg program.
-Copy and paste it into a new go file "demo.go" and run it: ```go run demo.go```.
-Click the Dashborg Panel Link to view your live, deployed dashboard.
+First create an App:
+```
+app := dash.MakeApp("hello-world")
+```
+
+Then, create some handlers for actions you want to run, or data you want to view:
+```
+app.Handler("/run-action", func(req *dash.Request) error {
+    fmt.Printf("running backend action\n")
+    return nil
+})
+```
+
+Create a declarative HTML view to render your App and call your handlers.  You can use
+any regular HTML, or pre-styled Dashborg components (they have the ```d-``` prefix):
 
 ```
-package main
-
-import (
-	"fmt"
-
-	"github.com/sawka/dashborg-go-sdk/pkg/dash"
-)
-
-const PANEL_HTML = `
 <panel>
   <h1>Demo Dashboard</h1>
   <d-button handler="/run-action">Run Action</d-button>
 </panel>
-`
+```
 
-func main() {
-	cfg := &dash.Config{ProcName: "demo", AnonAcc: true, AutoKeygen: true}
-	dash.StartProcClient(cfg)
-	defer dash.WaitForClear()
-	dash.RegisterPanelHandler("default", "/", func(req *dash.PanelRequest) error {
-		req.SetHtml(PANEL_HTML)
-		return nil
-	})
-	dash.RegisterPanelHandler("default", "/run-action", func(req *dash.PanelRequest) error {
-		fmt.Printf("running backend action\n")
-		return nil
-	})
-	select {}
+Set this HTML in your app as a string or save it in a file:
+```
+app.SetHtml(PANEL_HTML)                 // pass as a string
+app.SetHtmlFromFile("hello-world.html") // or pass a filename
+```
+
+Connect your App to the local-container to view it:
+
+```
+container, _ := dashlocal.MakeContainer(nil)
+container.ConnectApp(app)
+container.WaitForShutdown() // runs until the container is shutdown
+```
+
+View/test your app at [http://localhost:8082](http://localhost:8082)!
+
+## Dashborg Cloud
+
+Want to deploy your app in the cloud (with https, authentication and a public URL)?  Change the container to
+the dashcloud container.  No registration is required, a new account id, and public/private keypair will be
+auto provisioned (when using the AutoKeygen flag in the config).
+
+```
+cfg := &dashcloud.Config{
+    AnonAcc:    true,
+    AutoKeygen: true,
 }
+container, _ := dashcloud.MakeClient(cfg)
+container.ConnectApp(app)
+container.WaitForShutdown()
 ```
 
 You should see output that looks similar to:
 
-<pre style="font-size:12px; line-height: normal; overflow-x: scroll;">
-Dashborg created new self-signed keypair key:dashborg-client.key cert:dashborg-client.crt for new accountid:[YOUR-ACCOUNT-ID]
-Dashborg KeyFile:dashborg-client.key CertFile:dashborg-client.crt SHA256:[YOUR-KEY-FINGERPRINT]
-Dashborg Initialized Client AccId:[YOUR-ACCOUNT-ID] Zone:default ProcName:demo ProcRunId:4f4e8364-5d39-495f-8c9e-1009741b1b47
-Dashborg Panel Link [default]: https://acc-[ACCOUNT-ID].console.dashborg.net/zone/default/default
-
+<pre style="font-size: 14px; line-height: normal; overflow-x: scroll;">
+Dashborg created new self-signed keypair [dashborg-client.key, dashborg-client.crt] for AccId:<span style="font-weight: bold; color: #3333cc;">[YOUR ACCOUNT ID]</span>
+Dashborg KeyFile:dashborg-client.key CertFile:dashborg-client.crt SHA256:<span style="font-weight: bold; color: #3333cc;">[PUBLIC KEY HASH]</span>
+Dashborg Initialized CloudClient AccId:<span style="font-weight: bold; color: #3333cc;">[YOUR ACCOUNT ID]</span> Zone:default ProcName:demo ProcRunId:221e5a4c-51ff-4921-81ad-a9702a9e8583
+Dashborg CloudContainer App Link [todo]: <span style="font-weight: bold; color: #3333cc;">[SECURE LINK TO YOUR APP]</span>
 </pre>
 
-Copy and paste your panel link (console.dashborg.net) into your browser to see your live dashboard!
+Your application communicates with the Dashborg cloud with public/private key authentication, and the frontend is secured by default with a JWT token, verified with your new public/private keypair.  The Dashborg cloud can host multiple applications and supports multiple types of pluggable authentication.
+
+Full Code to the Hello World example in the golang directory of the dashborg-examples repository:
+[https://github.com/sawka/dashborg-examples/tree/master/golang](https://github.com/sawka/dashborg-examples/tree/master/golang)
+
+## Want to learn more?
+
+* **Doc Site**: https://docs.dashborg.net/
+* **Examples** (golang directory): https://github.com/sawka/dashborg-examples
+* **Tutorial**: https://docs.dashborg.net/tutorials/t1/
+* **Binding Data to Your HTML**: https://docs.dashborg.net/docs/binding-data/
+* **GoDoc**: https://pkg.go.dev/github.com/sawka/dashborg-go-sdk/pkg/dash
+* **Demo Site**: https://acc-421d595f-9e30-4178-bcc3-b853f890fb8e.console.dashborg.net/zone/default/default
 
 Questions?  [Join the Dashborg Slack Channel](https://join.slack.com/t/dashborgworkspace/shared_invite/zt-ls710ixw-nHmCAFiOQqzal2mu0r_87w)

@@ -8,7 +8,7 @@ import (
 
 var errType = reflect.TypeOf((*error)(nil)).Elem()
 var interfaceType = reflect.TypeOf((*interface{})(nil)).Elem()
-var panelReqType = reflect.TypeOf(&Request{})
+var reqType = reflect.TypeOf(&Request{})
 
 func checkOutput(mType reflect.Type, outputTypes ...reflect.Type) bool {
 	if mType.NumOut() != len(outputTypes) {
@@ -22,35 +22,14 @@ func checkOutput(mType reflect.Type, outputTypes ...reflect.Type) bool {
 	return true
 }
 
-func makeCallArgs(hType reflect.Type, req *Request) ([]reflect.Value, error) {
-	rtn := make([]reflect.Value, hType.NumIn())
-	rtn[0] = reflect.ValueOf(req)
-	if len(rtn) >= 2 {
-		// state-type
-		stateV, err := unmarshalToType(req.appStateJson, hType.In(1))
-		if err != nil {
-			return nil, fmt.Errorf("Cannot unmarshal appStateJson to type:%v err:%v", hType.In(1), err)
-		}
-		rtn[1] = stateV
-	}
-	if len(rtn) >= 3 {
-		dataV, err := unmarshalToType(req.dataJson, hType.In(2))
-		if err != nil {
-			return nil, fmt.Errorf("Cannot unmarshal dataJson to type:%v err:%v", hType.In(2), err)
-		}
-		rtn[2] = dataV
-	}
-	return rtn, nil
-}
-
-func ca2_unmarshalNil(hType reflect.Type, args []reflect.Value, argNum int) {
+func ca_unmarshalNil(hType reflect.Type, args []reflect.Value, argNum int) {
 	for argNum < hType.NumIn() {
 		args[argNum] = reflect.Zero(hType.In(argNum))
 		argNum++
 	}
 }
 
-func ca2_unmarshalSingle(hType reflect.Type, args []reflect.Value, argNum int, jsonStr string) error {
+func ca_unmarshalSingle(hType reflect.Type, args []reflect.Value, argNum int, jsonStr string) error {
 	if argNum >= hType.NumIn() {
 		return nil
 	}
@@ -60,15 +39,14 @@ func ca2_unmarshalSingle(hType reflect.Type, args []reflect.Value, argNum int, j
 	}
 	args[argNum] = argV
 	argNum++
-	ca2_unmarshalNil(hType, args, argNum)
+	ca_unmarshalNil(hType, args, argNum)
 	return nil
 }
 
-func ca2_unmarshalMulti(hType reflect.Type, args []reflect.Value, argNum int, jsonStr string) error {
+func ca_unmarshalMulti(hType reflect.Type, args []reflect.Value, argNum int, jsonStr string) error {
 	if argNum >= hType.NumIn() {
 		return nil
 	}
-	ca2_unmarshalNil(hType, args, argNum)
 	outVals := make([]interface{}, hType.NumIn()-argNum)
 	dataArgsNum := hType.NumIn() - argNum
 	for i := argNum; i < hType.NumIn(); i++ {
@@ -83,25 +61,29 @@ func ca2_unmarshalMulti(hType reflect.Type, args []reflect.Value, argNum int, js
 		args[i+argNum] = reflect.ValueOf(outVals[i]).Elem()
 	}
 	argNum += len(outVals)
-	ca2_unmarshalNil(hType, args, argNum)
+	ca_unmarshalNil(hType, args, argNum)
 	return nil
 }
 
-func makeCallArgs2(hType reflect.Type, opts CallHandlerOpts, req *Request) ([]reflect.Value, error) {
+// params:
+// * *Request
+// * AppStateType (if specified in App)
+// * data-array args
+func (app *App) makeCallArgs(hType reflect.Type, req *Request) ([]reflect.Value, error) {
 	rtn := make([]reflect.Value, hType.NumIn())
 	if hType.NumIn() == 0 {
 		return rtn, nil
 	}
 	argNum := 0
-	if hType.In(argNum) == panelReqType {
+	if hType.In(argNum) == reqType {
 		rtn[argNum] = reflect.ValueOf(req)
 		argNum++
 	}
 	if argNum == hType.NumIn() {
 		return rtn, nil
 	}
-	if opts.StateType != nil {
-		stateV, err := unmarshalToType(req.appStateJson, opts.StateType)
+	if app.appStateType != nil && app.appStateType == hType.In(argNum) {
+		stateV, err := unmarshalToType(req.appStateJson, app.appStateType)
 		if err != nil {
 			return nil, fmt.Errorf("Cannot unmarshal appStateJson to type:%v err:%v", hType.In(1), err)
 		}
@@ -114,14 +96,14 @@ func makeCallArgs2(hType reflect.Type, opts CallHandlerOpts, req *Request) ([]re
 	var dataInterface interface{}
 	req.BindData(&dataInterface)
 	if dataInterface == nil {
-		ca2_unmarshalNil(hType, rtn, argNum)
+		ca_unmarshalNil(hType, rtn, argNum)
 	} else if reflect.ValueOf(dataInterface).Kind() == reflect.Slice {
-		err := ca2_unmarshalMulti(hType, rtn, argNum, req.dataJson)
+		err := ca_unmarshalMulti(hType, rtn, argNum, req.dataJson)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		err := ca2_unmarshalSingle(hType, rtn, argNum, req.dataJson)
+		err := ca_unmarshalSingle(hType, rtn, argNum, req.dataJson)
 		if err != nil {
 			return nil, err
 		}
@@ -155,53 +137,22 @@ type CallHandlerOpts struct {
 	StateType reflect.Type
 }
 
-// func RegisterCallHandlerEx(panelName string, path string, handlerFn interface{}, opts *CallHandlerOpts) error {
-// 	if opts == nil {
-// 		opts = &CallHandlerOpts{}
-// 	}
-// 	hType := reflect.TypeOf(handlerFn)
-// 	if !checkOutput(hType, interfaceType, errType) {
-// 		return fmt.Errorf("Dashborg Call Handler must return two values (interface{}, error)")
-// 	}
-// 	if opts.StateType != nil {
-// 		if hType.NumIn() == 0 || !opts.StateType.AssignableTo(hType.In(0)) {
-// 			return fmt.Errorf("Dashborg Call Handler with StateType option must take StateType as first parameter")
-// 		}
-// 	}
-// 	hVal := reflect.ValueOf(handlerFn)
-// 	RegisterDataHandler(panelName, path, func(req *Request) (interface{}, error) {
-// 		args, err := makeCallArgs2(hType, *opts, req)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 		rtnVals := hVal.Call(args)
-// 		if rtnVals[1].IsNil() {
-// 			return rtnVals[0].Interface(), nil
-// 		}
-// 		return rtnVals[0].Interface(), rtnVals[1].Interface().(error)
-// 	})
-// 	return nil
-// }
-
-// RegisterAppHandlerEx registers a panel handler using reflection. The handler function
-// must return exactly one error value.  It must also take between 1-3 arguments.
-// The first parameter must be a Request.  The second (optional)
-// parameter is appState, and the third (optional) parameter is Data.  Dashborg will attempt to
-// unmarshal the raw JSON of appState and Data to the types in the handler signature using
-// the standard Go json.Unmarshal() function.  If an error occurs during unmarshalling it will
-// be returned to the Dashborg service (and your handler function will never run).
+// HandlerEx registers an app handler using reflection.  The function must
+// return an error.  First optional argument to the function is a *dash.Request.  2nd optional
+// argument is the AppStateType (if one has been set in the app).  The rest of the arguments
+// are mapped to the request Data as an array.  If request Data is longer, the arguments are ignored.  If
+// request Data is shorter, the missing arguments are set to their zero value.  If request Data is not
+// an array, it will be converted to a single element array, if request Data is null it will be converted
+// to a zero-element array.  The handler will throw an error if the Data or AppState values cannot be
+// converted to their respective go types (using json.Unmarshal).
 func (app *App) HandlerEx(path string, handlerFn interface{}) error {
 	hType := reflect.TypeOf(handlerFn)
 	if !checkOutput(hType, errType) {
 		return fmt.Errorf("Dashborg Panel Handler must return one error value")
 	}
-	paramsOk := (hType.NumIn() >= 1 && hType.NumIn() <= 3) && hType.In(0) == panelReqType
-	if !paramsOk {
-		return fmt.Errorf("Dashborg Panel Handler must have 1-3 arguments (Request, stateType, dataType)")
-	}
 	hVal := reflect.ValueOf(handlerFn)
 	app.Handler(path, func(req *Request) error {
-		args, err := makeCallArgs(hType, req)
+		args, err := app.makeCallArgs(hType, req)
 		if err != nil {
 			return err
 		}
@@ -214,25 +165,22 @@ func (app *App) HandlerEx(path string, handlerFn interface{}) error {
 	return nil
 }
 
-// RegisterPanelDataEx registers a panel handler using reflection.  The handler function must
-// return exactly two values (interface{}, error).  It must also take between 1-3 arguments.
-// The first parameter must be a Request.  The second (optional)
-// parameter is appState, and the third (optional) parameter is Data.  Dashborg will attempt to
-// unmarshal the raw JSON of appState and Data to the types in the handler signature using
-// the standard Go json.Unmarshal() function.  If an error occurs during unmarshalling it will
-// be returned to the Dashborg service (and your handler function will never run).
+// HandlerEx registers an app data-handler using reflection.  The function must
+// return two values (interface{}, error).  First optional argument to the function is a *dash.Request.  2nd optional
+// argument is the AppStateType (if one has been set in the app).  The rest of the arguments
+// are mapped to the request Data as an array.  If request Data is longer, the arguments are ignored.  If
+// request Data is shorter, the missing arguments are set to their zero value.  If request Data is not
+// an array, it will be converted to a single element array, if request Data is null it will be converted
+// to a zero-element array. The handler will throw an error if the Data or AppState values cannot be
+// converted to their respective go types (using json.Unmarshal).
 func (app *App) DataHandlerEx(path string, handlerFn interface{}) error {
 	hType := reflect.TypeOf(handlerFn)
 	if !checkOutput(hType, interfaceType, errType) {
 		return fmt.Errorf("Dashborg Data Handler must return two values (interface{}, error)")
 	}
-	paramsOk := (hType.NumIn() >= 1 && hType.NumIn() <= 3) && hType.In(0) == panelReqType
-	if !paramsOk {
-		return fmt.Errorf("Dashborg Data Handler must have 1-3 arguments (Request, stateType, dataType)")
-	}
 	hVal := reflect.ValueOf(handlerFn)
 	app.DataHandler(path, func(req *Request) (interface{}, error) {
-		args, err := makeCallArgs(hType, req)
+		args, err := app.makeCallArgs(hType, req)
 		if err != nil {
 			return nil, err
 		}

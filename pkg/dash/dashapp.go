@@ -42,12 +42,13 @@ type AppRuntime interface {
 }
 
 type App struct {
-	lock     *sync.Mutex
-	appName  string
-	appType  string
-	html     valueType
-	handlers map[handlerKey]handlerType
-	options  map[string]interface{}
+	lock         *sync.Mutex
+	appName      string
+	appType      string
+	appStateType reflect.Type
+	html         valueType
+	handlers     map[handlerKey]handlerType
+	options      map[string]interface{}
 }
 
 // super-set of all option fields for easy JSON marshaling/parsing
@@ -292,7 +293,7 @@ func (app *App) SetHtmlFromFile(fileName string) {
 }
 
 func (app *App) SetAppStateType(appStateType reflect.Type) {
-	return
+	app.appStateType = appStateType
 }
 
 func (app *App) SetOnLoadHandler(path string) {
