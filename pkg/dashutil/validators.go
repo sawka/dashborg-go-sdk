@@ -23,6 +23,7 @@ const (
 	CLIENTVERSION_MAX = 20
 	PROCTAGVAL_MAX    = 200
 	HOSTDATAVAL_MAX   = 100
+	BLOBKEY_MAX       = 100
 )
 
 var (
@@ -41,6 +42,7 @@ var (
 	TAG_RE            = regexp.MustCompile("^[a-zA-Z0-9._:/-]+$")
 	ROLE_RE           = regexp.MustCompile("^(\\*|[a-z][a-z0-9-]+)$")
 	CLIENTVERSION_RE  = regexp.MustCompile("^[a-z0-9_]+-\\d+\\.\\d+\\.\\d+$")
+	BLOBKEY_RE        = regexp.MustCompile("^[0-9a-zA-Z/_.-]+$")
 
 	// https://www.w3.org/TR/2016/REC-html51-20161101/sec-forms.html#email-state-typeemali
 	EMAIL_RE = regexp.MustCompile("^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
@@ -179,6 +181,13 @@ func IsTagValid(s string) bool {
 		return false
 	}
 	return TAG_RE.MatchString(s)
+}
+
+func IsBlobKeyValid(s string) bool {
+	if len(s) == 0 || len(s) > BLOBKEY_MAX {
+		return false
+	}
+	return BLOBKEY_RE.MatchString(s)
 }
 
 func IsRoleValid(s string) bool {

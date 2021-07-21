@@ -1,13 +1,14 @@
 package dash
 
 import (
-	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"reflect"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
@@ -18,10 +19,13 @@ const (
 	AppTypeDataService = "dataservice"
 )
 
+const MaxAppConfigSize = 1000000
+
 const (
 	OptionOnLoadHandler = "onloadhandler"
 	OptionHtml          = "html"
 	OptionAuth          = "auth"
+	OptionOfflineMode   = "offlinemode"
 
 	AuthTypeZone    = "zone"
 	AuthTypeZoneApp = "zone-app"
@@ -29,69 +33,86 @@ const (
 	AuthTypePublic  = "public"
 )
 
+// html: static, dynamic, dynamic-when-connected
+// offlinemode: enable, disable
+
+// AppConfig is passed as JSON to the container.  this struct
+// helps with marshaling/unmarshaling the structure.
 type AppConfig struct {
-	AppName       string
-	AppType       string
-	ClientVersion string
-	Options       map[string]interface{}
+	AppName            string                      `json:"appname"`
+	AppVersion         string                      `json:"appversion,omitempty"` // uuid
+	AppType            string                      `json:"apptype"`
+	UpdatedTs          int64                       `json:"updatedts"` // set by container
+	ProcRunId          string                      `json:"procrunid"` // set by container
+	ClientVersion      string                      `json:"clientversion"`
+	Options            map[string]GenericAppOption `json:"options"`
+	StaticHtml         string                      `json:"statichtml,omitempty"`
+	StaticData         []staticDataVal             `json:"staticdata,omitempty"`
+	ClearExistingData  bool                        `json:"clearexistingdata,omitempty"`
+	ClearExistingBlobs bool                        `json:"clearexistingblobs,omitempty"`
 }
 
-type AppRuntime interface {
-	AppConfig() AppConfig
-	RunHandler(req *Request) (interface{}, error)
-}
-
-type App struct {
-	lock         *sync.Mutex
-	appName      string
-	appType      string
-	appStateType reflect.Type
-	html         valueType
-	handlers     map[handlerKey]handlerType
-	options      map[string]interface{}
-}
-
-// super-set of all option fields for easy JSON marshaling/parsing
+// super-set of all option fields for JSON marshaling/parsing
 type GenericAppOption struct {
-	Name string `json:"-"` // not marshaled as part of OptionData
-	Type string `json:"type,omitempty"`
-	Path string `json:"path,omitempty"`
-
-	StrVal  string            `json:"strval,omitempty"`
-	StrTags map[string]string `json:"strtags,omitempty"`
-
+	Name         string   `json:"-"` // not marshaled as part of OptionData
+	Type         string   `json:"type,omitempty"`
+	Path         string   `json:"path,omitempty"`
 	AllowedRoles []string `json:"allowedroles,omitempty"`
 }
 
-func optionToGenericOption(optName string, opt interface{}) (*GenericAppOption, error) {
-	if opt == nil {
-		return nil, nil
-	}
-	if gopt, ok := opt.(*GenericAppOption); ok {
-		return gopt, nil
-	}
-	jsonBytes, err := json.Marshal(opt)
-	if err != nil {
-		return nil, err
-	}
-	var optData GenericAppOption
-	err = json.Unmarshal(jsonBytes, &optData)
-	if err != nil {
-		return nil, err
-	}
-	optData.Name = optName
-	return &optData, nil
+type staticDataVal struct {
+	Path string      `json:"path"`
+	Data interface{} `json:"data"`
 }
 
-func (acfg AppConfig) GetGenericOption(optName string) *GenericAppOption {
-	opt := acfg.Options[optName]
-	genOpt, _ := optionToGenericOption(optName, opt)
-	return genOpt
+type BlobData struct {
+	BlobKey  string      `json:"blobkey"`
+	MimeType string      `json:"mimetype"`
+	Size     int64       `json:"size"`
+	UpdateTs int64       `json:"updatets"`
+	Metadata interface{} `json:"metadata"`
+	Removed  bool        `json:"removed"`
+}
+
+type ProcInfo struct {
+	StartTs   int64
+	ProcRunId string
+	ProcName  string
+	ProcTags  map[string]string
+	HostData  map[string]string
+}
+
+type AppRuntime interface {
+	GetAppConfig() AppConfig
+	RunHandler(req *Request) (interface{}, error)
+}
+
+type appRuntimeImpl struct {
+	lock         *sync.Mutex
+	appStateType reflect.Type
+	html         valueType
+	handlers     map[handlerKey]handlerType
+}
+
+type App struct {
+	AppConfig  AppConfig
+	appRuntime *appRuntimeImpl
+
+	// liveUpdateMode  bool
+	// connectOnlyMode bool
+}
+
+type BlobManager interface {
+	// BlobBucket() string
+	SetBlobData(key string, mimeType string, reader io.Reader, metadata interface{}) error
+	SetBlobDataFromFile(key string, mimeType string, fileName string, metadata interface{}) error
+	// ClearBlob(key string)
+	// ListBlobs() map[string]BlobData
 }
 
 type valueType interface {
 	IsDynamic() bool
-	GetValue() (string, error)
+	GetValue() (interface{}, error)
 }
 
 type funcValueType struct {
@@ -151,7 +172,7 @@ func (fv funcValueType) IsDynamic() bool {
 	return fv.Dyn
 }
 
-func (fv funcValueType) GetValue() (string, error) {
+func (fv funcValueType) GetValue() (interface{}, error) {
 	return fv.ValueFn()
 }
 
@@ -164,17 +185,53 @@ func defaultAuthOpt() GenericAppOption {
 	return authOpt
 }
 
-func MakeApp(appName string) *App {
-	rtn := &App{
-		lock:    &sync.Mutex{},
-		appName: appName,
-		appType: AppTypeGUI,
+func makeAppRuntime() *appRuntimeImpl {
+	rtn := &appRuntimeImpl{
+		lock: &sync.Mutex{},
 	}
 	rtn.handlers = make(map[handlerKey]handlerType)
-	rtn.options = make(map[string]interface{})
-	authOpt := defaultAuthOpt()
-	rtn.options[OptionAuth] = authOpt
 	rtn.handlers[handlerKey{HandlerType: "html"}] = handlerType{HandlerFn: rtn.htmlHandler}
+	return rtn
+}
+
+func MakeApp(appName string) *App {
+	rtn := &App{
+		appRuntime: makeAppRuntime(),
+		AppConfig: AppConfig{
+			AppVersion: uuid.New().String(),
+			AppName:    appName,
+			AppType:    AppTypeGUI,
+		},
+	}
+	rtn.AppConfig.Options = make(map[string]GenericAppOption)
+	authOpt := defaultAuthOpt()
+	rtn.AppConfig.Options[OptionAuth] = authOpt
+	rtn.AppConfig.Options[OptionOfflineMode] = GenericAppOption{Type: "allow"}
+	return rtn
+}
+
+// func (app *App) SetConnectOnly(connectOnly bool) {
+// 	app.connectOnlyMode = connectOnly
+// }
+
+// func (app *App) SetLiveUpdate(liveUpdate bool) {
+// 	app.liveUpdateMode = liveUpdate
+// }
+
+func (app *App) ClearExistingData() {
+	app.AppConfig.ClearExistingData = true
+}
+
+func (app *App) ClearExistingBlobs() {
+	app.AppConfig.ClearExistingBlobs = true
+}
+
+func MakeAppFromConfig(cfg AppConfig) *App {
+	rtn := &App{
+		appRuntime: makeAppRuntime(),
+		AppConfig:  cfg,
+	}
+	rtn.AppConfig.AppVersion = uuid.New().String()
 	return rtn
 }
 
@@ -183,19 +240,21 @@ type handlerType struct {
 	BoundHandlerKey *handlerKey
 }
 
-func (app *App) AppConfig() AppConfig {
-	app.lock.Lock()
-	defer app.lock.Unlock()
-	rtn := AppConfig{
-		AppName:       app.appName,
-		AppType:       app.appType,
-		ClientVersion: ClientVersion,
-		Options:       app.options,
-	}
-	return rtn
+func (app *App) GetAppConfig() AppConfig {
+	return app.AppConfig
 }
 
 func (app *App) RunHandler(req *Request) (interface{}, error) {
+	return app.appRuntime.RunHandler(req)
+}
+
+func (app *appRuntimeImpl) SetHandler(hkey handlerKey, handler handlerType) {
+	app.lock.Lock()
+	defer app.lock.Unlock()
+	app.handlers[hkey] = handler
+}
+
+func (app *appRuntimeImpl) RunHandler(req *Request) (interface{}, error) {
 	hkey := handlerKey{
 		HandlerType: req.info.RequestType,
 		Path:        req.info.Path,
@@ -214,21 +273,11 @@ func (app *App) RunHandler(req *Request) (interface{}, error) {
 }
 
 func (app *App) RemoveOption(optName string) {
-	app.lock.Lock()
-	defer app.lock.Unlock()
-
-	delete(app.options, optName)
+	delete(app.AppConfig.Options, optName)
 }
 
-func (app *App) SetOption(optName string, opt interface{}) {
-	app.lock.Lock()
-	defer app.lock.Unlock()
-
-	app.options[optName] = opt
-}
-
-func (app *App) setOption_nolock(optName string, opt interface{}) {
-	app.options[optName] = opt
+func (app *App) SetOption(optName string, opt GenericAppOption) {
+	app.AppConfig.Options[optName] = opt
 }
 
 func wrapHandler(handlerFn func(req *Request) error) func(req *Request) (interface{}, error) {
@@ -240,60 +289,60 @@ func wrapHandler(handlerFn func(req *Request) error) func(req *Request) (interfa
 }
 
 func (app *App) CustomAuthHandler(authHandler func(req *Request) error) {
-	app.lock.Lock()
-	defer app.lock.Unlock()
 	authOpt := app.getAuthOpt()
 	if authOpt.Type == AuthTypeZone {
 		authOpt.Type = AuthTypeZoneApp
-		app.options[OptionAuth] = authOpt
+		app.AppConfig.Options[OptionAuth] = authOpt
 	}
-	app.handlers[handlerKey{HandlerType: "auth"}] = handlerType{HandlerFn: wrapHandler(authHandler)}
+	app.appRuntime.SetHandler(handlerKey{HandlerType: "auth"}, handlerType{HandlerFn: wrapHandler(authHandler)})
 }
 
 func (app *App) getAuthOpt() GenericAppOption {
-	authOptPtr, _ := optionToGenericOption(OptionAuth, app.options[OptionAuth])
-	if authOptPtr == nil {
+	authOpt, ok := app.AppConfig.Options[OptionAuth]
+	if !ok {
 		return defaultAuthOpt()
 	}
-	return *authOptPtr
+	return authOpt
 }
 
 func (app *App) SetAuthType(authType string) {
-	app.lock.Lock()
-	defer app.lock.Unlock()
-
 	authOpt := app.getAuthOpt()
 	authOpt.Type = authType
-	app.options[OptionAuth] = authOpt
+	app.AppConfig.Options[OptionAuth] = authOpt
 }
 
 func (app *App) SetAllowedRoles(roles ...string) {
-	app.lock.Lock()
-	defer app.lock.Unlock()
-
 	authOpt := app.getAuthOpt()
 	authOpt.AllowedRoles = roles
-	app.options[OptionAuth] = authOpt
+	app.AppConfig.Options[OptionAuth] = authOpt
 }
 
 func (app *App) SetHtml(html string) {
-	app.lock.Lock()
-	defer app.lock.Unlock()
-
-	app.html = stringValue(html)
-	app.setOption_nolock(OptionHtml, GenericAppOption{Name: OptionHtml, Type: "dynamic"})
+	app.SetOption(OptionHtml, GenericAppOption{
+		Name: OptionHtml,
+		Type: "static",
+	})
+	app.AppConfig.StaticHtml = html
 }
 
-func (app *App) SetHtmlFromFile(fileName string) {
-	app.lock.Lock()
-	defer app.lock.Unlock()
-
-	app.html = fileValue(fileName, true)
-	app.setOption_nolock(OptionHtml, GenericAppOption{Name: OptionHtml, Type: "dynamic"})
+func (app *App) SetHtmlFromFile(fileName string) error {
+	htmlValue := fileValue(fileName, true)
+	htmlIf, err := htmlValue.GetValue()
+	if err != nil {
+		return err
+	}
+	htmlStr, err := dashutil.ConvertToString(htmlIf)
+	if err != nil {
+		return err
+	}
+	app.appRuntime.html = htmlValue
+	app.SetOption(OptionHtml, GenericAppOption{Name: OptionHtml, Type: "dynamic-when-connected"})
+	app.AppConfig.StaticHtml = htmlStr
+	return nil
 }
 
 func (app *App) SetAppStateType(appStateType reflect.Type) {
-	app.appStateType = appStateType
+	app.appRuntime.appStateType = appStateType
 }
 
 func (app *App) SetOnLoadHandler(path string) {
@@ -302,28 +351,36 @@ func (app *App) SetOnLoadHandler(path string) {
 
 func (app *App) Handler(path string, handlerFn func(req *Request) error) error {
 	hkey := handlerKey{HandlerType: "handler", Path: path}
-	app.handlers[hkey] = handlerType{HandlerFn: wrapHandler(handlerFn)}
+	app.appRuntime.SetHandler(hkey, handlerType{HandlerFn: wrapHandler(handlerFn)})
 	return nil
 }
 
-func (app *App) htmlHandler(req *Request) (interface{}, error) {
+func (app *appRuntimeImpl) htmlHandler(req *Request) (interface{}, error) {
 	if app.html == nil {
 		return nil, nil
 	}
-	htmlValue, err := app.html.GetValue()
+	htmlValueIf, err := app.html.GetValue()
 	if err != nil {
 		return nil, err
 	}
-	RequestEx{req}.SetHtml(htmlValue)
+	htmlStr, err := dashutil.ConvertToString(htmlValueIf)
+	if err != nil {
+		return nil, err
+	}
+	RequestEx{req}.SetHtml(htmlStr)
 	return nil, nil
 }
 
 func (app *App) DataHandler(path string, handlerFn func(req *Request) (interface{}, error)) error {
 	hkey := handlerKey{HandlerType: "data", Path: path}
-	app.handlers[hkey] = handlerType{HandlerFn: handlerFn}
+	app.appRuntime.SetHandler(hkey, handlerType{HandlerFn: handlerFn})
 	return nil
 }
 
 func (app *App) SetAppType(appType string) {
-	app.appType = appType
+	app.AppConfig.AppType = appType
+}
+
+func (app *App) SetStaticData(path string, data interface{}) {
+	app.AppConfig.StaticData = append(app.AppConfig.StaticData, staticDataVal{Path: path, Data: data})
 }

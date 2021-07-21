@@ -150,7 +150,7 @@ func (pc *appClient) sendWrongAppResponse(reqMsg *dashproto.RequestMessage) {
 }
 
 func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) {
-	if reqMsg.PanelName != pc.App.AppConfig().AppName {
+	if reqMsg.PanelName != pc.App.GetAppConfig().AppName {
 		go pc.sendWrongAppResponse(reqMsg)
 		return
 	}

@@ -85,7 +85,7 @@ message ProcMessage {
     int64 StartTs = 9;
     repeated HandlerKey Handlers = 10;
     string ClientVersion = 11;
-    repeated ConnectAppMessage Apps = 12;
+    repeated string ReconnectAppRuntimes = 13;
 }
 
 message ProcResponse {
@@ -155,23 +155,49 @@ message BackendPushResponse {
     string Err = 2;
 }
 
-message ConnectAppMessage {
+message OpenAppMessage {
     int64 Ts = 1;
-    string AppName = 2;
-    string AppType = 3;
-    string ClientVersion = 4;
-    map<string,string> Options = 5;
+    string ZoneName = 2;
+    string AppName = 3;
 }
 
-message ConnectAppResponse {
+message OpenAppResponse {
+    bool Success = 1;
+    string Err = 2;
+    string AppConfigJson = 3;
+}
+
+message WriteAppMessage {
+    int64 Ts = 1;
+    string ZoneName = 2;
+    string AppName = 3;
+    string AppConfigJson = 4;
+    bool ConnectApp = 5;
+}
+
+message WriteAppResponse {
     bool Success = 1;
     string Err = 2;
     map<string,string> OptionWarnings = 3;
 }
 
+message SetBlobMessage {
+    int64 Ts = 1;
+    string ZoneName = 2;
+    string AppName = 3;
+    string AppVersion = 4;
+    string BlobDataJson = 5;
+    bytes BlobBytes = 6;
+}
+
+message SetBlobResponse {
+    bool Success = 1;
+    string Err = 2;
+    string BlobKey = 3;
+}
+
 service DashborgService {
     rpc Proc(ProcMessage) returns (ProcResponse) {}
-    rpc ConnectApp(ConnectAppMessage) returns (ConnectAppResponse) {}
     rpc ReflectZone(ReflectZoneMessage) returns (ReflectZoneResponse) {}
     rpc CallDataHandler(CallDataHandlerMessage) returns (CallDataHandlerResponse) {}
     
@@ -181,4 +207,9 @@ service DashborgService {
     rpc BackendPush(BackendPushMessage) returns (BackendPushResponse) {}
 
     rpc RegisterHandler(RegisterHandlerMessage) returns (RegisterHandlerResponse) {}
+
+    rpc OpenApp(OpenAppMessage) returns (OpenAppResponse) {}
+    rpc WriteApp(WriteAppMessage) returns (WriteAppResponse) {}
+    rpc SetBlob(stream SetBlobMessage) returns (SetBlobResponse) {}
 }
+

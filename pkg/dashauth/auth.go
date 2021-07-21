@@ -474,8 +474,8 @@ func MakeAuthHandler(authHandlers ...AllowedAuth) func(req *dash.Request) error 
 	}
 	return func(req *dash.Request) error {
 		rex := dash.RequestEx{req}
-		authOpt := rex.AppRuntime().AppConfig().GetGenericOption(dash.OptionAuth)
-		if authOpt == nil || len(authOpt.AllowedRoles) == 0 {
+		authOpt, ok := rex.AppRuntime().GetAppConfig().Options[dash.OptionAuth]
+		if !ok || len(authOpt.AllowedRoles) == 0 {
 			return fmt.Errorf("Cannot MakeAuthHandler for App without option:auth allowed roles")
 		}
 		if isAllowedRole(req.AuthData(), authOpt.AllowedRoles) {

@@ -17,12 +17,12 @@ https, pluggable authentication, and instant deployment to a secure public URL.
 ## Dashborg Hello World
 
 First create an App:
-```
+```golang
 app := dash.MakeApp("hello-world")
 ```
 
 Then, create some handlers for actions you want to run, or data you want to view:
-```
+```golang
 app.Handler("/run-action", func(req *dash.Request) error {
     fmt.Printf("running backend action\n")
     return nil
@@ -32,7 +32,7 @@ app.Handler("/run-action", func(req *dash.Request) error {
 Create a declarative HTML view to render your App and call your handlers.  You can use
 any regular HTML, or pre-styled Dashborg components (they have the ```d-``` prefix):
 
-```
+```golang
 <panel>
   <h1>Demo Dashboard</h1>
   <d-button handler="/run-action">Run Action</d-button>
@@ -40,14 +40,14 @@ any regular HTML, or pre-styled Dashborg components (they have the ```d-``` pref
 ```
 
 Set this HTML in your app as a string or save it in a file:
-```
+```golang
 app.SetHtml(PANEL_HTML)                 // pass as a string
 app.SetHtmlFromFile("hello-world.html") // or pass a filename
 ```
 
 Connect your App to the local-container to view it:
 
-```
+```golang
 container, _ := dashlocal.MakeContainer(nil)
 container.ConnectApp(app)
 container.WaitForShutdown() // runs until the container is shutdown
@@ -57,11 +57,11 @@ View/test your app at [http://localhost:8082](http://localhost:8082)!
 
 ## Dashborg Cloud
 
-Want to deploy your app in the cloud (with https, authentication and a public URL)?  Change the container to
+Want to deploy your app in the cloud?  Change the container to
 the dashcloud container.  No registration is required, a new account id, and public/private keypair will be
 auto provisioned (when using the AutoKeygen flag in the config).
 
-```
+```golang
 cfg := &dashcloud.Config{
     AnonAcc:    true,
     AutoKeygen: true,
@@ -74,10 +74,10 @@ container.WaitForShutdown()
 You should see output that looks similar to:
 
 <pre style="font-size: 14px; line-height: normal; overflow-x: scroll;">
-Dashborg created new self-signed keypair [dashborg-client.key, dashborg-client.crt] for AccId:<span style="font-weight: bold; color: #3333cc;">[YOUR ACCOUNT ID]</span>
-Dashborg KeyFile:dashborg-client.key CertFile:dashborg-client.crt SHA256:<span style="font-weight: bold; color: #3333cc;">[PUBLIC KEY HASH]</span>
-Dashborg Initialized CloudClient AccId:<span style="font-weight: bold; color: #3333cc;">[YOUR ACCOUNT ID]</span> Zone:default ProcName:demo ProcRunId:221e5a4c-51ff-4921-81ad-a9702a9e8583
-Dashborg CloudContainer App Link [todo]: <span style="font-weight: bold; color: #3333cc;">[SECURE LINK TO YOUR APP]</span>
+Dashborg created new self-signed keypair [dashborg-client.key, dashborg-client.crt] for AccId:<b>[YOUR ACCOUNT ID]</b>
+Dashborg KeyFile:dashborg-client.key CertFile:dashborg-client.crt SHA256:<b>[PUBLIC KEY HASH]</b>
+Dashborg Initialized CloudClient AccId:<b>[YOUR ACCOUNT ID]</b> Zone:default ProcName:demo ProcRunId:221e5a4c-51ff-4921-81ad-a9702a9e8583
+Dashborg CloudContainer App Link [todo]: <b>[SECURE LINK TO YOUR APP]</b>
 </pre>
 
 Your application communicates with the Dashborg cloud with public/private key authentication, and the frontend is secured by default with a JWT token, verified with your new public/private keypair.  The Dashborg cloud can host multiple applications and supports multiple types of pluggable authentication.

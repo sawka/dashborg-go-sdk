@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"strconv"
@@ -76,6 +77,10 @@ func (pc *dashCloudClient) startClient() {
 	go pc.runRequestStreamLoop()
 }
 
+func (pc *dashCloudClient) appCtx() context.Context {
+	return context.Background()
+}
+
 func (pc *dashCloudClient) ctxWithMd() context.Context {
 	ctx := context.Background()
 	connId := pc.ConnId.Load().(string)
@@ -94,8 +99,7 @@ func (pc *dashCloudClient) shutdown() {
 	}
 }
 
-func (pc *dashCloudClient) sendProcMessage() error {
-	// only allow one proc message at a time (synchronize)
+func makeHostData() map[string]string {
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostname = "unknown"
@@ -104,22 +108,28 @@ func (pc *dashCloudClient) sendProcMessage() error {
 		"HostName": hostname,
 		"Pid":      strconv.Itoa(os.Getpid()),
 	}
-	apps := pc.makeAppMessages()
-	if err != nil {
-		return err
+	return hostData
+}
+
+func (pc *dashCloudClient) sendProcMessage() error {
+	// only allow one proc message at a time (synchronize)
+	hostData := makeHostData()
+	reconApps := make([]string, 0)
+	for _, appstruct := range pc.AppMap {
+		reconApps = append(reconApps, appstruct.App.GetAppConfig().AppName)
 	}
 	m := &dashproto.ProcMessage{
-		Ts:            dashutil.Ts(),
-		ProcRunId:     pc.ProcRunId,
-		AccId:         pc.Config.AccId,
-		ZoneName:      pc.Config.ZoneName,
-		AnonAcc:       pc.Config.AnonAcc,
-		ProcName:      pc.Config.ProcName,
-		ProcTags:      pc.Config.ProcTags,
-		HostData:      hostData,
-		StartTs:       dashutil.DashTime(pc.StartTime),
-		Apps:          apps,
-		ClientVersion: dash.ClientVersion,
+		Ts:                   dashutil.Ts(),
+		ProcRunId:            pc.ProcRunId,
+		AccId:                pc.Config.AccId,
+		ZoneName:             pc.Config.ZoneName,
+		AnonAcc:              pc.Config.AnonAcc,
+		ProcName:             pc.Config.ProcName,
+		ProcTags:             pc.Config.ProcTags,
+		HostData:             hostData,
+		StartTs:              dashutil.DashTime(pc.StartTime),
+		ClientVersion:        dash.ClientVersion,
+		ReconnectAppRuntimes: reconApps,
 	}
 	resp, err := pc.DBService.Proc(pc.ctxWithMd(), m)
 	if err != nil {
@@ -176,25 +186,7 @@ func (pc *dashCloudClient) connectGrpc() error {
 	return err
 }
 
-func (pc *dashCloudClient) makeAppMessages() []*dashproto.ConnectAppMessage {
-	pc.Lock.Lock()
-	defer pc.Lock.Unlock()
-
-	rtn := make([]*dashproto.ConnectAppMessage, 0, len(pc.AppMap))
-	for _, app := range pc.AppMap {
-		m, err := makeAppMessage(app.App)
-		if err != nil {
-			log.Printf("Dashborg ERROR serializing AppConfig: %v\n", err)
-			continue
-		}
-		rtn = append(rtn, m)
-	}
-	return rtn
-}
-
-func (pc *dashCloudClient) ConnectApp(app dash.AppRuntime) error {
-	err := pc.connectAppInternal(app)
-	appName := app.AppConfig().AppName
+func (pc *dashCloudClient) showAppLink(appName string) {
 	if pc.Config.NoShowJWT {
 		log.Printf("Dashborg CloudContainer App Link [%s]: %s\n", appName, pc.Config.appLink(appName))
 	} else {
@@ -205,15 +197,14 @@ func (pc *dashCloudClient) ConnectApp(app dash.AppRuntime) error {
 			log.Printf("Dashborg CloudContainer App Link [%s]: %s\n", appName, appLink)
 		}
 	}
-	if err != nil {
-		log.Printf("Dashborg CloudContainer, error connecting app: %v\n", err)
-		return err
-	}
-	return nil
 }
 
-func (pc *dashCloudClient) connectAppInternal(app dash.AppRuntime) error {
-	appName := app.AppConfig().AppName
+func (pc *dashCloudClient) ConnectApp(app dash.AppRuntime) error {
+	jsonConfig, err := dashutil.MarshalJson(app.GetAppConfig())
+	if err != nil {
+		return err
+	}
+	appName := app.GetAppConfig().AppName
 	clientConfig := dash.AppClientConfig{
 		Verbose: pc.Config.Verbose,
 	}
@@ -221,41 +212,63 @@ func (pc *dashCloudClient) connectAppInternal(app dash.AppRuntime) error {
 	pc.Lock.Lock()
 	pc.AppMap[appName] = &AppStruct{App: app, AppClient: appClient}
 	pc.Lock.Unlock()
-
-	m, err := makeAppMessage(app)
+	m := &dashproto.WriteAppMessage{
+		Ts:            dashutil.Ts(),
+		ZoneName:      pc.Config.ZoneName,
+		AppName:       appName,
+		AppConfigJson: jsonConfig,
+		ConnectApp:    true,
+	}
+	resp, grpcErr := globalClient.DBService.WriteApp(globalClient.ctxWithMd(), m)
+	if grpcErr != nil {
+		err = grpcErr
+	} else if resp.Err != "" {
+		err = errors.New(resp.Err)
+	} else if !resp.Success {
+		err = errors.New("Error calling ConnectApp()")
+	}
+	if err == nil {
+		for name, warning := range resp.OptionWarnings {
+			log.Printf("ConnectApp WARNING option[%s]: %s\n", name, warning)
+		}
+	}
+	pc.showAppLink(appName)
 	if err != nil {
+		log.Printf("Dashborg CloudContainer, error connecting app: %v\n", err)
 		return err
-	}
-	resp, err := globalClient.DBService.ConnectApp(globalClient.ctxWithMd(), m)
-	if err != nil {
-		return err
-	}
-	if resp.Err != "" {
-		return errors.New(resp.Err)
-	}
-	if !resp.Success {
-		return errors.New("Error calling ConnectApp()")
-	}
-	for name, warning := range resp.OptionWarnings {
-		log.Printf("ConnectApp WARNING option[%s]: %s\n", name, warning)
 	}
 	return nil
 }
 
-func makeAppMessage(app dash.AppRuntime) (*dashproto.ConnectAppMessage, error) {
-	appConfig := app.AppConfig()
-	m := &dashproto.ConnectAppMessage{Ts: dashutil.Ts()}
-	m.AppName = appConfig.AppName
-	m.AppType = appConfig.AppType
-	m.Options = make(map[string]string)
-	for name, val := range appConfig.Options {
-		jsonVal, err := dashutil.MarshalJson(val)
-		if err != nil {
-			return nil, err
-		}
-		m.Options[name] = jsonVal
+func (pc *dashCloudClient) ConnectAppRuntime(app dash.AppRuntime) error {
+	appName := app.GetAppConfig().AppName
+	clientConfig := dash.AppClientConfig{
+		Verbose: pc.Config.Verbose,
 	}
-	return m, nil
+	appClient := dash.MakeAppClient(pc, app, pc.DBService, clientConfig, pc.ConnId)
+	pc.Lock.Lock()
+	pc.AppMap[appName] = &AppStruct{App: app, AppClient: appClient}
+	pc.Lock.Unlock()
+	m := &dashproto.WriteAppMessage{
+		Ts:         dashutil.Ts(),
+		ZoneName:   pc.Config.ZoneName,
+		AppName:    appName,
+		ConnectApp: true,
+	}
+	resp, err := globalClient.DBService.WriteApp(globalClient.ctxWithMd(), m)
+	if err != nil {
+		return err
+	} else if resp.Err != "" {
+		err = errors.New(resp.Err)
+	} else if !resp.Success {
+		err = errors.New("Error calling ConnectAppRuntime()")
+	}
+	pc.showAppLink(appName)
+	if err != nil {
+		log.Printf("Dashborg CloudContainer, error connecting app: %v\n", err)
+		return err
+	}
+	return nil
 }
 
 func (pc *dashCloudClient) runRequestStreamLoop() {
@@ -459,4 +472,128 @@ func (pc *dashCloudClient) StartBareStream(appName string, streamOpts dash.Strea
 func (pc *dashCloudClient) WaitForShutdown() error {
 	<-pc.DoneCh
 	return nil
+}
+
+func (pc *dashCloudClient) OpenApp(appName string) (*dash.App, error) {
+	m := &dashproto.OpenAppMessage{
+		Ts:       dashutil.Ts(),
+		ZoneName: pc.Config.ZoneName,
+		AppName:  appName,
+	}
+	resp, err := pc.DBService.OpenApp(pc.appCtx(), m)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Err != "" {
+		return nil, errors.New(resp.Err)
+	}
+	if !resp.Success {
+		return nil, errors.New("Error calling OpenApp()")
+	}
+	if resp.AppConfigJson == "" {
+		// no app found, return new app
+		return dash.MakeApp(appName), nil
+	}
+	var rtn dash.AppConfig
+	err = json.Unmarshal([]byte(resp.AppConfigJson), &rtn)
+	if err != nil {
+		return nil, err
+	}
+	return dash.MakeAppFromConfig(rtn), nil
+}
+
+func (pc *dashCloudClient) WriteApp(acfg dash.AppConfig) error {
+	jsonVal, err := dashutil.MarshalJson(acfg)
+	if err != nil {
+		return err
+	}
+	m := &dashproto.WriteAppMessage{
+		Ts:            dashutil.Ts(),
+		ZoneName:      pc.Config.ZoneName,
+		AppConfigJson: jsonVal,
+	}
+	resp, err := pc.DBService.WriteApp(pc.ctxWithMd(), m)
+	if err != nil {
+		return err
+	}
+	if resp.Err != "" {
+		return errors.New(resp.Err)
+	}
+	if !resp.Success {
+		return errors.New("Error calling WriteApp()")
+	}
+	for name, warning := range resp.OptionWarnings {
+		log.Printf("WriteApp WARNING option[%s]: %s\n", name, warning)
+	}
+	return nil
+}
+
+func (pc *dashCloudClient) SetBlob(acfg dash.AppConfig, blob *dash.BlobData, r io.Reader) error {
+	blobJson, err := dashutil.MarshalJson(blob)
+	if err != nil {
+		return err
+	}
+	barr, err := ioutil.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	if len(barr) > 5000000 {
+		return fmt.Errorf("Max Blob size is 5M")
+	}
+	m := &dashproto.SetBlobMessage{
+		Ts:           dashutil.Ts(),
+		ZoneName:     pc.Config.ZoneName,
+		AppName:      acfg.AppName,
+		AppVersion:   acfg.AppVersion,
+		BlobDataJson: blobJson,
+		BlobBytes:    barr,
+	}
+	bclient, err := pc.DBService.SetBlob(pc.appCtx())
+	if err != nil {
+		return err
+	}
+	err = bclient.Send(m)
+	if err != nil {
+		return err
+	}
+	resp, err := bclient.CloseAndRecv()
+	if err != nil {
+		return err
+	}
+	if resp.Err != "" {
+		return errors.New(resp.Err)
+	}
+	if !resp.Success {
+		return errors.New("Error calling SetBlob()")
+	}
+	blob.Size = int64(len(barr))
+	return nil
+}
+
+type appBlobManager struct {
+	App    *dash.App
+	Client *dashCloudClient
+}
+
+func (pc *dashCloudClient) AppBlobManager(app *dash.App) dash.BlobManager {
+	return appBlobManager{App: app, Client: pc}
+}
+
+func (bm appBlobManager) SetBlobData(key string, mimeType string, reader io.Reader, metadata interface{}) error {
+	blob := &dash.BlobData{
+		BlobKey:  key,
+		MimeType: mimeType,
+		UpdateTs: dashutil.Ts(),
+		Metadata: metadata,
+	}
+	err := bm.Client.SetBlob(bm.App.AppConfig, blob, reader)
+	return err
+}
+
+func (bm appBlobManager) SetBlobDataFromFile(key string, mimeType string, fileName string, metadata interface{}) error {
+	fd, err := os.Open(fileName)
+	if err != nil {
+		return err
+	}
+	return bm.SetBlobData(key, mimeType, fd, metadata)
 }

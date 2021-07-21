@@ -156,10 +156,10 @@ func (req *Request) StartStream(streamOpts StreamOpts, streamFn func(req *Reques
 }
 
 // SetBlobData sends blob data to the server.
-// Note that SetBlobData will flush any pending actions to the server
-func (req *Request) SetBlobData(path string, mimeType string, reader io.Reader) error {
+// Note that SetBlob will flush any pending actions to the server
+func (req *Request) SetBlob(path string, mimeType string, reader io.Reader) error {
 	if req.isDone {
-		return fmt.Errorf("Cannot call SetBlobData(), path=%s, Request is already done", path)
+		return fmt.Errorf("Cannot call SetBlob(), path=%s, Request is already done", path)
 	}
 	if !dashutil.IsMimeTypeValid(mimeType) {
 		return fmt.Errorf("Invalid Mime-Type passed to SetBlobData mime-type=%s", mimeType)
@@ -201,13 +201,13 @@ func (req *Request) SetBlobData(path string, mimeType string, reader io.Reader) 
 	return nil
 }
 
-func (req *Request) SetBlobDataFromFile(path string, mimeType string, fileName string) error {
+func (req *Request) SetBlobFromFile(path string, mimeType string, fileName string) error {
 	fd, err := os.Open(fileName)
 	if err != nil {
 		return err
 	}
 	defer fd.Close()
-	return req.SetBlobData(path, mimeType, fd)
+	return req.SetBlob(path, mimeType, fd)
 }
 
 // SetData is used to return data to the client.  Will replace the contents of path with data.

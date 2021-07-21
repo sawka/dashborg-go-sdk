@@ -82,8 +82,9 @@ func (app *App) makeCallArgs(hType reflect.Type, req *Request) ([]reflect.Value,
 	if argNum == hType.NumIn() {
 		return rtn, nil
 	}
-	if app.appStateType != nil && app.appStateType == hType.In(argNum) {
-		stateV, err := unmarshalToType(req.appStateJson, app.appStateType)
+	stateType := app.appRuntime.appStateType
+	if stateType != nil && stateType == hType.In(argNum) {
+		stateV, err := unmarshalToType(req.appStateJson, stateType)
 		if err != nil {
 			return nil, fmt.Errorf("Cannot unmarshal appStateJson to type:%v err:%v", hType.In(1), err)
 		}

@@ -53,6 +53,9 @@ type Config struct {
 }
 
 type Container interface {
+	OpenApp(appName string) (*dash.App, error)
+	WriteApp(acfg dash.AppConfig) error
+
 	// Call to connect an app to this container
 	ConnectApp(app dash.AppRuntime) error
 
@@ -67,6 +70,8 @@ type Container interface {
 
 	// Wait for shutdown
 	WaitForShutdown() error
+
+	AppBlobManager(app *dash.App) dash.BlobManager
 }
 
 func MakeClient(config *Config) (Container, error) {
