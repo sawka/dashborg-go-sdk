@@ -193,7 +193,17 @@ message SetBlobMessage {
 message SetBlobResponse {
     bool Success = 1;
     string Err = 2;
-    string BlobKey = 3;
+}
+
+message RemoveAppMessage {
+    int64 Ts = 1;
+    string ZoneName = 2;
+    string AppName = 3;
+}
+
+message RemoveAppResponse {
+    bool Success = 1;
+    string Err = 2;
 }
 
 service DashborgService {
@@ -211,5 +221,6 @@ service DashborgService {
     rpc OpenApp(OpenAppMessage) returns (OpenAppResponse) {}
     rpc WriteApp(WriteAppMessage) returns (WriteAppResponse) {}
     rpc SetBlob(stream SetBlobMessage) returns (SetBlobResponse) {}
+    rpc RemoveApp(RemoveAppMessage) returns (RemoveAppResponse) {}
 }
 

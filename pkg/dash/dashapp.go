@@ -14,11 +14,6 @@ import (
 
 var notAuthorizedErr = fmt.Errorf("Not Authorized")
 
-const (
-	AppTypeGUI         = "gui"
-	AppTypeDataService = "dataservice"
-)
-
 const MaxAppConfigSize = 1000000
 
 const (
@@ -41,9 +36,8 @@ const (
 type AppConfig struct {
 	AppName            string                      `json:"appname"`
 	AppVersion         string                      `json:"appversion,omitempty"` // uuid
-	AppType            string                      `json:"apptype"`
-	UpdatedTs          int64                       `json:"updatedts"` // set by container
-	ProcRunId          string                      `json:"procrunid"` // set by container
+	UpdatedTs          int64                       `json:"updatedts"`            // set by container
+	ProcRunId          string                      `json:"procrunid"`            // set by container
 	ClientVersion      string                      `json:"clientversion"`
 	Options            map[string]GenericAppOption `json:"options"`
 	StaticHtml         string                      `json:"statichtml,omitempty"`
@@ -54,7 +48,6 @@ type AppConfig struct {
 
 // super-set of all option fields for JSON marshaling/parsing
 type GenericAppOption struct {
-	Name         string   `json:"-"` // not marshaled as part of OptionData
 	Type         string   `json:"type,omitempty"`
 	Path         string   `json:"path,omitempty"`
 	AllowedRoles []string `json:"allowedroles,omitempty"`
@@ -83,6 +76,7 @@ type ProcInfo struct {
 }
 
 type AppRuntime interface {
+	GetAppName() string
 	GetAppConfig() AppConfig
 	RunHandler(req *Request) (interface{}, error)
 }
@@ -178,7 +172,6 @@ func (fv funcValueType) GetValue() (interface{}, error) {
 
 func defaultAuthOpt() GenericAppOption {
 	authOpt := GenericAppOption{
-		Name:         OptionAuth,
 		Type:         AuthTypeZone,
 		AllowedRoles: []string{"user"},
 	}
@@ -200,7 +193,6 @@ func MakeApp(appName string) *App {
 		AppConfig: AppConfig{
 			AppVersion: uuid.New().String(),
 			AppName:    appName,
-			AppType:    AppTypeGUI,
 		},
 	}
 	rtn.AppConfig.Options = make(map[string]GenericAppOption)
@@ -319,7 +311,6 @@ func (app *App) SetAllowedRoles(roles ...string) {
 
 func (app *App) SetHtml(html string) {
 	app.SetOption(OptionHtml, GenericAppOption{
-		Name: OptionHtml,
 		Type: "static",
 	})
 	app.AppConfig.StaticHtml = html
@@ -336,7 +327,7 @@ func (app *App) SetHtmlFromFile(fileName string) error {
 		return err
 	}
 	app.appRuntime.html = htmlValue
-	app.SetOption(OptionHtml, GenericAppOption{Name: OptionHtml, Type: "dynamic-when-connected"})
+	app.SetOption(OptionHtml, GenericAppOption{Type: "dynamic-when-connected"})
 	app.AppConfig.StaticHtml = htmlStr
 	return nil
 }
@@ -346,7 +337,7 @@ func (app *App) SetAppStateType(appStateType reflect.Type) {
 }
 
 func (app *App) SetOnLoadHandler(path string) {
-	app.SetOption(OptionOnLoadHandler, GenericAppOption{Name: OptionOnLoadHandler, Path: path})
+	app.SetOption(OptionOnLoadHandler, GenericAppOption{Path: path})
 }
 
 func (app *App) Handler(path string, handlerFn func(req *Request) error) error {
@@ -377,10 +368,10 @@ func (app *App) DataHandler(path string, handlerFn func(req *Request) (interface
 	return nil
 }
 
-func (app *App) SetAppType(appType string) {
-	app.AppConfig.AppType = appType
-}
-
 func (app *App) SetStaticData(path string, data interface{}) {
 	app.AppConfig.StaticData = append(app.AppConfig.StaticData, staticDataVal{Path: path, Data: data})
+}
+
+func (app *App) GetAppName() string {
+	return app.AppConfig.AppName
 }

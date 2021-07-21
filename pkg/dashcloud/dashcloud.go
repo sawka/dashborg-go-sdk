@@ -55,9 +55,11 @@ type Config struct {
 type Container interface {
 	OpenApp(appName string) (*dash.App, error)
 	WriteApp(acfg dash.AppConfig) error
+	RemoveApp(appName string) error
 
 	// Call to connect an app to this container
 	ConnectApp(app dash.AppRuntime) error
+	ConnectAppRuntime(app dash.AppRuntime) error
 
 	// Dashborg method for returning what apps are currently connected to this container's app/zone.
 	ReflectZone() (*ReflectZoneType, error)

@@ -116,7 +116,7 @@ func (pc *dashCloudClient) sendProcMessage() error {
 	hostData := makeHostData()
 	reconApps := make([]string, 0)
 	for _, appstruct := range pc.AppMap {
-		reconApps = append(reconApps, appstruct.App.GetAppConfig().AppName)
+		reconApps = append(reconApps, appstruct.App.GetAppName())
 	}
 	m := &dashproto.ProcMessage{
 		Ts:                   dashutil.Ts(),
@@ -200,11 +200,11 @@ func (pc *dashCloudClient) showAppLink(appName string) {
 }
 
 func (pc *dashCloudClient) ConnectApp(app dash.AppRuntime) error {
+	appName := app.GetAppName()
 	jsonConfig, err := dashutil.MarshalJson(app.GetAppConfig())
 	if err != nil {
 		return err
 	}
-	appName := app.GetAppConfig().AppName
 	clientConfig := dash.AppClientConfig{
 		Verbose: pc.Config.Verbose,
 	}
@@ -219,7 +219,7 @@ func (pc *dashCloudClient) ConnectApp(app dash.AppRuntime) error {
 		AppConfigJson: jsonConfig,
 		ConnectApp:    true,
 	}
-	resp, grpcErr := globalClient.DBService.WriteApp(globalClient.ctxWithMd(), m)
+	resp, grpcErr := pc.DBService.WriteApp(pc.ctxWithMd(), m)
 	if grpcErr != nil {
 		err = grpcErr
 	} else if resp.Err != "" {
@@ -240,8 +240,31 @@ func (pc *dashCloudClient) ConnectApp(app dash.AppRuntime) error {
 	return nil
 }
 
+func (pc *dashCloudClient) RemoveApp(appName string) error {
+	m := &dashproto.RemoveAppMessage{
+		Ts:       dashutil.Ts(),
+		ZoneName: pc.Config.ZoneName,
+		AppName:  appName,
+	}
+	resp, respErr := pc.DBService.RemoveApp(pc.ctxWithMd(), m)
+	var err error
+	if respErr != nil {
+		err = respErr
+	} else if resp.Err != "" {
+		err = errors.New(resp.Err)
+	} else if !resp.Success {
+		err = errors.New("Error calling RemoveApp()")
+	}
+	if err != nil {
+		log.Printf("Dashborg CloudContainer, error removing app: %v\n", err)
+		return err
+	}
+	log.Printf("Dashborg CloudContainer, removed app %s\n", appName)
+	return nil
+}
+
 func (pc *dashCloudClient) ConnectAppRuntime(app dash.AppRuntime) error {
-	appName := app.GetAppConfig().AppName
+	appName := app.GetAppName()
 	clientConfig := dash.AppClientConfig{
 		Verbose: pc.Config.Verbose,
 	}
@@ -255,7 +278,7 @@ func (pc *dashCloudClient) ConnectAppRuntime(app dash.AppRuntime) error {
 		AppName:    appName,
 		ConnectApp: true,
 	}
-	resp, err := globalClient.DBService.WriteApp(globalClient.ctxWithMd(), m)
+	resp, err := pc.DBService.WriteApp(pc.ctxWithMd(), m)
 	if err != nil {
 		return err
 	} else if resp.Err != "" {
