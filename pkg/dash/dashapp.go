@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"reflect"
 	"sync"
@@ -91,6 +92,7 @@ type appRuntimeImpl struct {
 type App struct {
 	AppConfig  AppConfig
 	appRuntime *appRuntimeImpl
+	Container  Container
 
 	// liveUpdateMode  bool
 	// connectOnlyMode bool
@@ -187,8 +189,9 @@ func makeAppRuntime() *appRuntimeImpl {
 	return rtn
 }
 
-func MakeApp(appName string) *App {
+func MakeApp(appName string, container Container) *App {
 	rtn := &App{
+		Container:  container,
 		appRuntime: makeAppRuntime(),
 		AppConfig: AppConfig{
 			AppVersion: uuid.New().String(),
@@ -218,8 +221,9 @@ func (app *App) ClearExistingBlobs() {
 	app.AppConfig.ClearExistingBlobs = true
 }
 
-func MakeAppFromConfig(cfg AppConfig) *App {
+func MakeAppFromConfig(cfg AppConfig, container Container) *App {
 	rtn := &App{
+		Container:  container,
 		appRuntime: makeAppRuntime(),
 		AppConfig:  cfg,
 	}
@@ -374,4 +378,27 @@ func (app *App) SetStaticData(path string, data interface{}) {
 
 func (app *App) GetAppName() string {
 	return app.AppConfig.AppName
+}
+
+func (app *App) SetBlobData(key string, mimeType string, reader io.Reader, metadata interface{}) error {
+	blob := BlobData{
+		BlobKey:  key,
+		MimeType: mimeType,
+		UpdateTs: dashutil.Ts(),
+		Metadata: metadata,
+	}
+	err := app.Container.SetBlobData(app.AppConfig, blob, reader)
+	if err != nil {
+		log.Printf("Dashborg error setting blob data app:%s blobkey:%s err:%v\n", app.AppConfig.AppName, key, err)
+		return err
+	}
+	return nil
+}
+
+func (app *App) SetBlobDataFromFile(key string, mimeType string, fileName string, metadata interface{}) error {
+	fd, err := os.Open(fileName)
+	if err != nil {
+		return err
+	}
+	return app.SetBlobData(key, mimeType, fd, metadata)
 }

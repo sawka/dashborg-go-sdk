@@ -1,5 +1,7 @@
 package dash
 
+import "io"
+
 const ClientVersion = "go-0.6.0"
 
 type Container interface {
@@ -7,6 +9,7 @@ type Container interface {
 	StartBareStream(appName string, streamOpts StreamOpts) (*Request, error)
 	BackendPush(appName string, path string, data interface{}) error
 	WaitForShutdown() error
+	SetBlobData(acfg AppConfig, blob BlobData, r io.Reader) error
 }
 
 type StreamOpts struct {

@@ -157,8 +157,7 @@ message BackendPushResponse {
 
 message OpenAppMessage {
     int64 Ts = 1;
-    string ZoneName = 2;
-    string AppName = 3;
+    string AppName = 2;
 }
 
 message OpenAppResponse {
@@ -169,10 +168,9 @@ message OpenAppResponse {
 
 message WriteAppMessage {
     int64 Ts = 1;
-    string ZoneName = 2;
-    string AppName = 3;
-    string AppConfigJson = 4;
-    bool ConnectApp = 5;
+    string AppName = 2;
+    string AppConfigJson = 3;
+    bool ConnectApp = 4;
 }
 
 message WriteAppResponse {
@@ -183,11 +181,10 @@ message WriteAppResponse {
 
 message SetBlobMessage {
     int64 Ts = 1;
-    string ZoneName = 2;
-    string AppName = 3;
-    string AppVersion = 4;
-    string BlobDataJson = 5;
-    bytes BlobBytes = 6;
+    string AppName = 2;
+    string AppVersion = 3;
+    string BlobDataJson = 4;
+    bytes BlobBytes = 5;
 }
 
 message SetBlobResponse {
@@ -197,8 +194,7 @@ message SetBlobResponse {
 
 message RemoveAppMessage {
     int64 Ts = 1;
-    string ZoneName = 2;
-    string AppName = 3;
+    string AppName = 2;
 }
 
 message RemoveAppResponse {
