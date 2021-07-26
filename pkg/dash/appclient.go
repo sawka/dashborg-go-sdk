@@ -98,7 +98,6 @@ func (pc *appClient) SendRequestResponse(req *Request, done bool) (int, error) {
 		req.clearActions()
 		return 0, nil
 	}
-
 	m := &dashproto.SendResponseMessage{
 		Ts:           dashutil.Ts(),
 		ReqId:        req.info.ReqId,
@@ -109,10 +108,10 @@ func (pc *appClient) SendRequestResponse(req *Request, done bool) (int, error) {
 	}
 	if req.err != nil {
 		m.Err = req.err.Error()
+		req.clearActions()
+	} else {
+		m.Actions = req.clearActions()
 	}
-
-	m.Actions = req.clearActions()
-
 	if pc.ConnId.Load().(string) == "" {
 		return 0, fmt.Errorf("No Active ConnId")
 	}
@@ -231,6 +230,9 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 	}()
 	var dataResult interface{}
 	dataResult, preq.err = pc.App.RunHandler(preq)
+	if preq.err != nil {
+		return
+	}
 	if hkey.HandlerType == "data" {
 		jsonData, err := dashutil.MarshalJson(dataResult)
 		if err != nil {

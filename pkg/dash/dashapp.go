@@ -18,10 +18,10 @@ var notAuthorizedErr = fmt.Errorf("Not Authorized")
 const MaxAppConfigSize = 1000000
 
 const (
-	OptionOnLoadHandler = "onloadhandler"
-	OptionHtml          = "html"
-	OptionAuth          = "auth"
-	OptionOfflineMode   = "offlinemode"
+	OptionInitHandler = "inithandler"
+	OptionHtml        = "html"
+	OptionAuth        = "auth"
+	OptionOfflineMode = "offlinemode"
 
 	AuthTypeZone    = "zone"
 	AuthTypeZoneApp = "zone-app"
@@ -340,8 +340,8 @@ func (app *App) SetAppStateType(appStateType reflect.Type) {
 	app.appRuntime.appStateType = appStateType
 }
 
-func (app *App) SetOnLoadHandler(path string) {
-	app.SetOption(OptionOnLoadHandler, GenericAppOption{Path: path})
+func (app *App) SetInitHandler(path string) {
+	app.SetOption(OptionInitHandler, GenericAppOption{Path: path})
 }
 
 func (app *App) Handler(path string, handlerFn func(req *Request) error) error {

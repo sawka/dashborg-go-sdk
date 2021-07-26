@@ -1,10 +1,7 @@
 package dashcloud
 
 import (
-	"io"
 	"time"
-
-	"github.com/sawka/dashborg-go-sdk/pkg/dash"
 )
 
 type Config struct {
@@ -51,40 +48,6 @@ type Config struct {
 	JWTDuration time.Duration // defaults to 24*time.Hour
 	JWTUserId   string        // defaults to "jwt-user"
 	JWTRole     string        // defaults to "user"
-}
-
-type Container interface {
-	// Open the app (reads the config from the server).  If app does not exist, will create a new app.
-	// Changes are not written (including app creation) until WriteApp or ConnectApp is called.
-	OpenApp(appName string) (*dash.App, error)
-
-	// Writes the app config/data to the server (does not connect)
-	WriteApp(acfg dash.AppConfig) error
-
-	// Call to connect an app to this container (also writes config/data)
-	ConnectApp(app dash.AppRuntime) error
-
-	// Connects app without writing config/data
-	ConnectAppRuntime(app dash.AppRuntime) error
-
-	// Removes the app config/data/blobs from the server
-	RemoveApp(appName string) error
-
-	// Dashborg method for returning what apps are currently connected to this container's app/zone.
-	ReflectZone() (*ReflectZoneType, error)
-
-	// Dashborg method for forcing all frontend clients to make the specified handler call.
-	BackendPush(appName string, path string, data interface{}) error
-
-	// Dashborg method for starting a bare stream that is not connected to a request or frontend.
-	StartBareStream(panelName string, streamOpts dash.StreamOpts) (*dash.Request, error)
-
-	// Wait for shutdown
-	WaitForShutdown() error
-
-	AppBlobManager(app *dash.App) dash.BlobManager
-
-	SetBlobData(dash.AppConfig, dash.BlobData, io.Reader) error
 }
 
 func MakeClient(config *Config) (*DashCloudClient, error) {

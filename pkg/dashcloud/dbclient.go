@@ -27,8 +27,6 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-var globalClient *DashCloudClient
-
 type AppStruct struct {
 	AppClient dash.AppClient
 	App       dash.AppRuntime
@@ -57,14 +55,13 @@ func makeCloudClient(config *Config) *DashCloudClient {
 		DoneCh:    make(chan bool),
 	}
 	rtn.ConnId.Store("")
-	globalClient = rtn
 	return rtn
 }
 
 func (pc *DashCloudClient) startClient() {
 	err := pc.connectGrpc()
 	if err != nil {
-		logV("Dashborg ERROR connecting gRPC client: %v\n", err)
+		pc.logV("Dashborg ERROR connecting gRPC client: %v\n", err)
 	}
 	if pc.Config.ShutdownCh != nil {
 		go func() {
@@ -86,12 +83,12 @@ func (pc *DashCloudClient) ctxWithMd() context.Context {
 
 func (pc *DashCloudClient) shutdown() {
 	if pc.Conn == nil {
-		logV("Dashborg ERROR shutting down, gRPC connection is not initialized\n")
+		pc.logV("Dashborg ERROR shutting down, gRPC connection is not initialized\n")
 		return
 	}
 	err := pc.Conn.Close()
 	if err != nil {
-		logV("Dashborg ERROR closing gRPC connection: %v\n", err)
+		pc.logV("Dashborg ERROR closing gRPC connection: %v\n", err)
 	}
 }
 
@@ -336,13 +333,13 @@ func (pc *DashCloudClient) sendNoAppResponse(reqMsg *dashproto.RequestMessage) {
 	}
 	_, err := pc.DBService.SendResponse(pc.ctxWithMd(), m)
 	if err != nil {
-		logV("Error sending No App Response: %v\n", err)
+		pc.logV("Error sending No App Response: %v\n", err)
 	}
 }
 
 func (pc *DashCloudClient) runRequestStream() (bool, string) {
 	m := &dashproto.RequestStreamMessage{Ts: dashutil.Ts()}
-	logV("Dashborg gRPC RequestStream starting\n")
+	pc.logV("Dashborg gRPC RequestStream starting\n")
 	reqStreamClient, err := pc.DBService.RequestStream(pc.ctxWithMd(), m)
 	if err != nil {
 		log.Printf("Dashborg Error setting up gRPC RequestStream: %v\n", err)
@@ -354,28 +351,28 @@ func (pc *DashCloudClient) runRequestStream() (bool, string) {
 	for {
 		reqMsg, err := reqStreamClient.Recv()
 		if err == io.EOF {
-			logV("Dashborg gRPC RequestStream done: EOF\n")
+			pc.logV("Dashborg gRPC RequestStream done: EOF\n")
 			endingErrCode = dash.ErrEOF
 			break
 		}
 		if err != nil {
-			logV("Dashborg gRPC RequestStream ERROR: %v\n", err)
+			pc.logV("Dashborg gRPC RequestStream ERROR: %v\n", err)
 			endingErrCode = dash.ErrUnknown
 			break
 		}
 		if reqMsg.ErrCode == dashproto.ErrorCode_EC_BADCONNID {
-			logV("Dashborg gRPC RequestStream BADCONNID\n")
+			pc.logV("Dashborg gRPC RequestStream BADCONNID\n")
 			endingErrCode = dash.ErrBadConnId
 			break
 		}
-		logV("Dashborg gRPC got request: app=%s, type=%s, path=%s\n", reqMsg.PanelName, reqMsg.RequestType, reqMsg.Path)
+		pc.logV("Dashborg gRPC got request: app=%s, type=%s, path=%s\n", reqMsg.PanelName, reqMsg.RequestType, reqMsg.Path)
 		go func() {
 			atomic.AddInt64(&reqCounter, 1)
 			timeoutMs := reqMsg.TimeoutMs
 			if timeoutMs == 0 || timeoutMs > 60000 {
 				timeoutMs = 60000
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(reqMsg.TimeoutMs)*time.Millisecond)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
 			defer cancel()
 
 			appName := reqMsg.PanelName
@@ -393,8 +390,8 @@ func (pc *DashCloudClient) runRequestStream() (bool, string) {
 	return (elapsed >= 5*time.Second), endingErrCode
 }
 
-func logV(fmtStr string, args ...interface{}) {
-	if globalClient != nil && globalClient.Config.Verbose {
+func (pc *DashCloudClient) logV(fmtStr string, args ...interface{}) {
+	if pc.Config.Verbose {
 		log.Printf(fmtStr, args...)
 	}
 }
@@ -523,6 +520,7 @@ func (pc *DashCloudClient) WriteApp(acfg dash.AppConfig) error {
 	}
 	m := &dashproto.WriteAppMessage{
 		Ts:            dashutil.Ts(),
+		AppName:       acfg.AppName,
 		AppConfigJson: jsonVal,
 	}
 	resp, err := pc.DBService.WriteApp(pc.ctxWithMd(), m)

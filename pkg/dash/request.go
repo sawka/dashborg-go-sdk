@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net/url"
 	"os"
 	"runtime/debug"
 	"sync"
@@ -70,6 +71,22 @@ func (req *Request) Container() Container {
 
 func (req *Request) AuthData() *AuthAtom {
 	return req.authData
+}
+
+func (req *Request) UrlParams() url.Values {
+	type UrlParamsState struct {
+		UrlParams map[string]string `json:"urlparams"`
+	}
+	values := url.Values(make(map[string][]string))
+	var state UrlParamsState
+	err := req.BindAppState(&state)
+	if err != nil {
+		return values
+	}
+	for key, val := range state.UrlParams {
+		values.Add(key, val)
+	}
+	return values
 }
 
 func (req *Request) BindData(obj interface{}) error {
