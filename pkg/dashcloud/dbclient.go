@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"sync"
@@ -26,6 +27,8 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 )
+
+const grpcServerPath = "/grpc-server"
 
 type AppStruct struct {
 	AppClient dash.AppClient
@@ -58,7 +61,40 @@ func makeCloudClient(config *Config) *DashCloudClient {
 	return rtn
 }
 
-func (pc *DashCloudClient) startClient() {
+type grpcConfig struct {
+	GrpcServer string `json:"grpcserver"`
+	GrpcPort   int    `json:"grpcport"`
+}
+
+type grpcServerRtn struct {
+	Success bool       `json:"success"`
+	Error   string     `json:"error"`
+	Data    grpcConfig `json:"data"`
+}
+
+func (pc *DashCloudClient) getGrpcServer() (*grpcConfig, error) {
+	urlVal := fmt.Sprintf("https://%s%s?accid=%s", pc.Config.DashborgConsoleHost, grpcServerPath, pc.Config.AccId)
+	resp, err := http.Get(urlVal)
+	if err != nil {
+		return nil, fmt.Errorf("Cannot get gRPC Server Host: %w", err)
+	}
+	defer resp.Body.Close()
+	bodyContent, err := ioutil.ReadAll(resp.Body)
+	var grpcRtn grpcServerRtn
+	err = json.Unmarshal(bodyContent, &grpcRtn)
+	if err != nil {
+		return nil, fmt.Errorf("Cannot get gRPC Server Host (decoding response): %w", err)
+	}
+	if !grpcRtn.Success {
+		return nil, fmt.Errorf("Cannot get gRPC Server Host (error response): %s", grpcRtn.Error)
+	}
+	if grpcRtn.Data.GrpcServer == "" || grpcRtn.Data.GrpcPort == 0 {
+		return nil, fmt.Errorf("Cannot get gRPC Server Host (bad response)")
+	}
+	return &grpcRtn.Data, nil
+}
+
+func (pc *DashCloudClient) startClient() error {
 	err := pc.connectGrpc()
 	if err != nil {
 		pc.logV("Dashborg ERROR connecting gRPC client: %v\n", err)
@@ -69,9 +105,21 @@ func (pc *DashCloudClient) startClient() {
 			pc.shutdown()
 		}()
 	}
+	if pc.Config.DashborgSrvHost == "" {
+		grpcConfig, err := pc.getGrpcServer()
+		if err != nil {
+			return err
+		}
+		pc.Config.DashborgSrvHost = grpcConfig.GrpcServer
+		pc.Config.DashborgSrvPort = grpcConfig.GrpcPort
+		if pc.Config.Verbose {
+			log.Printf("Dashborg Using gRPC host %s:%d\n", pc.Config.DashborgSrvHost, pc.Config.DashborgSrvPort)
+		}
+	}
 	log.Printf("Dashborg Initialized CloudClient AccId:%s Zone:%s ProcName:%s ProcRunId:%s\n", pc.Config.AccId, pc.Config.ZoneName, pc.Config.ProcName, pc.ProcRunId)
 	pc.sendProcMessage()
 	go pc.runRequestStreamLoop()
+	return nil
 }
 
 func (pc *DashCloudClient) ctxWithMd() context.Context {
@@ -137,7 +185,7 @@ func (pc *DashCloudClient) sendProcMessage() error {
 	}
 	pc.ConnId.Store(resp.ConnId)
 	if pc.Config.Verbose {
-		log.Printf("procclient sendProcMessage success connid:%s acctype:%s\n", resp.ConnId, resp.AccType)
+		log.Printf("Dashborg procclient sendProcMessage success connid:%s acctype:%s\n", resp.ConnId, resp.AccType)
 	}
 	return nil
 }

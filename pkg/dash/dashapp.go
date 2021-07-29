@@ -22,6 +22,8 @@ const (
 	OptionHtml        = "html"
 	OptionAuth        = "auth"
 	OptionOfflineMode = "offlinemode"
+	OptionSubApp      = "subapp"
+	OptionTitle       = "title"
 
 	AuthTypeZone    = "zone"
 	AuthTypeZoneApp = "zone-app"
@@ -52,6 +54,8 @@ type GenericAppOption struct {
 	Type         string   `json:"type,omitempty"`
 	Path         string   `json:"path,omitempty"`
 	AllowedRoles []string `json:"allowedroles,omitempty"`
+	Enabled      bool     `json:"enabled,omitempty"`
+	AppTitle     string   `json:"apptitle,omitempty"`
 }
 
 type staticDataVal struct {
@@ -313,6 +317,22 @@ func (app *App) SetAllowedRoles(roles ...string) {
 	app.AppConfig.Options[OptionAuth] = authOpt
 }
 
+func (app *App) MarkAsSubApp(isSubApp bool) {
+	if isSubApp {
+		app.AppConfig.Options[OptionSubApp] = GenericAppOption{Enabled: true}
+	} else {
+		delete(app.AppConfig.Options, OptionSubApp)
+	}
+}
+
+func (app *App) SetAppTitle(title string) {
+	if title == "" {
+		delete(app.AppConfig.Options, OptionTitle)
+	} else {
+		app.AppConfig.Options[OptionTitle] = GenericAppOption{AppTitle: title}
+	}
+}
+
 func (app *App) SetHtml(html string) {
 	app.SetOption(OptionHtml, GenericAppOption{
 		Type: "static",
@@ -340,8 +360,10 @@ func (app *App) SetAppStateType(appStateType reflect.Type) {
 	app.appRuntime.appStateType = appStateType
 }
 
-func (app *App) SetInitHandler(path string) {
-	app.SetOption(OptionInitHandler, GenericAppOption{Path: path})
+func (app *App) SetInitHandler(handlerFn func(req *Request) error) {
+	hkey := handlerKey{HandlerType: "init"}
+	app.SetOption(OptionInitHandler, GenericAppOption{Type: "handler"})
+	app.appRuntime.SetHandler(hkey, handlerType{HandlerFn: wrapHandler(handlerFn)})
 }
 
 func (app *App) Handler(path string, handlerFn func(req *Request) error) error {

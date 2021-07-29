@@ -4,6 +4,12 @@ import "io"
 
 const ClientVersion = "go-0.6.0"
 
+const (
+	RoleSuper  = "*"
+	RolePublic = "public"
+	RoleUser   = "user"
+)
+
 type Container interface {
 	ConnectApp(app AppRuntime) error
 	StartBareStream(appName string, streamOpts StreamOpts) (*Request, error)

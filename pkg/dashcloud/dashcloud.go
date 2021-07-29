@@ -42,6 +42,8 @@ type Config struct {
 	DashborgSrvHost string // DASHBORG_PROCHOST
 	DashborgSrvPort int    // DASHBORG_PROCPORT
 
+	DashborgConsoleHost string // DASHBORG_CONSOLEHOST
+
 	setupDone bool // internal
 
 	NoShowJWT   bool          // set to true to disable showing app-link with jwt param

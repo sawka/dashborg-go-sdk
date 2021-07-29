@@ -58,7 +58,11 @@ func ca_unmarshalMulti(hType reflect.Type, args []reflect.Value, argNum int, jso
 	}
 	// outvals can be shorter than hType.NumIn() - argNum (if json is short)
 	for i := 0; i < len(outVals) && i < dataArgsNum; i++ {
-		args[i+argNum] = reflect.ValueOf(outVals[i]).Elem()
+		if outVals[i] == nil {
+			args[i+argNum] = reflect.Zero(hType.In(i + argNum))
+		} else {
+			args[i+argNum] = reflect.ValueOf(outVals[i]).Elem()
+		}
 	}
 	argNum += len(outVals)
 	ca_unmarshalNil(hType, args, argNum)

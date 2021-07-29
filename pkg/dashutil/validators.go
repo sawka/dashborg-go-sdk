@@ -24,6 +24,7 @@ const (
 	PROCTAGVAL_MAX    = 200
 	HOSTDATAVAL_MAX   = 100
 	BLOBKEY_MAX       = 100
+	SIMPLEID_MAX      = 30
 )
 
 var (
@@ -43,6 +44,7 @@ var (
 	ROLE_RE           = regexp.MustCompile("^(\\*|[a-z][a-z0-9-]+)$")
 	CLIENTVERSION_RE  = regexp.MustCompile("^[a-z0-9_]+-\\d+\\.\\d+\\.\\d+$")
 	BLOBKEY_RE        = regexp.MustCompile("^[0-9a-zA-Z/_.-]+$")
+	SIMPLEID_RE       = regexp.MustCompile("^[a-zA-Z][a-zA-Z0-9_-]*")
 
 	// https://www.w3.org/TR/2016/REC-html51-20161101/sec-forms.html#email-state-typeemali
 	EMAIL_RE = regexp.MustCompile("^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
@@ -50,7 +52,7 @@ var (
 	PASSWORD_RE = regexp.MustCompile("^[a-zA-Z0-9]+$")
 )
 
-var ValidHandlerType = map[string]bool{"data": true, "handler": true, "stream": true, "call": true, "auth": true, "html": true}
+var ValidHandlerType = map[string]bool{"data": true, "handler": true, "stream": true, "call": true, "auth": true, "html": true, "init": true}
 var ValidActionType = map[string]bool{"setdata": true, "event": true, "invalidate": true, "html": true, "panelauth": true, "panelauthchallenge": true, "error": true, "blob": true, "blobext": true, "streamopen": true, "backendpush": true}
 
 func IsZoneNameValid(zoneName string) bool {
@@ -202,4 +204,11 @@ func IsClientVersionValid(s string) bool {
 		return false
 	}
 	return CLIENTVERSION_RE.MatchString(s)
+}
+
+func IsSimpleIdValid(s string) bool {
+	if len(s) == 0 || len(s) > SIMPLEID_MAX {
+		return false
+	}
+	return SIMPLEID_RE.MatchString(s)
 }

@@ -186,6 +186,8 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 		hkey.HandlerType = "html"
 	case "auth":
 		hkey.HandlerType = "auth"
+	case "init":
+		hkey.HandlerType = "init"
 	case "streamclose":
 		pc.stream_serverStop(preq.info.ReqId)
 		return // no response for streamclose

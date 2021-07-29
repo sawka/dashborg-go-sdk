@@ -28,6 +28,8 @@ const (
 	DefaultZoneName        = "default"
 	DefaultPanelName       = "default"
 	DefaultLocalServerAddr = "localhost:8082"
+	DefaultConsoleHost     = "console.dashborg.net"
+	DefaultProcHost        = "grpc.api.dashborg.net"
 )
 
 var cmdRegexp *regexp.Regexp = regexp.MustCompile("^.*/")
@@ -37,9 +39,14 @@ func (c *Config) setDefaults() {
 	c.ZoneName = dashutil.DefaultString(c.ZoneName, os.Getenv("DASHBORG_ZONE"), DefaultZoneName)
 	c.Env = dashutil.DefaultString(c.Env, os.Getenv("DASHBORG_ENV"), "prod")
 	if c.Env == "prod" {
-		c.DashborgSrvHost = dashutil.DefaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "grpc.api.dashborg.net")
+		c.DashborgSrvHost = dashutil.DefaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "")
 	} else {
-		c.DashborgSrvHost = dashutil.DefaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "localhost")
+		c.DashborgSrvHost = dashutil.DefaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "")
+	}
+	if c.Env == "prod" {
+		c.DashborgConsoleHost = dashutil.DefaultString(c.DashborgConsoleHost, os.Getenv("DASHBORG_CONSOLEHOST"), DefaultConsoleHost)
+	} else {
+		c.DashborgConsoleHost = dashutil.DefaultString(c.DashborgConsoleHost, os.Getenv("DASHBORG_CONSOLEHOST"), "console.dashborg-dev.com:8080")
 	}
 	if c.DashborgSrvPort == 0 {
 		if os.Getenv("DASHBORG_PROCPORT") != "" {
