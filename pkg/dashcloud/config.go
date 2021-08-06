@@ -212,10 +212,14 @@ func (c *Config) MustMakeAccountJWT(validFor time.Duration, id string, role stri
 func (c *Config) appLink(appName string) string {
 	accId := c.AccId
 	zoneName := c.ZoneName
+	var hostName string
 	if c.Env != "prod" {
-		return fmt.Sprintf("https://acc-%s.console.dashborg-dev.com:8080/zone/%s/%s", accId, zoneName, appName)
+		hostName = fmt.Sprintf("https://acc-%s.console.dashborg-dev.com:8080", accId)
+	} else {
+		hostName = fmt.Sprintf("https://acc-%s.console.dashborg.net", accId)
 	}
-	return fmt.Sprintf("https://acc-%s.console.dashborg.net/zone/%s/%s", accId, zoneName, appName)
+	path := dashutil.MakeAppPath(zoneName, appName)
+	return hostName + path
 }
 
 func (c *Config) MakeJWTAppLink(appName string, validTime time.Duration, userId string, roleName string) (string, error) {

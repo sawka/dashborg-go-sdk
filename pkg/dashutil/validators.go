@@ -1,173 +1,177 @@
 package dashutil
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 const (
-	ZONENAME_MAX      = 20
-	CONTROLNAME_MAX   = 30
-	PANELNAME_MAX     = 20
-	PROCNAME_MAX      = 20
-	FILENAME_MAX      = 80
-	EMAIL_MAX         = 80
-	PASSWORD_MAX      = 80
-	PASSWORD_MIN      = 8
-	MIMETYPE_MAX      = 80
-	SHA256_HEX_LEN    = 64
-	SHA256_B64_LEN    = 44
-	UUID_LEN          = 36
-	HANDLERPATH_MAX   = 100
-	DATAPATH_MAX      = 200
-	PATH_MAX          = 100
-	TAG_MAX           = 50
-	ROLE_MAX          = 12
-	CLIENTVERSION_MAX = 20
-	PROCTAGVAL_MAX    = 200
-	HOSTDATAVAL_MAX   = 100
-	BLOBKEY_MAX       = 100
-	SIMPLEID_MAX      = 30
+	ZoneNameMax      = 20
+	ControlNameMax   = 30
+	PanelNameMax     = 20
+	ProcNameMax      = 20
+	FileNameMax      = 80
+	EmailMax         = 80
+	PasswordMax      = 80
+	PasswordMin      = 8
+	MimeTypeMax      = 80
+	Sha256HexLen     = 64
+	Sha256Base64Len  = 44
+	UuidLen          = 36
+	HandlerPathMax   = 100
+	DataPathMax      = 200
+	PathMax          = 100
+	TagMax           = 50
+	RoleMax          = 12
+	RoleListMax      = 50
+	ClientVersionMax = 20
+	ProcTagValMax    = 200
+	HostDataValMax   = 100
+	BlobKeyMax       = 100
+	SimpleIdMax      = 30
 )
 
 var (
-	ZONENAME_RE       = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_.-]*$")
-	CONTROLNAME_RE    = regexp.MustCompile("^[a-zA-Z0-9_.:#/-]+$")
-	PANELNAME_RE      = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_.-]*$")
-	PROCNAME_RE       = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
-	UUID_RE           = regexp.MustCompile("^[a-fA-F0-9-]{36}$")
-	HANDLER_RE        = regexp.MustCompile("^/[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$")
-	BASE64_RE         = regexp.MustCompile("^[a-zA-Z0-9/+=]+$")
-	HEX_RE            = regexp.MustCompile("^[a-f0-9]+$")
-	IMAGE_MIMETYPE_RE = regexp.MustCompile("^image/[a-z0-9.-]+$")
-	MIMETYPE_RE       = regexp.MustCompile("^[a-z0-9.-]+/[a-z0-9.-]+$")
-	SIMPLEFILENAME_RE = regexp.MustCompile("^[a-zA-Z0-9._-]+$")
-	PATH_RE           = regexp.MustCompile("^/[a-zA-Z0-9._/-]*$")
-	TAG_RE            = regexp.MustCompile("^[a-zA-Z0-9._:/-]+$")
-	ROLE_RE           = regexp.MustCompile("^(\\*|[a-z][a-z0-9-]+)$")
-	CLIENTVERSION_RE  = regexp.MustCompile("^[a-z0-9_]+-\\d+\\.\\d+\\.\\d+$")
-	BLOBKEY_RE        = regexp.MustCompile("^[0-9a-zA-Z/_.-]+$")
-	SIMPLEID_RE       = regexp.MustCompile("^[a-zA-Z][a-zA-Z0-9_-]*")
+	zoneNameRe       = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_.-]*$")
+	controlNameRe    = regexp.MustCompile("^[a-zA-Z0-9_.:#/-]+$")
+	panelNameRe      = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_.-]*$")
+	procNameRe       = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
+	uuidRe           = regexp.MustCompile("^[a-fA-F0-9-]{36}$")
+	handlerRe        = regexp.MustCompile("^/[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$")
+	base64Re         = regexp.MustCompile("^[a-zA-Z0-9/+=]+$")
+	hexRe            = regexp.MustCompile("^[a-f0-9]+$")
+	imageMimeTypeRe  = regexp.MustCompile("^image/[a-z0-9.-]+$")
+	mimeTypeRe       = regexp.MustCompile("^[a-z0-9.-]+/[a-z0-9.-]+$")
+	simpleFileNameRe = regexp.MustCompile("^[a-zA-Z0-9._-]+$")
+	pathRe           = regexp.MustCompile("^/[a-zA-Z0-9._/-]*$")
+	tagRe            = regexp.MustCompile("^[a-zA-Z0-9._:/-]+$")
+	roleRe           = regexp.MustCompile("^(\\*|[a-z][a-z0-9-]+)$")
+	clientVersionRe  = regexp.MustCompile("^[a-z0-9_]+-\\d+\\.\\d+\\.\\d+$")
+	blobKeyRe        = regexp.MustCompile("^[0-9a-zA-Z/_.-]+$")
+	simpleIdRe       = regexp.MustCompile("^[a-zA-Z][a-zA-Z0-9_-]*")
 
 	// https://www.w3.org/TR/2016/REC-html51-20161101/sec-forms.html#email-state-typeemali
-	EMAIL_RE = regexp.MustCompile("^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
+	emailRe = regexp.MustCompile("^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
 
-	PASSWORD_RE = regexp.MustCompile("^[a-zA-Z0-9]+$")
+	passwordRe = regexp.MustCompile("^[a-zA-Z0-9]+$")
 )
 
 var ValidHandlerType = map[string]bool{"data": true, "handler": true, "stream": true, "call": true, "auth": true, "html": true, "init": true}
 var ValidActionType = map[string]bool{"setdata": true, "event": true, "invalidate": true, "html": true, "panelauth": true, "panelauthchallenge": true, "error": true, "blob": true, "blobext": true, "streamopen": true, "backendpush": true}
 
 func IsZoneNameValid(zoneName string) bool {
-	if len(zoneName) > ZONENAME_MAX {
+	if len(zoneName) > ZoneNameMax {
 		return false
 	}
-	return ZONENAME_RE.MatchString(zoneName)
+	return zoneNameRe.MatchString(zoneName)
 }
 
 func IsPanelNameValid(panelName string) bool {
-	if len(panelName) > PANELNAME_MAX {
+	if len(panelName) > PanelNameMax {
 		return false
 	}
-	return PANELNAME_RE.MatchString(panelName)
+	return panelNameRe.MatchString(panelName)
 }
 
 func IsAppNameValid(appName string) bool {
-	if len(appName) > PANELNAME_MAX {
+	if len(appName) > PanelNameMax {
 		return false
 	}
-	return PANELNAME_RE.MatchString(appName)
+	return panelNameRe.MatchString(appName)
 }
 
 func IsSimpleFileNameValid(fileName string) bool {
-	if len(fileName) > FILENAME_MAX {
+	if len(fileName) > FileNameMax {
 		return false
 	}
-	return SIMPLEFILENAME_RE.MatchString(fileName)
+	return simpleFileNameRe.MatchString(fileName)
 }
 
 func IsControlNameValid(controlName string) bool {
-	if len(controlName) > CONTROLNAME_MAX {
+	if len(controlName) > ControlNameMax {
 		return false
 	}
-	return CONTROLNAME_RE.MatchString(controlName)
+	return controlNameRe.MatchString(controlName)
 }
 
 func IsProcNameValid(procName string) bool {
-	if len(procName) > PROCNAME_MAX {
+	if len(procName) > ProcNameMax {
 		return false
 	}
-	return PROCNAME_RE.MatchString(procName)
+	return procNameRe.MatchString(procName)
 }
 
 func IsUUIDValid(uuid string) bool {
-	if len(uuid) != UUID_LEN {
+	if len(uuid) != UuidLen {
 		return false
 	}
-	return UUID_RE.MatchString(uuid)
+	return uuidRe.MatchString(uuid)
 }
 
 func IsHandlerPathValid(handler string) bool {
-	if len(handler) > HANDLERPATH_MAX {
+	if len(handler) > HandlerPathMax {
 		return false
 	}
-	return HANDLER_RE.MatchString(handler)
+	return handlerRe.MatchString(handler)
 }
 
 func IsPublicKeyValid(publicKey string) bool {
 	if len(publicKey) < 20 || len(publicKey) > 1000 {
 		return false
 	}
-	return BASE64_RE.MatchString(publicKey)
+	return base64Re.MatchString(publicKey)
 }
 
 func IsSha256HexHashValid(s string) bool {
-	if len(s) != SHA256_HEX_LEN {
+	if len(s) != Sha256HexLen {
 		return false
 	}
-	return HEX_RE.MatchString(s)
+	return hexRe.MatchString(s)
 }
 
 func IsSha256Base64HashValid(s string) bool {
-	if len(s) != SHA256_B64_LEN {
+	if len(s) != Sha256Base64Len {
 		return false
 	}
-	return BASE64_RE.MatchString(s)
+	return base64Re.MatchString(s)
 }
 
 func IsMimeTypeValid(s string) bool {
-	if len(s) == 0 || len(s) > MIMETYPE_MAX {
+	if len(s) == 0 || len(s) > MimeTypeMax {
 		return false
 	}
-	return MIMETYPE_RE.MatchString(s)
+	return mimeTypeRe.MatchString(s)
 }
 
 func IsImageMimeTypeValid(s string) bool {
-	if len(s) == 0 || len(s) > MIMETYPE_MAX {
+	if len(s) == 0 || len(s) > MimeTypeMax {
 		return false
 	}
-	return IMAGE_MIMETYPE_RE.MatchString(s)
+	return imageMimeTypeRe.MatchString(s)
 }
 
 func IsEmailValid(s string) bool {
-	if len(s) == 0 || len(s) > EMAIL_MAX {
+	if len(s) == 0 || len(s) > EmailMax {
 		return false
 	}
-	return EMAIL_RE.MatchString(s)
+	return emailRe.MatchString(s)
 }
 
 func IsPasswordValid(s string) bool {
-	if len(s) == 0 || len(s) > PASSWORD_MAX {
+	if len(s) == 0 || len(s) > PasswordMax {
 		return false
 	}
-	if len(s) < PASSWORD_MIN {
+	if len(s) < PasswordMin {
 		return false
 	}
 	return true
 }
 
 func IsPathValid(s string) bool {
-	if len(s) == 0 || len(s) > PATH_MAX {
+	if len(s) == 0 || len(s) > PathMax {
 		return false
 	}
-	return PATH_RE.MatchString(s)
+	return pathRe.MatchString(s)
 }
 
 func IsHandlerTypeValid(s string) bool {
@@ -179,36 +183,49 @@ func IsActionTypeValid(s string) bool {
 }
 
 func IsTagValid(s string) bool {
-	if len(s) == 0 || len(s) > TAG_MAX {
+	if len(s) == 0 || len(s) > TagMax {
 		return false
 	}
-	return TAG_RE.MatchString(s)
+	return tagRe.MatchString(s)
 }
 
 func IsBlobKeyValid(s string) bool {
-	if len(s) == 0 || len(s) > BLOBKEY_MAX {
+	if len(s) == 0 || len(s) > BlobKeyMax {
 		return false
 	}
-	return BLOBKEY_RE.MatchString(s)
+	return blobKeyRe.MatchString(s)
 }
 
 func IsRoleValid(s string) bool {
-	if len(s) == 0 || len(s) > ROLE_MAX {
+	if len(s) == 0 || len(s) > RoleMax {
 		return false
 	}
-	return ROLE_RE.MatchString(s)
+	return roleRe.MatchString(s)
 }
 
 func IsClientVersionValid(s string) bool {
-	if len(s) == 0 || len(s) > CLIENTVERSION_MAX {
+	if len(s) == 0 || len(s) > ClientVersionMax {
 		return false
 	}
-	return CLIENTVERSION_RE.MatchString(s)
+	return clientVersionRe.MatchString(s)
 }
 
 func IsSimpleIdValid(s string) bool {
-	if len(s) == 0 || len(s) > SIMPLEID_MAX {
+	if len(s) == 0 || len(s) > SimpleIdMax {
 		return false
 	}
-	return SIMPLEID_RE.MatchString(s)
+	return simpleIdRe.MatchString(s)
+}
+
+func IsRoleListValid(s string) bool {
+	if len(s) == 0 || len(s) > RoleListMax {
+		return false
+	}
+	list := strings.Split(s, ",")
+	for _, role := range list {
+		if !IsRoleValid(role) {
+			return false
+		}
+	}
+	return true
 }

@@ -207,3 +207,13 @@ func ConvertToString(valArg interface{}) (string, error) {
 		return "", fmt.Errorf("Invalid base type: %T", val)
 	}
 }
+
+func MakeAppPath(zoneName string, appName string) string {
+	if zoneName == "default" && appName == "default" {
+		return "/"
+	}
+	if zoneName == "default" {
+		return fmt.Sprintf("/app/%s", appName)
+	}
+	return fmt.Sprintf("/zone/%s/app/%s", zoneName, appName)
+}
