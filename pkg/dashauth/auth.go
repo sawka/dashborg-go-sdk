@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/sawka/dashborg-go-sdk/pkg/dash"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
