@@ -46,7 +46,7 @@ func (c *Config) setDefaults() {
 	if c.Env == "prod" {
 		c.DashborgConsoleHost = dashutil.DefaultString(c.DashborgConsoleHost, os.Getenv("DASHBORG_CONSOLEHOST"), DefaultConsoleHost)
 	} else {
-		c.DashborgConsoleHost = dashutil.DefaultString(c.DashborgConsoleHost, os.Getenv("DASHBORG_CONSOLEHOST"), "console.dashborg-dev.com:8080")
+		c.DashborgConsoleHost = dashutil.DefaultString(c.DashborgConsoleHost, os.Getenv("DASHBORG_CONSOLEHOST"), consoleHostDev)
 	}
 	if c.DashborgSrvPort == 0 {
 		if os.Getenv("DASHBORG_PROCPORT") != "" {
@@ -98,7 +98,7 @@ func (c *Config) loadKeys() {
 	if c.AccId != "" && certInfo.AccId != c.AccId {
 		panic(fmt.Sprintf("Dashborg AccId read from certificate:%s does not match AccId in config:%s", certInfo.AccId, c.AccId))
 	}
-	log.Printf("Dashborg KeyFile:%s CertFile:%s SHA256:%s\n", c.KeyFileName, c.CertFileName, certInfo.Pk256)
+	log.Printf("DashborgCloudClient KeyFile:%s CertFile:%s AccId:%s SHA-256:%s\n", c.KeyFileName, c.CertFileName, c.AccId, certInfo.Pk256)
 	c.AccId = certInfo.AccId
 }
 
@@ -203,45 +203,6 @@ func (c *Config) MakeAccountJWT(validFor time.Duration, id string, role string) 
 
 func (c *Config) MustMakeAccountJWT(validFor time.Duration, id string, role string) string {
 	rtn, err := c.MakeAccountJWT(validFor, id, role)
-	if err != nil {
-		panic(err)
-	}
-	return rtn
-}
-
-func (c *Config) appLink(appName string) string {
-	accId := c.AccId
-	zoneName := c.ZoneName
-	var hostName string
-	if c.Env != "prod" {
-		hostName = fmt.Sprintf("https://acc-%s.console.dashborg-dev.com:8080", accId)
-	} else {
-		hostName = fmt.Sprintf("https://acc-%s.console.dashborg.net", accId)
-	}
-	path := dashutil.MakeAppPath(zoneName, appName)
-	return hostName + path
-}
-
-func (c *Config) MakeJWTAppLink(appName string, validTime time.Duration, userId string, roleName string) (string, error) {
-	if validTime == 0 {
-		validTime = 24 * time.Hour
-	}
-	if roleName == "" {
-		roleName = "user"
-	}
-	if userId == "" {
-		userId = "jwt-user"
-	}
-	jwtToken, err := c.MakeAccountJWT(validTime, userId, roleName)
-	link := c.appLink(appName)
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%s?jwt=%s", link, jwtToken), nil
-}
-
-func (c *Config) MustMakeJWTAppLink(appName string, validTime time.Duration, userId string, roleName string) string {
-	rtn, err := c.MakeJWTAppLink(appName, validTime, userId, roleName)
 	if err != nil {
 		panic(err)
 	}

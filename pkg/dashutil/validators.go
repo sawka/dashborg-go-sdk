@@ -46,9 +46,9 @@ var (
 	pathRe           = regexp.MustCompile("^/[a-zA-Z0-9._/-]*$")
 	tagRe            = regexp.MustCompile("^[a-zA-Z0-9._:/-]+$")
 	roleRe           = regexp.MustCompile("^(\\*|[a-z][a-z0-9-]+)$")
-	clientVersionRe  = regexp.MustCompile("^[a-z0-9_]+-\\d+\\.\\d+\\.\\d+$")
 	blobKeyRe        = regexp.MustCompile("^[0-9a-zA-Z/_.-]+$")
 	simpleIdRe       = regexp.MustCompile("^[a-zA-Z][a-zA-Z0-9_-]*")
+	clientVersionRe  = regexp.MustCompile("^([a-z][a-z0-9_]*)-(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,4})$")
 
 	// https://www.w3.org/TR/2016/REC-html51-20161101/sec-forms.html#email-state-typeemali
 	emailRe = regexp.MustCompile("^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")

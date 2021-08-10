@@ -12,7 +12,7 @@ const (
 )
 
 type AuthAtom struct {
-	Scope string                 `json:"scope"` // scope of this atom app or zone
+	Scope string                 `json:"scope"` // scope of this atom acc, zone, app
 	Type  string                 `json:"type"`  // auth type (password, noauth, dashborg, deauth, or user-defined)
 	Ts    int64                  `json:"ts"`    // expiration Ts (ms) of this auth atom
 	Role  string                 `json:"role"`

@@ -55,7 +55,10 @@ type Config struct {
 func MakeClient(config *Config) (*DashCloudClient, error) {
 	config.setDefaultsAndLoadKeys()
 	container := makeCloudClient(config)
-	container.startClient()
+	err := container.startClient()
+	if err != nil {
+		return nil, err
+	}
 	return container, nil
 }
 

@@ -25,10 +25,7 @@ const (
 	OptionSubApp      = "subapp"
 	OptionTitle       = "title"
 
-	AuthTypeZone    = "zone"
-	AuthTypeZoneApp = "zone-app"
-	AuthTypeAppOnly = "app-only"
-	AuthTypePublic  = "public"
+	AuthTypeZone = "zone"
 )
 
 // html: static, dynamic, dynamic-when-connected
@@ -209,6 +206,14 @@ func MakeApp(appName string, container Container) *App {
 	return rtn
 }
 
+func (app *App) SetOfflineMode(allow bool) {
+	if allow {
+		app.AppConfig.Options[OptionOfflineMode] = GenericAppOption{Type: "allow"}
+	} else {
+		delete(app.AppConfig.Options, OptionOfflineMode)
+	}
+}
+
 // func (app *App) SetConnectOnly(connectOnly bool) {
 // 	app.connectOnlyMode = connectOnly
 // }
@@ -286,15 +291,6 @@ func wrapHandler(handlerFn func(req *Request) error) func(req *Request) (interfa
 		return nil, err
 	}
 	return wrappedHandlerFn
-}
-
-func (app *App) CustomAuthHandler(authHandler func(req *Request) error) {
-	authOpt := app.getAuthOpt()
-	if authOpt.Type == AuthTypeZone {
-		authOpt.Type = AuthTypeZoneApp
-		app.AppConfig.Options[OptionAuth] = authOpt
-	}
-	app.appRuntime.SetHandler(handlerKey{HandlerType: "auth"}, handlerType{HandlerFn: wrapHandler(authHandler)})
 }
 
 func (app *App) getAuthOpt() GenericAppOption {

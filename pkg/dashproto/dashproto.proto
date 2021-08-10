@@ -10,6 +10,8 @@ enum ErrorCode {
     EC_ACCACCESS = 4;
     EC_NOHANDLER = 5;
     EC_UNAVAILABLE = 6;
+    EC_BADAUTH = 7;
+    
 }
 
 message RRAction {
@@ -73,7 +75,7 @@ message RegisterHandlerResponse {
     ErrorCode ErrCode = 3;
 }
 
-message ProcMessage {
+message ConnectClientMessage {
     int64 Ts = 1;
     string ProcRunId = 2;
     string AccId = 3;
@@ -84,16 +86,24 @@ message ProcMessage {
     map<string,string> HostData = 8;
     int64 StartTs = 9;
     repeated HandlerKey Handlers = 10;
-    string ClientVersion = 11;
     repeated string ReconnectAppRuntimes = 13;
 }
 
-message ProcResponse {
+message AccInfo {
+    string AccType = 1;
+    string AccName = 2;
+    string AccCName = 3;
+    bool AccJWTEnabled = 4;
+    bool NewAccount = 5;
+}
+
+message ConnectClientResponse {
     bool Success = 1;
     string Err = 2;
     ErrorCode ErrCode = 3;
-    string ConnId = 4;
-    string AccType = 5;
+    bool PermanentError = 4;
+    string ConnId = 5;
+    AccInfo AccInfo = 6;
 }
 
 message RequestStreamMessage {
@@ -203,7 +213,7 @@ message RemoveAppResponse {
 }
 
 service DashborgService {
-    rpc Proc(ProcMessage) returns (ProcResponse) {}
+    rpc ConnectClient(ConnectClientMessage) returns (ConnectClientResponse) {}
     rpc ReflectZone(ReflectZoneMessage) returns (ReflectZoneResponse) {}
     rpc CallDataHandler(CallDataHandlerMessage) returns (CallDataHandlerResponse) {}
     

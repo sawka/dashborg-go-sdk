@@ -444,16 +444,6 @@ func (aup AuthSimpleLogin) ReturnChallenge(req *dash.Request) *AuthChallenge {
 	return ch
 }
 
-func isAllowedRole(aa *dash.AuthAtom, allowedRoles []string) bool {
-	role := aa.GetRole()
-	for _, allowedRole := range allowedRoles {
-		if allowedRole == "public" || role == "*" || role == allowedRole {
-			return true
-		}
-	}
-	return false
-}
-
 func MakeAuthHandler(authHandlers ...AllowedAuth) func(req *dash.Request) error {
 	passwordCount := 0
 	loginCount := 0
@@ -478,7 +468,7 @@ func MakeAuthHandler(authHandlers ...AllowedAuth) func(req *dash.Request) error 
 		if !ok || len(authOpt.AllowedRoles) == 0 {
 			return fmt.Errorf("Cannot MakeAuthHandler for App without option:auth allowed roles")
 		}
-		if isAllowedRole(req.AuthData(), authOpt.AllowedRoles) {
+		if IsAllowedRole(req.AuthData(), authOpt.AllowedRoles) {
 			return nil
 		}
 		for _, auth := range authHandlers {
@@ -487,7 +477,7 @@ func MakeAuthHandler(authHandlers ...AllowedAuth) func(req *dash.Request) error 
 				rex.AppendInfoMessage(err.Error())
 			}
 			if authAtom != nil {
-				if isAllowedRole(authAtom, authOpt.AllowedRoles) {
+				if IsAllowedRole(authAtom, authOpt.AllowedRoles) {
 					rex.SetAuthData(authAtom)
 					return nil
 				} else {
@@ -549,4 +539,17 @@ func CheckDashborgAccountJWT(jwtParam string, publicKeys []interface{}) (*dash.A
 		role = claims.Role
 	}
 	return &dash.AuthAtom{Type: "accountjwt", Id: claims.Subject, Role: role}, nil
+}
+
+func IsAllowedRole(aa *dash.AuthAtom, allowedRoles []string) bool {
+	role := aa.GetRole()
+	if role == dash.RoleSuper {
+		return true
+	}
+	for _, allowedRole := range allowedRoles {
+		if allowedRole == "public" || role == allowedRole {
+			return true
+		}
+	}
+	return false
 }

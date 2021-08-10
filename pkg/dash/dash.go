@@ -10,6 +10,11 @@ const (
 	RoleUser   = "user"
 )
 
+const (
+	AccTypeAnon = "anon"
+	AccTypeFree = "free"
+)
+
 type Container interface {
 	ConnectApp(app AppRuntime) error
 	StartBareStream(appName string, streamOpts StreamOpts) (*Request, error)

@@ -20,6 +20,14 @@ type SortSpec struct {
 	Asc    bool   `json:"asc"`
 }
 
+type ClientVersion struct {
+	Valid        bool
+	ClientType   string
+	MajorVersion int
+	MinorVersion int
+	PatchVersion int
+}
+
 func Ts() int64 {
 	return time.Now().UnixNano() / 1000000
 }
@@ -215,5 +223,28 @@ func MakeAppPath(zoneName string, appName string) string {
 	if zoneName == "default" {
 		return fmt.Sprintf("/app/%s", appName)
 	}
+	if appName == "default" {
+		return fmt.Sprintf("/zone/%s", zoneName)
+	}
 	return fmt.Sprintf("/zone/%s/app/%s", zoneName, appName)
+}
+
+func ParseClientVersion(version string) ClientVersion {
+	match := clientVersionRe.FindStringSubmatch(version)
+	if match == nil {
+		return ClientVersion{}
+	}
+	rtn := ClientVersion{Valid: true}
+	rtn.ClientType = match[1]
+	rtn.MajorVersion, _ = strconv.Atoi(match[2])
+	rtn.MinorVersion, _ = strconv.Atoi(match[3])
+	rtn.PatchVersion, _ = strconv.Atoi(match[4])
+	return rtn
+}
+
+func (v ClientVersion) String() string {
+	if !v.Valid {
+		return ""
+	}
+	return fmt.Sprintf("%s-%d.%d.%d", v.ClientType, v.MajorVersion, v.MinorVersion, v.PatchVersion)
 }
