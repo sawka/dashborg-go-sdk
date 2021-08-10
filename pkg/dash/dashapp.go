@@ -18,14 +18,18 @@ var notAuthorizedErr = fmt.Errorf("Not Authorized")
 const MaxAppConfigSize = 1000000
 
 const (
-	OptionInitHandler = "inithandler"
-	OptionHtml        = "html"
-	OptionAuth        = "auth"
-	OptionOfflineMode = "offlinemode"
-	OptionSubApp      = "subapp"
-	OptionTitle       = "title"
+	OptionInitHandler   = "inithandler"
+	OptionHtml          = "html"
+	OptionAuth          = "auth"
+	OptionOfflineMode   = "offlinemode"
+	OptionTitle         = "title"
+	OptionAppVisibility = "visibility"
 
 	AuthTypeZone = "zone"
+
+	VisTypeHidden        = "hidden"  // always hide
+	VisTypeDefault       = "default" // shown if user has permission
+	VisTypeAlwaysVisible = "visible" // always show
 )
 
 // html: static, dynamic, dynamic-when-connected
@@ -53,6 +57,7 @@ type GenericAppOption struct {
 	AllowedRoles []string `json:"allowedroles,omitempty"`
 	Enabled      bool     `json:"enabled,omitempty"`
 	AppTitle     string   `json:"apptitle,omitempty"`
+	Order        float64  `json:"order,omitempty"`
 }
 
 type staticDataVal struct {
@@ -313,12 +318,12 @@ func (app *App) SetAllowedRoles(roles ...string) {
 	app.AppConfig.Options[OptionAuth] = authOpt
 }
 
-func (app *App) MarkAsSubApp(isSubApp bool) {
-	if isSubApp {
-		app.AppConfig.Options[OptionSubApp] = GenericAppOption{Enabled: true}
-	} else {
-		delete(app.AppConfig.Options, OptionSubApp)
-	}
+// SetAppVisibility controls whether the app shows in the UI's app-switcher (see VisType constants)
+// Apps will be sorted by displayOrder (and then AppTitle).  displayOrder of 0 (the default) will
+// sort to the end of the list, not the beginning
+func (app *App) SetAppVisibility(visType string, displayOrder float64) {
+	visOpt := GenericAppOption{Type: visType, Order: displayOrder}
+	app.AppConfig.Options[OptionAppVisibility] = visOpt
 }
 
 func (app *App) SetAppTitle(title string) {
