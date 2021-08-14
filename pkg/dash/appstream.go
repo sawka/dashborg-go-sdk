@@ -134,18 +134,7 @@ func (pc *appClient) connectStream(appName string, streamOpts StreamOpts, feClie
 		FeClientId:    feClientId,
 		ExistingReqId: existingReqId,
 	}
-	resp, err := pc.DBService.StartStream(pc.ctxWithMd(), m)
-	if err != nil {
-		pc.logV("Dashborg startStream error: %v\n", err)
-		return "", fmt.Errorf("Dashborg startStream error: %w", err)
-	}
-	if !resp.Success {
-		return "", fmt.Errorf("Dashborg startStream error: %s", resp.Err)
-	}
-	if existingReqId != "" && existingReqId != resp.ReqId {
-		return "", fmt.Errorf("Dashborg startStream returned reqid:%s does not match existing reqid:%s", resp.ReqId, existingReqId)
-	}
-	return resp.ReqId, nil
+	return pc.DBServiceAdapter.StartStreamProtoRpc(m)
 }
 
 // If feClientId is "", then this starts a "bare" stream (not connected to any frontend client).

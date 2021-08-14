@@ -168,7 +168,7 @@ func (w *ExpoWait) Wait() bool {
 		rtnOk = true
 	}
 	if rtnOk {
-		log.Printf("Dashborg procclient RunRequestStreamLoop trying to connect (%0.1fs) %d\n", float64(msWait)/1000, w.WaitTimes)
+		log.Printf("DashborgCloudClient RunRequestStreamLoop trying to connect %0.1fs\n", float64(msWait)/1000)
 	}
 	return rtnOk
 }

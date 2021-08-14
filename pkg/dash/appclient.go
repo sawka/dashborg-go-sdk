@@ -3,7 +3,6 @@ package dash
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"runtime/debug"
@@ -11,18 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sawka/dashborg-go-sdk/pkg/dasherr"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
-	"google.golang.org/grpc/metadata"
-)
-
-const (
-	ErrEOF         = "EOF"
-	ErrUnknown     = "UNKNOWN"
-	ErrBadConnId   = "BADCONNID"
-	ErrAccAccess   = "ACCACCESS"
-	ErrNoHandler   = "NOHANDLER"
-	ErrUnavailable = "UNAVAILABLE"
 )
 
 const returnChSize = 20
@@ -61,33 +51,38 @@ type AppClient interface {
 	StartStream(appName string, streamOpts StreamOpts, feClientId string) (*Request, string, error)
 }
 
+type DBServiceAdapter interface {
+	SendResponseProtoRpc(m *dashproto.SendResponseMessage) (int, error)
+	StartStreamProtoRpc(m *dashproto.StartStreamMessage) (string, error)
+}
+
 type AppClientConfig struct {
 	Verbose bool
 }
 
 type appClient struct {
-	Lock         *sync.Mutex
-	StartTs      time.Time
-	App          AppRuntime
-	Config       AppClientConfig
-	DBService    dashproto.DashborgServiceClient
-	ConnId       *atomic.Value
-	StreamMap    map[streamKey]streamControl // map streamKey -> streamControl
-	StreamKeyMap map[string]streamKey        // map reqid -> streamKey
-	Container    Container
+	Lock             *sync.Mutex
+	StartTs          time.Time
+	App              AppRuntime
+	Config           AppClientConfig
+	DBServiceAdapter DBServiceAdapter
+	ConnId           *atomic.Value
+	StreamMap        map[streamKey]streamControl // map streamKey -> streamControl
+	StreamKeyMap     map[string]streamKey        // map reqid -> streamKey
+	Container        Container
 }
 
-func MakeAppClient(container Container, app AppRuntime, service dashproto.DashborgServiceClient, config AppClientConfig, connId *atomic.Value) AppClient {
+func MakeAppClient(container Container, app AppRuntime, service DBServiceAdapter, config AppClientConfig, connId *atomic.Value) AppClient {
 	rtn := &appClient{
-		Lock:         &sync.Mutex{},
-		StartTs:      time.Now(),
-		App:          app,
-		DBService:    service,
-		Config:       config,
-		ConnId:       connId,
-		StreamMap:    make(map[streamKey]streamControl),
-		StreamKeyMap: make(map[string]streamKey),
-		Container:    container,
+		Lock:             &sync.Mutex{},
+		StartTs:          time.Now(),
+		App:              app,
+		DBServiceAdapter: service,
+		Config:           config,
+		ConnId:           connId,
+		StreamMap:        make(map[streamKey]streamControl),
+		StreamKeyMap:     make(map[string]streamKey),
+		Container:        container,
 	}
 	return rtn
 }
@@ -112,24 +107,7 @@ func (pc *appClient) SendRequestResponse(req *Request, done bool) (int, error) {
 	} else {
 		m.Actions = req.clearActions()
 	}
-	if pc.ConnId.Load().(string) == "" {
-		return 0, fmt.Errorf("No Active ConnId")
-	}
-	resp, err := pc.DBService.SendResponse(pc.ctxWithMd(), m)
-	if err != nil {
-		return 0, err
-	}
-	if resp.Err != "" {
-		return 0, errors.New(resp.Err)
-	}
-	return int(resp.NumStreamClients), nil
-}
-
-func (pc *appClient) ctxWithMd() context.Context {
-	ctx := context.Background()
-	connId := pc.ConnId.Load().(string)
-	ctx = metadata.AppendToOutgoingContext(ctx, "dashborg-connid", connId)
-	return ctx
+	return pc.DBServiceAdapter.SendResponseProtoRpc(m)
 }
 
 func (pc *appClient) sendWrongAppResponse(reqMsg *dashproto.RequestMessage) {
@@ -142,10 +120,7 @@ func (pc *appClient) sendWrongAppResponse(reqMsg *dashproto.RequestMessage) {
 		ResponseDone: true,
 		Err:          "Wrong AppName",
 	}
-	_, err := pc.DBService.SendResponse(pc.ctxWithMd(), m)
-	if err != nil {
-		pc.logV("Error sending No App Response: %v\n", err)
-	}
+	pc.DBServiceAdapter.SendResponseProtoRpc(m)
 }
 
 func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) {
@@ -154,8 +129,11 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 		return
 	}
 
-	if reqMsg.Err != "" {
-		pc.logV("Dashborg gRPC got error request: err=%s\n", reqMsg.Err)
+	if reqMsg.Status != nil {
+		dashErr := dasherr.FromRtnStatus("RequestStream", reqMsg.Status)
+		if dashErr != nil {
+			pc.logV("DashborgAppClient %v\n", dashErr)
+		}
 		return
 	}
 

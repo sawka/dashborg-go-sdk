@@ -11,8 +11,10 @@ const (
 )
 
 const (
-	AccTypeAnon = "anon"
-	AccTypeFree = "free"
+	AccTypeAnon       = "anon"
+	AccTypeFree       = "free"
+	AccTypePro        = "pro"
+	AccTypeEnterprise = "enterprise"
 )
 
 type Container interface {

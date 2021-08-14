@@ -23,7 +23,7 @@ type AuthAtom struct {
 // Returns AuthAtom role.  If AuthAtom is nil, returns "public"
 func (aa *AuthAtom) GetRole() string {
 	if aa == nil {
-		return "public"
+		return ""
 	}
 	return aa.Role
 }

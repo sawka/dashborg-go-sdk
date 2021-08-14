@@ -468,7 +468,7 @@ func MakeAuthHandler(authHandlers ...AllowedAuth) func(req *dash.Request) error 
 		if !ok || len(authOpt.AllowedRoles) == 0 {
 			return fmt.Errorf("Cannot MakeAuthHandler for App without option:auth allowed roles")
 		}
-		if IsAllowedRole(req.AuthData(), authOpt.AllowedRoles) {
+		if IsAllowedRole(req.AuthData().GetRole(), authOpt.AllowedRoles) {
 			return nil
 		}
 		for _, auth := range authHandlers {
@@ -477,7 +477,7 @@ func MakeAuthHandler(authHandlers ...AllowedAuth) func(req *dash.Request) error 
 				rex.AppendInfoMessage(err.Error())
 			}
 			if authAtom != nil {
-				if IsAllowedRole(authAtom, authOpt.AllowedRoles) {
+				if IsAllowedRole(authAtom.GetRole(), authOpt.AllowedRoles) {
 					rex.SetAuthData(authAtom)
 					return nil
 				} else {
@@ -541,13 +541,18 @@ func CheckDashborgAccountJWT(jwtParam string, publicKeys []interface{}) (*dash.A
 	return &dash.AuthAtom{Type: "accountjwt", Id: claims.Subject, Role: role}, nil
 }
 
-func IsAllowedRole(aa *dash.AuthAtom, allowedRoles []string) bool {
-	role := aa.GetRole()
+func IsAllowedRole(role string, allowedRoles []string) bool {
+	if role == "" {
+		return false
+	}
 	if role == dash.RoleSuper {
 		return true
 	}
 	for _, allowedRole := range allowedRoles {
-		if allowedRole == "public" || role == allowedRole {
+		if allowedRole == dash.RolePublic {
+			return true
+		}
+		if role == allowedRole {
 			return true
 		}
 	}

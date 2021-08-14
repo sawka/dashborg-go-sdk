@@ -2,16 +2,11 @@ syntax = "proto3";
 package dashborg.rpc1;
 option go_package = "github.com/sawka/dashborg-go-sdk/pkg/dashproto";
 
-enum ErrorCode {
-    EC_NONE = 0;
-    EC_EOF = 1;
-    EC_UNKNOWN = 2;
-    EC_BADCONNID = 3;
-    EC_ACCACCESS = 4;
-    EC_NOHANDLER = 5;
-    EC_UNAVAILABLE = 6;
-    EC_BADAUTH = 7;
-    
+message RtnStatus {
+    bool Success = 1;
+    string Err = 2;
+    string ErrCode = 3;
+    bool PermErr = 4;
 }
 
 message RRAction {
@@ -51,8 +46,7 @@ message RequestMessage {
     string JsonData = 10;
     string AuthData = 11;
     string PanelStateData = 12;
-    string Err = 13;           // only used for server-side errors
-    ErrorCode ErrCode = 14;    // only used for server-side errors
+    RtnStatus Status = 13;     // only used for server-side errors
     int64 TimeoutMs = 15;
     repeated string DataPaths = 16;
     bool IsBackendCall = 17;
@@ -64,17 +58,6 @@ message HandlerKey {
     string Path = 3;
 }    
 
-message RegisterHandlerMessage {
-    int64 Ts = 1;
-    repeated HandlerKey Handlers = 2;
-}
-
-message RegisterHandlerResponse {
-    bool Success = 1;
-    string Err = 2;
-    ErrorCode ErrCode = 3;
-}
-
 message ConnectClientMessage {
     int64 Ts = 1;
     string ProcRunId = 2;
@@ -85,7 +68,6 @@ message ConnectClientMessage {
     map<string,string> ProcTags = 7;
     map<string,string> HostData = 8;
     int64 StartTs = 9;
-    repeated HandlerKey Handlers = 10;
     repeated string ReconnectAppRuntimes = 13;
 }
 
@@ -98,12 +80,10 @@ message AccInfo {
 }
 
 message ConnectClientResponse {
-    bool Success = 1;
-    string Err = 2;
-    ErrorCode ErrCode = 3;
-    bool PermanentError = 4;
+    RtnStatus Status = 1;
     string ConnId = 5;
     AccInfo AccInfo = 6;
+    repeated string ReconnectErrs = 7;
 }
 
 message RequestStreamMessage {
@@ -111,9 +91,7 @@ message RequestStreamMessage {
 }
 
 message SendResponseResponse {
-    bool Success = 1;
-    string Err = 2;
-    ErrorCode ErrCode = 3;
+    RtnStatus Status = 1;
     int32 NumStreamClients = 4;
 }
 
@@ -126,8 +104,7 @@ message StartStreamMessage {
 }
 
 message StartStreamResponse {
-    bool Success = 1;
-    string Err = 2;
+    RtnStatus Status = 1;
     string ReqId = 3;
 }
 
@@ -136,8 +113,7 @@ message ReflectZoneMessage {
 }
 
 message ReflectZoneResponse {
-    bool Success = 1;
-    string Err = 2;
+    RtnStatus Status = 1;
     string JsonData = 3;
 }
 
@@ -149,8 +125,7 @@ message CallDataHandlerMessage {
 }
 
 message CallDataHandlerResponse {
-    bool Success = 1;
-    string Err = 2;
+    RtnStatus Status = 1;
     string JsonData = 3;
 }
 
@@ -161,8 +136,7 @@ message BackendPushMessage {
 }
 
 message BackendPushResponse {
-    bool Success = 1;
-    string Err = 2;
+    RtnStatus Status = 1;
 }
 
 message OpenAppMessage {
@@ -171,9 +145,8 @@ message OpenAppMessage {
 }
 
 message OpenAppResponse {
-    bool Success = 1;
-    string Err = 2;
-    string AppConfigJson = 3;
+    RtnStatus Status = 1;
+    string AppConfigJson = 2;
 }
 
 message WriteAppMessage {
@@ -184,8 +157,7 @@ message WriteAppMessage {
 }
 
 message WriteAppResponse {
-    bool Success = 1;
-    string Err = 2;
+    RtnStatus Status = 1;
     map<string,string> OptionWarnings = 3;
 }
 
@@ -198,8 +170,7 @@ message SetBlobMessage {
 }
 
 message SetBlobResponse {
-    bool Success = 1;
-    string Err = 2;
+    RtnStatus Status = 1;
 }
 
 message RemoveAppMessage {
@@ -208,8 +179,7 @@ message RemoveAppMessage {
 }
 
 message RemoveAppResponse {
-    bool Success = 1;
-    string Err = 2;
+    RtnStatus Status = 1;
 }
 
 service DashborgService {
@@ -221,8 +191,6 @@ service DashborgService {
     rpc SendResponse(SendResponseMessage) returns (SendResponseResponse) {}
     rpc StartStream(StartStreamMessage) returns (StartStreamResponse) {}
     rpc BackendPush(BackendPushMessage) returns (BackendPushResponse) {}
-
-    rpc RegisterHandler(RegisterHandlerMessage) returns (RegisterHandlerResponse) {}
 
     rpc OpenApp(OpenAppMessage) returns (OpenAppResponse) {}
     rpc WriteApp(WriteAppMessage) returns (WriteAppResponse) {}

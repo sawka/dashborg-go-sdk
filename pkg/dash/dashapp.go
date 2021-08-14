@@ -99,6 +99,7 @@ type App struct {
 	AppConfig  AppConfig
 	appRuntime *appRuntimeImpl
 	Container  Container
+	isNewApp   bool
 
 	// liveUpdateMode  bool
 	// connectOnlyMode bool
@@ -203,6 +204,7 @@ func MakeApp(appName string, container Container) *App {
 			AppVersion: uuid.New().String(),
 			AppName:    appName,
 		},
+		isNewApp: true,
 	}
 	rtn.AppConfig.Options = make(map[string]GenericAppOption)
 	authOpt := defaultAuthOpt()
@@ -217,6 +219,10 @@ func (app *App) SetOfflineMode(allow bool) {
 	} else {
 		delete(app.AppConfig.Options, OptionOfflineMode)
 	}
+}
+
+func (app *App) IsNew() bool {
+	return app.isNewApp
 }
 
 // func (app *App) SetConnectOnly(connectOnly bool) {
