@@ -35,6 +35,9 @@ const (
 var cmdRegexp *regexp.Regexp = regexp.MustCompile("^.*/")
 
 func (c *Config) setDefaults() {
+	if c.Logger == nil {
+		c.Logger = log.New(os.Stderr, "", log.Ldate|log.Ltime|log.Lmsgprefix)
+	}
 	c.AccId = dashutil.DefaultString(c.AccId, os.Getenv("DASHBORG_ACCID"))
 	c.ZoneName = dashutil.DefaultString(c.ZoneName, os.Getenv("DASHBORG_ZONE"), DefaultZoneName)
 	c.Env = dashutil.DefaultString(c.Env, os.Getenv("DASHBORG_ENV"), "prod")
@@ -53,7 +56,7 @@ func (c *Config) setDefaults() {
 			var err error
 			c.DashborgSrvPort, err = strconv.Atoi(os.Getenv("DASHBORG_PROCPORT"))
 			if err != nil {
-				log.Printf("Invalid DASHBORG_PROCPORT environment variable: %v\n", err)
+				c.log("Invalid DASHBORG_PROCPORT environment variable: %v\n", err)
 			}
 		}
 		if c.DashborgSrvPort == 0 {
@@ -98,7 +101,7 @@ func (c *Config) loadKeys() {
 	if c.AccId != "" && certInfo.AccId != c.AccId {
 		panic(fmt.Sprintf("Dashborg AccId read from certificate:%s does not match AccId in config:%s", certInfo.AccId, c.AccId))
 	}
-	log.Printf("DashborgCloudClient KeyFile:%s CertFile:%s AccId:%s SHA-256:%s\n", c.KeyFileName, c.CertFileName, c.AccId, certInfo.Pk256)
+	c.log("DashborgCloudClient KeyFile:%s CertFile:%s AccId:%s SHA-256:%s\n", c.KeyFileName, c.CertFileName, c.AccId, certInfo.Pk256)
 	c.AccId = certInfo.AccId
 }
 
@@ -121,7 +124,7 @@ func (c *Config) maybeMakeKeys(accId string) error {
 	if err != nil {
 		return fmt.Errorf("Cannot create keypair err:%v", err)
 	}
-	log.Printf("Dashborg created new self-signed keypair %s / %s for new AccId:%s\n", c.KeyFileName, c.CertFileName, accId)
+	c.log("Dashborg created new self-signed keypair %s / %s for new AccId:%s\n", c.KeyFileName, c.CertFileName, accId)
 	return nil
 }
 
@@ -207,4 +210,12 @@ func (c *Config) MustMakeAccountJWT(validFor time.Duration, id string, role stri
 		panic(err)
 	}
 	return rtn
+}
+
+func (c *Config) log(fmtStr string, args ...interface{}) {
+	if c.Logger != nil {
+		c.Logger.Printf(fmtStr, args...)
+	} else {
+		log.Printf(fmtStr, args...)
+	}
 }

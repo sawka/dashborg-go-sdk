@@ -7,6 +7,7 @@ import (
 
 const (
 	ZoneNameMax      = 20
+	ZoneAccessMax    = 50
 	ControlNameMax   = 30
 	PanelNameMax     = 20
 	ProcNameMax      = 20
@@ -49,6 +50,7 @@ var (
 	blobKeyRe        = regexp.MustCompile("^[0-9a-zA-Z/_.-]+$")
 	simpleIdRe       = regexp.MustCompile("^[a-zA-Z][a-zA-Z0-9_-]*")
 	clientVersionRe  = regexp.MustCompile("^([a-z][a-z0-9_]*)-(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,4})$")
+	zoneAccessRe     = regexp.MustCompile("^[a-zA-Z0-9_.*-]+$")
 
 	// https://www.w3.org/TR/2016/REC-html51-20161101/sec-forms.html#email-state-typeemali
 	emailRe = regexp.MustCompile("^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
@@ -64,6 +66,13 @@ func IsZoneNameValid(zoneName string) bool {
 		return false
 	}
 	return zoneNameRe.MatchString(zoneName)
+}
+
+func IsZoneAccessValid(zoneAccess string) bool {
+	if len(zoneAccess) > ZoneAccessMax {
+		return false
+	}
+	return zoneAccessRe.MatchString(zoneAccess)
 }
 
 func IsPanelNameValid(panelName string) bool {

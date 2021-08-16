@@ -130,11 +130,11 @@ func (pc *DashCloudClient) startClient() error {
 		pc.Config.DashborgSrvHost = grpcConfig.GrpcServer
 		pc.Config.DashborgSrvPort = grpcConfig.GrpcPort
 		if pc.Config.Verbose {
-			log.Printf("Dashborg Using gRPC host %s:%d\n", pc.Config.DashborgSrvHost, pc.Config.DashborgSrvPort)
+			pc.log("Dashborg Using gRPC host %s:%d\n", pc.Config.DashborgSrvHost, pc.Config.DashborgSrvPort)
 		}
 	}
 	if pc.Config.Verbose {
-		log.Printf("Dashborg Initialized CloudClient AccId:%s Zone:%s ProcName:%s ProcRunId:%s\n", pc.Config.AccId, pc.Config.ZoneName, pc.Config.ProcName, pc.ProcRunId)
+		pc.log("Dashborg Initialized CloudClient AccId:%s Zone:%s ProcName:%s ProcRunId:%s\n", pc.Config.AccId, pc.Config.ZoneName, pc.Config.ProcName, pc.ProcRunId)
 	}
 	err = pc.sendConnectClientMessage(false)
 	if err != nil && !dasherr.CanRetry(err) {
@@ -200,7 +200,7 @@ func (pc *DashCloudClient) sendConnectClientMessage(isReconnect bool) error {
 	dashErr := pc.handleStatusErrors("ConnectClient", resp, respErr, true)
 	if resp != nil && len(resp.ReconnectErrs) > 0 {
 		for _, recErr := range resp.ReconnectErrs {
-			log.Printf("%s\n", recErr)
+			pc.log("%s\n", recErr)
 		}
 	}
 	if dashErr != nil {
@@ -223,27 +223,27 @@ func (pc *DashCloudClient) sendConnectClientMessage(isReconnect bool) error {
 			pc.printAnonAccMessage()
 		}
 		if pc.Config.Verbose {
-			log.Printf("DashborgCloudClient Connected, AccId:%s Zone:%s ConnId:%s AccType:%v\n", pc.Config.AccId, pc.Config.ZoneName, resp.ConnId, resp.AccInfo.AccType)
+			pc.log("DashborgCloudClient Connected, AccId:%s Zone:%s ConnId:%s AccType:%v\n", pc.Config.AccId, pc.Config.ZoneName, resp.ConnId, resp.AccInfo.AccType)
 		} else {
-			log.Printf("DashborgCloudClient Connected, AccId:%s Zone:%s\n", pc.Config.AccId, pc.Config.ZoneName)
+			pc.log("DashborgCloudClient Connected, AccId:%s Zone:%s\n", pc.Config.AccId, pc.Config.ZoneName)
 		}
 	} else {
 		if pc.Config.Verbose {
-			log.Printf("DashborgCloudClient ReConnected, AccId:%s Zone:%s ConnId:%s\n", pc.Config.AccId, pc.Config.ZoneName, resp.ConnId)
+			pc.log("DashborgCloudClient ReConnected, AccId:%s Zone:%s ConnId:%s\n", pc.Config.AccId, pc.Config.ZoneName, resp.ConnId)
 		}
 	}
 	return nil
 }
 
 func (pc *DashCloudClient) printNewAccMessage() {
-	log.Printf("Welcome to Dashborg!  Your new account has been provisioned.  AccId:%s\n", pc.Config.AccId)
-	log.Printf("You are currently using a free version of the Dashborg Service.\n")
-	log.Printf("Your use of this service is subject to the Dashborg Terms of Service - https://www.dashborg.net/static/tos.html\n")
+	pc.log("Welcome to Dashborg!  Your new account has been provisioned.  AccId:%s\n", pc.Config.AccId)
+	pc.log("You are currently using a free version of the Dashborg Service.\n")
+	pc.log("Your use of this service is subject to the Dashborg Terms of Service - https://www.dashborg.net/static/tos.html\n")
 }
 
 func (pc *DashCloudClient) printAnonAccMessage() {
-	log.Printf("You are currently using a free version of the Dashborg Service.\n")
-	log.Printf("Your use of this service is subject to the Dashborg Terms of Service - https://www.dashborg.net/static/tos.html\n")
+	pc.log("You are currently using a free version of the Dashborg Service.\n")
+	pc.log("Your use of this service is subject to the Dashborg Terms of Service - https://www.dashborg.net/static/tos.html\n")
 }
 
 func (pc *DashCloudClient) handleStatusErrors(fnName string, resp interface{}, respErr error, forceLog bool) error {
@@ -259,10 +259,10 @@ func (pc *DashCloudClient) handleStatusErrors(fnName string, resp interface{}, r
 		return nil
 	}
 	if forceLog || pc.Config.Verbose {
-		log.Printf("DashborgCloudClient %v\n", rtnErr)
+		pc.log("DashborgCloudClient %v\n", rtnErr)
 	}
 	if pc.AccInfo != nil {
-		explainLimit(pc.AccInfo.AccType, rtnErr.Error())
+		pc.explainLimit(pc.AccInfo.AccType, rtnErr.Error())
 	}
 	return rtnErr
 }
@@ -312,13 +312,13 @@ func (pc *DashCloudClient) showAppLink(appName string) {
 		return
 	}
 	if pc.Config.NoShowJWT || !accInfo.AccJWTEnabled {
-		log.Printf("DashborgCloudClient App Link [%s]: %s\n", appName, pc.appLink(appName))
+		pc.log("DashborgCloudClient App Link [%s]: %s\n", appName, pc.appLink(appName))
 	} else {
 		appLink, err := pc.MakeJWTAppLink(appName, pc.Config.JWTDuration, pc.Config.JWTUserId, pc.Config.JWTRole)
 		if err != nil {
-			log.Printf("DashborgCloudClient App Link [%s] Error: %v\n", appName, err)
+			pc.log("DashborgCloudClient App Link [%s] Error: %v\n", appName, err)
 		} else {
-			log.Printf("DashborgCloudClient App Link [%s]: %s\n", appName, appLink)
+			pc.log("DashborgCloudClient App Link [%s]: %s\n", appName, appLink)
 		}
 	}
 }
@@ -331,7 +331,7 @@ func (pc *DashCloudClient) ConnectApp(app dash.AppRuntime) error {
 	appConfig := app.GetAppConfig()
 	dashErr := pc.baseWriteApp(app.GetAppName(), true, &appConfig, fmt.Sprintf("ConnectApp(%s)", app.GetAppName()))
 	if dashErr != nil && !dasherr.CanRetry(dashErr) {
-		log.Printf("DashborgCloudClient %v\n", dashErr)
+		pc.log("DashborgCloudClient %v\n", dashErr)
 		return dashErr
 	}
 	clientConfig := dash.AppClientConfig{
@@ -343,7 +343,7 @@ func (pc *DashCloudClient) ConnectApp(app dash.AppRuntime) error {
 	pc.Lock.Unlock()
 	pc.showAppLink(appName)
 	if dashErr != nil {
-		log.Printf("DashborgCloudClient %v\n", dashErr)
+		pc.log("DashborgCloudClient %v\n", dashErr)
 		return dashErr
 	}
 	return nil
@@ -362,7 +362,7 @@ func (pc *DashCloudClient) RemoveApp(appName string) error {
 	if dashErr != nil {
 		return dashErr
 	}
-	log.Printf("DashborgCloudClient removed app %s\n", appName)
+	pc.log("DashborgCloudClient removed app %s\n", appName)
 	return nil
 }
 
@@ -373,7 +373,7 @@ func (pc *DashCloudClient) ConnectAppRuntime(app dash.AppRuntime) error {
 	appName := app.GetAppName()
 	dashErr := pc.baseWriteApp(appName, true, nil, fmt.Sprintf("ConnectAppRuntime(%s)", appName))
 	if dashErr != nil && !dasherr.CanRetry(dashErr) {
-		log.Printf("DashborgCloudClient %v\n", dashErr)
+		pc.log("DashborgCloudClient %v\n", dashErr)
 		return dashErr
 	}
 	clientConfig := dash.AppClientConfig{
@@ -385,7 +385,7 @@ func (pc *DashCloudClient) ConnectAppRuntime(app dash.AppRuntime) error {
 	pc.Lock.Unlock()
 	pc.showAppLink(appName)
 	if dashErr != nil {
-		log.Printf("DashborgCloudClient %v\n", dashErr)
+		pc.log("DashborgCloudClient %v\n", dashErr)
 		return dashErr
 	}
 	return nil
@@ -398,7 +398,7 @@ func (pc *DashCloudClient) runRequestStreamLoop() {
 	for {
 		state := pc.Conn.GetState()
 		if state == connectivity.Shutdown {
-			log.Printf("DashborgCloudClient RunRequestStreamLoop exiting - Conn Shutdown\n")
+			pc.log("DashborgCloudClient RunRequestStreamLoop exiting - Conn Shutdown\n")
 			pc.setExitError(fmt.Errorf("gRPC Connection Shutdown"))
 			break
 		}
@@ -414,7 +414,7 @@ func (pc *DashCloudClient) runRequestStreamLoop() {
 		if pc.ConnId.Load().(string) == "" {
 			err := pc.sendConnectClientMessage(true)
 			if err != nil && !dasherr.CanRetry(err) {
-				log.Printf("DashborgCloudClient RunRequestStreamLoop exiting - Permanent Error: %v\n", err)
+				pc.log("DashborgCloudClient RunRequestStreamLoop exiting - Permanent Error: %v\n", err)
 				pc.setExitError(err)
 				break
 			}
@@ -455,7 +455,7 @@ func (pc *DashCloudClient) runRequestStream() (bool, dasherr.ErrCode) {
 	pc.logV("Dashborg gRPC RequestStream starting\n")
 	reqStreamClient, err := pc.DBService.RequestStream(pc.ctxWithMd(), m)
 	if err != nil {
-		log.Printf("Dashborg Error setting up gRPC RequestStream: %v\n", err)
+		pc.log("Dashborg Error setting up gRPC RequestStream: %v\n", err)
 		return false, dasherr.ErrCodeRpc
 	}
 	startTime := time.Now()
@@ -504,12 +504,6 @@ func (pc *DashCloudClient) runRequestStream() (bool, dasherr.ErrCode) {
 	}
 	elapsed := time.Since(startTime)
 	return (elapsed >= 5*time.Second), endingErrCode
-}
-
-func (pc *DashCloudClient) logV(fmtStr string, args ...interface{}) {
-	if pc.Config.Verbose {
-		log.Printf(fmtStr, args...)
-	}
 }
 
 func (pc *DashCloudClient) BackendPush(panelName string, path string, data interface{}) error {
@@ -649,7 +643,7 @@ func (pc *DashCloudClient) baseWriteApp(appName string, shouldConnect bool, acfg
 		return dashErr
 	}
 	for name, warning := range resp.OptionWarnings {
-		log.Printf("%s WARNING option[%s]: %s\n", writeAppFnStr, name, warning)
+		pc.log("%s WARNING option[%s]: %s\n", writeAppFnStr, name, warning)
 	}
 	return nil
 }
@@ -658,7 +652,7 @@ func (pc *DashCloudClient) WriteApp(acfg dash.AppConfig) error {
 	dashErr := pc.baseWriteApp(acfg.AppName, false, &acfg, fmt.Sprintf("WriteApp(%s)", acfg.AppName))
 	pc.showAppLink(acfg.AppName)
 	if dashErr != nil {
-		log.Printf("DashborgCloudClient %v\n", dashErr)
+		pc.log("DashborgCloudClient %v\n", dashErr)
 		return dashErr
 	}
 	return nil
@@ -678,7 +672,7 @@ func (pc *DashCloudClient) SetBlobData(acfg dash.AppConfig, blob dash.BlobData, 
 	}
 	if float64(len(barr)) > pc.AccInfo.BlobSizeLimitMB*mbConst {
 		err = dasherr.LimitErr("Cannot upload BLOB", "AppBlobs.MaxSizeMB", pc.AccInfo.BlobSizeLimitMB)
-		explainLimit(pc.AccInfo.AccType, err.Error())
+		pc.explainLimit(pc.AccInfo.AccType, err.Error())
 		return err
 	}
 	m := &dashproto.SetBlobMessage{
@@ -820,4 +814,18 @@ func (pc *DashCloudClient) SendResponseProtoRpc(m *dashproto.SendResponseMessage
 		return 0, dashErr
 	}
 	return int(resp.NumStreamClients), nil
+}
+
+func (pc *DashCloudClient) logV(fmtStr string, args ...interface{}) {
+	if pc.Config.Verbose {
+		pc.log(fmtStr, args...)
+	}
+}
+
+func (pc *DashCloudClient) log(fmtStr string, args ...interface{}) {
+	if pc.Config.Logger != nil {
+		pc.Config.Logger.Printf(fmtStr, args...)
+	} else {
+		log.Printf(fmtStr, args...)
+	}
 }

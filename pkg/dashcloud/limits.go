@@ -1,7 +1,6 @@
 package dashcloud
 
 import (
-	"log"
 	"regexp"
 	"strings"
 
@@ -38,7 +37,7 @@ func init() {
 
 }
 
-func explainLimit(accType string, errMsg string) {
+func (pc *DashCloudClient) explainLimit(accType string, errMsg string) {
 	if accType != dash.AccTypeAnon && accType != dash.AccTypeFree {
 		return
 	}
@@ -52,6 +51,6 @@ func explainLimit(accType string, errMsg string) {
 	limitName := match[1]
 	explanation := limitExplanations[limitKey{accType, limitName, ""}]
 	if explanation != "" {
-		log.Printf("%s\n", explanation)
+		pc.log("%s\n", explanation)
 	}
 }

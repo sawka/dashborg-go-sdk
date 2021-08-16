@@ -1,6 +1,7 @@
 package dashcloud
 
 import (
+	"log"
 	"time"
 )
 
@@ -50,6 +51,8 @@ type Config struct {
 	JWTDuration time.Duration // defaults to 24*time.Hour
 	JWTUserId   string        // defaults to "jwt-user"
 	JWTRole     string        // defaults to "user"
+
+	Logger *log.Logger // use to override the SDK's logger object
 }
 
 func MakeClient(config *Config) (*DashCloudClient, error) {
