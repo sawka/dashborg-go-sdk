@@ -30,6 +30,7 @@ import (
 )
 
 const grpcServerPath = "/grpc-server"
+const mbConst = 1000000
 
 const (
 	mdConnIdKey        = "dashborg-connid"
@@ -675,8 +676,10 @@ func (pc *DashCloudClient) SetBlobData(acfg dash.AppConfig, blob dash.BlobData, 
 	if err != nil {
 		return err
 	}
-	if len(barr) > 5000000 {
-		return fmt.Errorf("Max Blob size is 5M")
+	if float64(len(barr)) > pc.AccInfo.BlobSizeLimitMB*mbConst {
+		err = dasherr.LimitErr("Cannot upload BLOB", "AppBlobs.MaxSizeMB", pc.AccInfo.BlobSizeLimitMB)
+		explainLimit(pc.AccInfo.AccType, err.Error())
+		return err
 	}
 	m := &dashproto.SetBlobMessage{
 		Ts:           dashutil.Ts(),

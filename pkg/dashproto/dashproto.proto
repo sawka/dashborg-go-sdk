@@ -77,6 +77,7 @@ message AccInfo {
     string AccCName = 3;
     bool AccJWTEnabled = 4;
     bool NewAccount = 5;
+    double BlobSizeLimitMB = 6;
 }
 
 message ConnectClientResponse {
