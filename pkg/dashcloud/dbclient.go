@@ -32,6 +32,11 @@ import (
 const grpcServerPath = "/grpc-server"
 const mbConst = 1000000
 
+const stdGrpcTimeout = 10 * time.Second
+const streamGrpcTimeout = 0
+
+const maxBlobBytes = 5000000
+
 const (
 	mdConnIdKey        = "dashborg-connid"
 	mdClientVersionKey = "dashborg-clientversion"
@@ -145,12 +150,18 @@ func (pc *DashCloudClient) startClient() error {
 	return nil
 }
 
-func (pc *DashCloudClient) ctxWithMd() context.Context {
-	ctx := context.Background()
+func (pc *DashCloudClient) ctxWithMd(timeout time.Duration) (context.Context, context.CancelFunc) {
+	var ctx context.Context
+	var cancelFn context.CancelFunc
+	if timeout == 0 {
+		ctx = context.Background()
+		cancelFn = func() {}
+	} else {
+		ctx, cancelFn = context.WithTimeout(context.Background(), timeout)
+	}
 	connId := pc.ConnId.Load().(string)
 	ctx = metadata.AppendToOutgoingContext(ctx, mdConnIdKey, connId, mdClientVersionKey, dash.ClientVersion)
-
-	return ctx
+	return ctx, cancelFn
 }
 
 func (pc *DashCloudClient) externalShutdown() {
@@ -196,7 +207,9 @@ func (pc *DashCloudClient) sendConnectClientMessage(isReconnect bool) error {
 		StartTs:              dashutil.DashTime(pc.StartTime),
 		ReconnectAppRuntimes: reconApps,
 	}
-	resp, respErr := pc.DBService.ConnectClient(pc.ctxWithMd(), m)
+	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
+	defer cancelFn()
+	resp, respErr := pc.DBService.ConnectClient(ctx, m)
 	dashErr := pc.handleStatusErrors("ConnectClient", resp, respErr, true)
 	if resp != nil && len(resp.ReconnectErrs) > 0 {
 		for _, recErr := range resp.ReconnectErrs {
@@ -357,7 +370,9 @@ func (pc *DashCloudClient) RemoveApp(appName string) error {
 		Ts:      dashutil.Ts(),
 		AppName: appName,
 	}
-	resp, respErr := pc.DBService.RemoveApp(pc.ctxWithMd(), m)
+	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
+	defer cancelFn()
+	resp, respErr := pc.DBService.RemoveApp(ctx, m)
 	dashErr := pc.handleStatusErrors("RemoveApp", resp, respErr, true)
 	if dashErr != nil {
 		return dashErr
@@ -444,7 +459,9 @@ func (pc *DashCloudClient) sendNoAppResponse(reqMsg *dashproto.RequestMessage) {
 		ResponseDone: true,
 		Err:          "No App Found",
 	}
-	_, err := pc.DBService.SendResponse(pc.ctxWithMd(), m)
+	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
+	defer cancelFn()
+	_, err := pc.DBService.SendResponse(ctx, m)
 	if err != nil {
 		pc.logV("Error sending No App Response: %v\n", err)
 	}
@@ -453,7 +470,9 @@ func (pc *DashCloudClient) sendNoAppResponse(reqMsg *dashproto.RequestMessage) {
 func (pc *DashCloudClient) runRequestStream() (bool, dasherr.ErrCode) {
 	m := &dashproto.RequestStreamMessage{Ts: dashutil.Ts()}
 	pc.logV("Dashborg gRPC RequestStream starting\n")
-	reqStreamClient, err := pc.DBService.RequestStream(pc.ctxWithMd(), m)
+	ctx, cancelFn := pc.ctxWithMd(streamGrpcTimeout)
+	defer cancelFn()
+	reqStreamClient, err := pc.DBService.RequestStream(ctx, m)
 	if err != nil {
 		pc.log("Dashborg Error setting up gRPC RequestStream: %v\n", err)
 		return false, dasherr.ErrCodeRpc
@@ -515,7 +534,9 @@ func (pc *DashCloudClient) BackendPush(panelName string, path string, data inter
 		PanelName: panelName,
 		Path:      path,
 	}
-	resp, respErr := pc.DBService.BackendPush(pc.ctxWithMd(), m)
+	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
+	defer cancelFn()
+	resp, respErr := pc.DBService.BackendPush(ctx, m)
 	dashErr := pc.handleStatusErrors("BackendPush", resp, respErr, false)
 	if dashErr != nil {
 		return dashErr
@@ -528,7 +549,9 @@ func (pc *DashCloudClient) ReflectZone() (*ReflectZoneType, error) {
 		return nil, NotConnectedErr
 	}
 	m := &dashproto.ReflectZoneMessage{Ts: dashutil.Ts()}
-	resp, respErr := pc.DBService.ReflectZone(pc.ctxWithMd(), m)
+	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
+	defer cancelFn()
+	resp, respErr := pc.DBService.ReflectZone(ctx, m)
 	dashErr := pc.handleStatusErrors("ReflectZone", resp, respErr, false)
 	if dashErr != nil {
 		return nil, dashErr
@@ -555,7 +578,9 @@ func (pc *DashCloudClient) CallDataHandler(panelName string, path string, data i
 		Path:      path,
 		JsonData:  jsonData,
 	}
-	resp, respErr := pc.DBService.CallDataHandler(pc.ctxWithMd(), m)
+	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
+	defer cancelFn()
+	resp, respErr := pc.DBService.CallDataHandler(ctx, m)
 	dashErr := pc.handleStatusErrors("CallDataHandler", resp, respErr, false)
 	if dashErr != nil {
 		return nil, dashErr
@@ -603,7 +628,9 @@ func (pc *DashCloudClient) OpenApp(appName string) (*dash.App, error) {
 		Ts:      dashutil.Ts(),
 		AppName: appName,
 	}
-	resp, respErr := pc.DBService.OpenApp(pc.ctxWithMd(), m)
+	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
+	defer cancelFn()
+	resp, respErr := pc.DBService.OpenApp(ctx, m)
 	dashErr := pc.handleStatusErrors("OpenApp", resp, respErr, true)
 	if dashErr != nil {
 		return nil, dashErr
@@ -637,7 +664,9 @@ func (pc *DashCloudClient) baseWriteApp(appName string, shouldConnect bool, acfg
 		AppConfigJson: jsonVal,
 		ConnectApp:    shouldConnect,
 	}
-	resp, respErr := pc.DBService.WriteApp(pc.ctxWithMd(), m)
+	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
+	defer cancelFn()
+	resp, respErr := pc.DBService.WriteApp(ctx, m)
 	dashErr := pc.handleStatusErrors(writeAppFnStr, resp, respErr, false)
 	if dashErr != nil {
 		return dashErr
@@ -658,44 +687,125 @@ func (pc *DashCloudClient) WriteApp(acfg dash.AppConfig) error {
 	return nil
 }
 
-func (pc *DashCloudClient) SetBlobData(acfg dash.AppConfig, blob dash.BlobData, r io.Reader) error {
+// blobData must have BlobKey, MimeType, Size, and Sha256 set.
+// It is possible to pass a nil io.Reader.  The call will succeed if there is already a blob with the
+// same SHA-256 (it will linked to this app).  If a matching blob is not found, SetBlobData will return
+// an error when trying to read from the nil Reader.
+func (pc *DashCloudClient) SetBlobData(acfg dash.AppConfig, blobData dash.BlobData, r io.Reader) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
-	blobJson, err := dashutil.MarshalJson(blob)
-	if err != nil {
-		return err
+	if !dashutil.IsSha256Base64HashValid(blobData.Sha256) {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid SHA-256 hash value passed to SetBlobData, must be a base64 encoded SHA-256 hash (44 characters), see dashutil.Sha256Base64()"))
 	}
-	barr, err := ioutil.ReadAll(r)
-	if err != nil {
-		return err
+	if !dashutil.IsMimeTypeValid(blobData.MimeType) {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid MimeType passed to SetBlobData"))
 	}
-	if float64(len(barr)) > pc.AccInfo.BlobSizeLimitMB*mbConst {
-		err = dasherr.LimitErr("Cannot upload BLOB", "AppBlobs.MaxSizeMB", pc.AccInfo.BlobSizeLimitMB)
+	if blobData.Size <= 0 {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid Size passed to SetBlobData (cannot be 0)"))
+	}
+	if !dashutil.IsBlobKeyValid(blobData.BlobKey) {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid BlobKey passed to SetBlobData"))
+	}
+	if float64(blobData.Size) > pc.AccInfo.BlobSizeLimitMB*mbConst {
+		err := dasherr.LimitErr("Cannot upload BLOB", "AppBlobs.MaxSizeMB", pc.AccInfo.BlobSizeLimitMB)
 		pc.explainLimit(pc.AccInfo.AccType, err.Error())
 		return err
 	}
+	blobJson, err := dashutil.MarshalJson(blobData)
+	if err != nil {
+		return err
+	}
+	ctx, cancelFn := pc.ctxWithMd(streamGrpcTimeout)
+	defer cancelFn()
+	bclient, err := pc.DBService.SetBlob(ctx)
+	if err != nil {
+		return err
+	}
+	defer pc.drainBlobStream(bclient)
+
 	m := &dashproto.SetBlobMessage{
 		Ts:           dashutil.Ts(),
 		AppName:      acfg.AppName,
 		AppVersion:   acfg.AppVersion,
 		BlobDataJson: blobJson,
-		BlobBytes:    barr,
-	}
-	bclient, err := pc.DBService.SetBlob(pc.ctxWithMd())
-	if err != nil {
-		return err
 	}
 	err = bclient.Send(m)
 	if err != nil {
 		return err
 	}
-	resp, respErr := bclient.CloseAndRecv()
-	dashErr := pc.handleStatusErrors("SetBlobData", resp, respErr, false)
+	metaResp, respErr := bclient.Recv()
+	dashErr := pc.handleStatusErrors("SetBlob", metaResp, respErr, true)
 	if dashErr != nil {
 		return dashErr
 	}
-	blob.Size = int64(len(barr))
+	if metaResp.BlobFound {
+		return nil
+	}
+	maxBytes := maxBlobBytes
+	if int64(maxBytes) > blobData.Size {
+		maxBytes = int(blobData.Size)
+	}
+	readBuf := make([]byte, maxBytes)
+	var lastErr error
+	var totalRead int64
+	for {
+		if r == nil {
+			lastErr = dasherr.ValidateErr(fmt.Errorf("Nil Reader passed to SetBlobData"))
+		}
+		bytesRead, readErr := io.ReadFull(r, readBuf)
+		if bytesRead == 0 && readErr == io.EOF {
+			break
+		}
+		if readErr != nil && readErr != io.ErrUnexpectedEOF {
+			lastErr = readErr
+			break
+		}
+		totalRead += int64(bytesRead)
+		if totalRead > blobData.Size {
+			break
+		}
+		m := &dashproto.SetBlobMessage{
+			Ts:           dashutil.Ts(),
+			BlobBytesKey: metaResp.BlobBytesKey,
+			BlobBytes:    readBuf[0:bytesRead],
+		}
+		clientErr := bclient.Send(m)
+		if clientErr != nil {
+			return clientErr
+		}
+		if readErr == io.ErrUnexpectedEOF {
+			break
+		}
+	}
+	if lastErr != nil || totalRead != blobData.Size {
+		m := &dashproto.SetBlobMessage{
+			Ts:        dashutil.Ts(),
+			ClientErr: true,
+		}
+		err := bclient.Send(m)
+		if err != nil {
+			return err
+		}
+	}
+	if lastErr != nil {
+		return lastErr
+	}
+	if totalRead > blobData.Size {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid BlobData.Size, does not match io.Reader.  Reader has more bytes."))
+	}
+	if totalRead < blobData.Size {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid BlobData.Size, does not match io.Reader.  Reader has less bytes. (%d vs %d)", blobData.Size, totalRead))
+	}
+	err = bclient.CloseSend()
+	if err != nil {
+		return err
+	}
+	resp, respErr := bclient.Recv()
+	dashErr = pc.handleStatusErrors("SetBlobData", resp, respErr, false)
+	if dashErr != nil {
+		return dashErr
+	}
 	return nil
 }
 
@@ -791,7 +901,9 @@ func (pc *DashCloudClient) StartStreamProtoRpc(m *dashproto.StartStreamMessage) 
 	if !pc.IsConnected() {
 		return "", NotConnectedErr
 	}
-	resp, respErr := pc.DBService.StartStream(pc.ctxWithMd(), m)
+	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
+	defer cancelFn()
+	resp, respErr := pc.DBService.StartStream(ctx, m)
 	dashErr := pc.handleStatusErrors("StartStream", resp, respErr, false)
 	if dashErr != nil {
 		pc.logV("DashborgCloudClient %v\n", dashErr)
@@ -808,7 +920,9 @@ func (pc *DashCloudClient) SendResponseProtoRpc(m *dashproto.SendResponseMessage
 	if !pc.IsConnected() {
 		return 0, NotConnectedErr
 	}
-	resp, respErr := pc.DBService.SendResponse(pc.ctxWithMd(), m)
+	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
+	defer cancelFn()
+	resp, respErr := pc.DBService.SendResponse(ctx, m)
 	dashErr := pc.handleStatusErrors("SendResponse", resp, respErr, false)
 	if dashErr != nil {
 		return 0, dashErr
@@ -827,5 +941,22 @@ func (pc *DashCloudClient) log(fmtStr string, args ...interface{}) {
 		pc.Config.Logger.Printf(fmtStr, args...)
 	} else {
 		log.Printf(fmtStr, args...)
+	}
+}
+
+func (pc *DashCloudClient) drainBlobStream(bclient dashproto.DashborgService_SetBlobClient) {
+	bclient.CloseSend()
+	for {
+		_, err := bclient.Recv()
+		if err == nil {
+			continue
+		}
+		if err == io.EOF {
+			return
+		}
+		if err != nil {
+			pc.logV("drainBlobStream error: %v\n", err)
+			return
+		}
 	}
 }

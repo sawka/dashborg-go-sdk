@@ -167,11 +167,15 @@ message SetBlobMessage {
     string AppName = 2;
     string AppVersion = 3;
     string BlobDataJson = 4;
-    bytes BlobBytes = 5;
+    string BlobBytesKey = 5;
+    bytes BlobBytes = 6;
+    bool ClientErr = 7;
 }
 
 message SetBlobResponse {
     RtnStatus Status = 1;
+    bool BlobFound = 2;
+    string BlobBytesKey = 3;
 }
 
 message RemoveAppMessage {
@@ -195,7 +199,7 @@ service DashborgService {
 
     rpc OpenApp(OpenAppMessage) returns (OpenAppResponse) {}
     rpc WriteApp(WriteAppMessage) returns (WriteAppResponse) {}
-    rpc SetBlob(stream SetBlobMessage) returns (SetBlobResponse) {}
+    rpc SetBlob(stream SetBlobMessage) returns (stream SetBlobResponse) {}
     rpc RemoveApp(RemoveAppMessage) returns (RemoveAppResponse) {}
 }
 

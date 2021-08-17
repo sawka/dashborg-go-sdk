@@ -1,6 +1,9 @@
 package dash
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -69,6 +72,7 @@ type BlobData struct {
 	BlobKey  string      `json:"blobkey"`
 	MimeType string      `json:"mimetype"`
 	Size     int64       `json:"size"`
+	Sha256   string      `json:"sha256"`
 	UpdateTs int64       `json:"updatets"`
 	Metadata interface{} `json:"metadata"`
 	Removed  bool        `json:"removed"`
@@ -103,14 +107,6 @@ type App struct {
 
 	// liveUpdateMode  bool
 	// connectOnlyMode bool
-}
-
-type BlobManager interface {
-	// BlobBucket() string
-	SetBlobData(key string, mimeType string, reader io.Reader, metadata interface{}) error
-	SetBlobDataFromFile(key string, mimeType string, fileName string, metadata interface{}) error
-	// ClearBlob(key string)
-	// ListBlobs() map[string]BlobData
 }
 
 type valueType interface {
@@ -409,19 +405,62 @@ func (app *App) GetAppName() string {
 	return app.AppConfig.AppName
 }
 
-func (app *App) SetBlobData(key string, mimeType string, reader io.Reader, metadata interface{}) error {
-	blob := BlobData{
-		BlobKey:  key,
-		MimeType: mimeType,
-		UpdateTs: dashutil.Ts(),
-		Metadata: metadata,
-	}
-	err := app.Container.SetBlobData(app.AppConfig, blob, reader)
+// SetRawBlobData blobData must have BlobKey, MimeType, Size, and Sha256 set.
+// Clients will normally call SetBlobDataFromFile, or construct a BlobData
+// from calling BlobDataFromReadSeeker or BlobDataFromReader rather than
+// creating a BlobData directly.
+func (app *App) SetRawBlobData(blobData BlobData, reader io.Reader) error {
+	err := app.Container.SetBlobData(app.AppConfig, blobData, reader)
 	if err != nil {
-		log.Printf("Dashborg error setting blob data app:%s blobkey:%s err:%v\n", app.AppConfig.AppName, key, err)
+		log.Printf("Dashborg error setting blob data app:%s blobkey:%s err:%v\n", app.AppConfig.AppName, blobData.BlobKey, err)
 		return err
 	}
 	return nil
+}
+
+// Will call Seek(0, 0) on the reader twice, once at the beginning and once at the end.
+// If an error is returned, the seek position is not specified.  If no error is returned
+// the reader will be reset to the beginning.
+// A []byte can be wrapped in a bytes.Buffer to use this function (error will always be nil)
+func BlobDataFromReadSeeker(key string, mimeType string, r io.ReadSeeker) (BlobData, error) {
+	_, err := r.Seek(0, 0)
+	if err != nil {
+		return BlobData{}, nil
+	}
+	h := sha256.New()
+	numCopyBytes, err := io.Copy(h, r)
+	if err != nil {
+		return BlobData{}, err
+	}
+	hashVal := h.Sum(nil)
+	hashValStr := base64.StdEncoding.EncodeToString(hashVal[:])
+	_, err = r.Seek(0, 0)
+	if err != nil {
+		return BlobData{}, err
+	}
+	blobData := BlobData{
+		BlobKey:  key,
+		MimeType: mimeType,
+		Sha256:   hashValStr,
+		Size:     numCopyBytes,
+	}
+	return blobData, nil
+}
+
+// If you only have an io.Reader, this function will call ioutil.ReadAll, read the full stream
+// into a []byte, compute the size and SHA-256, and then wrap the []byte in a *bytes.Reader
+// suitable to pass to SetRawBlobData()
+func BlobDataFromReader(key string, mimeType string, r io.Reader) (BlobData, *bytes.Reader, error) {
+	barr, err := ioutil.ReadAll(r)
+	if err != nil {
+		return BlobData{}, nil, err
+	}
+	breader := bytes.NewReader(barr)
+	blobData, err := BlobDataFromReadSeeker(key, mimeType, breader)
+	if err != nil {
+		return BlobData{}, nil, err
+	}
+	return blobData, breader, nil
 }
 
 func (app *App) SetBlobDataFromFile(key string, mimeType string, fileName string, metadata interface{}) error {
@@ -429,5 +468,10 @@ func (app *App) SetBlobDataFromFile(key string, mimeType string, fileName string
 	if err != nil {
 		return err
 	}
-	return app.SetBlobData(key, mimeType, fd, metadata)
+	blobData, err := BlobDataFromReadSeeker(key, mimeType, fd)
+	if err != nil {
+		return err
+	}
+	blobData.Metadata = metadata
+	return app.SetRawBlobData(blobData, fd)
 }

@@ -2,10 +2,8 @@ package dashcloud
 
 import (
 	"crypto/ecdsa"
-	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
@@ -101,8 +99,8 @@ func (c *Config) loadKeys() {
 	if c.AccId != "" && certInfo.AccId != c.AccId {
 		panic(fmt.Sprintf("Dashborg AccId read from certificate:%s does not match AccId in config:%s", certInfo.AccId, c.AccId))
 	}
-	c.log("DashborgCloudClient KeyFile:%s CertFile:%s AccId:%s SHA-256:%s\n", c.KeyFileName, c.CertFileName, c.AccId, certInfo.Pk256)
 	c.AccId = certInfo.AccId
+	c.log("DashborgCloudClient KeyFile:%s CertFile:%s AccId:%s SHA-256:%s\n", c.KeyFileName, c.CertFileName, c.AccId, certInfo.Pk256)
 }
 
 func (c *Config) maybeMakeKeys(accId string) error {
@@ -155,8 +153,7 @@ func readCertInfo(certFileName string) (*certInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Cannot get PublicKey bytes from certificate")
 	}
-	pk256 := sha256.Sum256(pubKeyBytes)
-	pk256Str := base64.StdEncoding.EncodeToString(pk256[:])
+	pk256Str := dashutil.Sha256Base64(pubKeyBytes)
 	return &certInfo{AccId: cn, Pk256: pk256Str, PublicKey: cert.PublicKey}, nil
 }
 
