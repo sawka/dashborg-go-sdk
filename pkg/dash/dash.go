@@ -23,6 +23,7 @@ type Container interface {
 	BackendPush(appName string, path string, data interface{}) error
 	WaitForShutdown() error
 	SetBlobData(acfg AppConfig, blob BlobData, r io.Reader) error
+	RemoveBlob(acfg AppConfig, blob BlobData) error
 }
 
 type StreamOpts struct {

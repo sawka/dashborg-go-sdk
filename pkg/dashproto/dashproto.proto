@@ -178,6 +178,17 @@ message RemoveAppResponse {
     RtnStatus Status = 1;
 }
 
+message RemoveBlobMessage {
+    int64 Ts = 1;
+    string AppName = 2;
+    string AppVersion = 3;
+    string BlobDataJson = 4;
+}
+
+message RemoveBlobResponse {
+    RtnStatus Status = 1;
+}
+
 service DashborgService {
     rpc ConnectClient(ConnectClientMessage) returns (ConnectClientResponse) {}
     rpc ReflectZone(ReflectZoneMessage) returns (ReflectZoneResponse) {}
@@ -191,6 +202,7 @@ service DashborgService {
     rpc OpenApp(OpenAppMessage) returns (OpenAppResponse) {}
     rpc WriteApp(WriteAppMessage) returns (WriteAppResponse) {}
     rpc SetBlob(stream SetBlobMessage) returns (stream SetBlobResponse) {}
+    rpc RemoveBlob(RemoveBlobMessage) returns (RemoveBlobResponse) {}
     rpc RemoveApp(RemoveAppMessage) returns (RemoveAppResponse) {}
 }
 

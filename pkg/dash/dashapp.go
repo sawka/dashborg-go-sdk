@@ -13,14 +13,17 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/sawka/dashborg-go-sdk/pkg/dasherr"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
 var notAuthorizedErr = fmt.Errorf("Not Authorized")
 
 const MaxAppConfigSize = 1000000
-const rootHtmlKey = "html:root"
 const htmlMimeType = "text/html"
+const appBlobNs = "app"
+const htmlBlobNs = "html"
+const rootHtmlKey = htmlBlobNs + ":" + "root"
 
 const (
 	OptionInitHandler   = "inithandler"
@@ -74,6 +77,7 @@ type staticDataVal struct {
 }
 
 type BlobData struct {
+	BlobNs   string      `json:"blobns"`
 	BlobKey  string      `json:"blobkey"`
 	MimeType string      `json:"mimetype"`
 	Size     int64       `json:"size"`
@@ -81,6 +85,10 @@ type BlobData struct {
 	UpdateTs int64       `json:"updatets"`
 	Metadata interface{} `json:"metadata"`
 	Removed  bool        `json:"removed"`
+}
+
+func (b BlobData) ExtBlobKey() string {
+	return fmt.Sprintf("%s:%s", b.BlobNs, b.BlobKey)
 }
 
 type ProcInfo struct {
@@ -432,7 +440,7 @@ func (app *App) GetAppName() string {
 func (app *App) SetRawBlobData(blobData BlobData, reader io.Reader) error {
 	err := app.Container.SetBlobData(app.AppConfig, blobData, reader)
 	if err != nil {
-		log.Printf("Dashborg error setting blob data app:%s blobkey:%s err:%v\n", app.AppConfig.AppName, blobData.BlobKey, err)
+		log.Printf("Dashborg error setting blob data app:%s blobkey:%s err:%v\n", app.AppConfig.AppName, blobData.ExtBlobKey(), err)
 		return err
 	}
 	return nil
@@ -442,8 +450,15 @@ func (app *App) SetRawBlobData(blobData BlobData, reader io.Reader) error {
 // If an error is returned, the seek position is not specified.  If no error is returned
 // the reader will be reset to the beginning.
 // A []byte can be wrapped in a bytes.Buffer to use this function (error will always be nil)
-func BlobDataFromReadSeeker(key string, mimeType string, r io.ReadSeeker) (BlobData, error) {
-	_, err := r.Seek(0, 0)
+func BlobDataFromReadSeeker(extBlobKey string, mimeType string, r io.ReadSeeker) (BlobData, error) {
+	blobNs, blobKey, err := dashutil.ParseExtBlobKey(extBlobKey)
+	if err != nil {
+		return BlobData{}, dasherr.ValidateErr(fmt.Errorf("Invalid BlobKey"))
+	}
+	if blobNs == "" {
+		blobNs = appBlobNs
+	}
+	_, err = r.Seek(0, 0)
 	if err != nil {
 		return BlobData{}, nil
 	}
@@ -459,7 +474,8 @@ func BlobDataFromReadSeeker(key string, mimeType string, r io.ReadSeeker) (BlobD
 		return BlobData{}, err
 	}
 	blobData := BlobData{
-		BlobKey:  key,
+		BlobNs:   blobNs,
+		BlobKey:  blobKey,
 		MimeType: mimeType,
 		Sha256:   hashValStr,
 		Size:     numCopyBytes,
@@ -470,13 +486,13 @@ func BlobDataFromReadSeeker(key string, mimeType string, r io.ReadSeeker) (BlobD
 // If you only have an io.Reader, this function will call ioutil.ReadAll, read the full stream
 // into a []byte, compute the size and SHA-256, and then wrap the []byte in a *bytes.Reader
 // suitable to pass to SetRawBlobData()
-func BlobDataFromReader(key string, mimeType string, r io.Reader) (BlobData, *bytes.Reader, error) {
+func BlobDataFromReader(extBlobKey string, mimeType string, r io.Reader) (BlobData, *bytes.Reader, error) {
 	barr, err := ioutil.ReadAll(r)
 	if err != nil {
 		return BlobData{}, nil, err
 	}
 	breader := bytes.NewReader(barr)
-	blobData, err := BlobDataFromReadSeeker(key, mimeType, breader)
+	blobData, err := BlobDataFromReadSeeker(extBlobKey, mimeType, breader)
 	if err != nil {
 		return BlobData{}, nil, err
 	}
@@ -494,4 +510,19 @@ func (app *App) SetBlobDataFromFile(key string, mimeType string, fileName string
 	}
 	blobData.Metadata = metadata
 	return app.SetRawBlobData(blobData, fd)
+}
+
+func (app *App) RemoveBlob(extBlobKey string) error {
+	blobNs, blobKey, err := dashutil.ParseExtBlobKey(extBlobKey)
+	if err != nil {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid BlobKey"))
+	}
+	if blobNs == "" {
+		blobNs = appBlobNs
+	}
+	blobData := BlobData{
+		BlobNs:  blobNs,
+		BlobKey: blobKey,
+	}
+	return app.Container.RemoveBlob(app.AppConfig, blobData)
 }

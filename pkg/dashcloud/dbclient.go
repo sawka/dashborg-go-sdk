@@ -702,7 +702,28 @@ func (pc *DashCloudClient) WriteApp(acfg dash.AppConfig) error {
 	return nil
 }
 
-// blobData must have BlobKey, MimeType, Size, and Sha256 set.
+func (pc *DashCloudClient) RemoveBlob(acfg dash.AppConfig, blob dash.BlobData) error {
+	blobJson, err := dashutil.MarshalJson(blob)
+	if err != nil {
+		return dasherr.JsonMarshalErr("BlobData", err)
+	}
+	m := &dashproto.RemoveBlobMessage{
+		Ts:           dashutil.Ts(),
+		AppName:      acfg.AppName,
+		AppVersion:   acfg.AppVersion,
+		BlobDataJson: blobJson,
+	}
+	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
+	defer cancelFn()
+	resp, respErr := pc.DBService.RemoveBlob(ctx, m)
+	dashErr := pc.handleStatusErrors("RemoveBlob", resp, respErr, true)
+	if dashErr != nil {
+		return dashErr
+	}
+	return nil
+}
+
+// blobData must have BlobNs, BlobKey, MimeType, Size, and Sha256 set.
 // It is possible to pass a nil io.Reader.  The call will succeed if there is already a blob with the
 // same SHA-256 (it will linked to this app).  If a matching blob is not found, SetBlobData will return
 // an error when trying to read from the nil Reader.
@@ -719,17 +740,28 @@ func (pc *DashCloudClient) SetBlobData(acfg dash.AppConfig, blobData dash.BlobDa
 	if blobData.Size <= 0 {
 		return dasherr.ValidateErr(fmt.Errorf("Invalid Size passed to SetBlobData (cannot be 0)"))
 	}
-	if !dashutil.IsExtBlobKeyValid(blobData.BlobKey) {
+	if !dashutil.IsBlobNsValid(blobData.BlobNs) {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid BlobNs passed to SetBlobData"))
+	}
+	if !dashutil.IsBlobKeyValid(blobData.BlobKey) {
 		return dasherr.ValidateErr(fmt.Errorf("Invalid BlobKey passed to SetBlobData"))
 	}
-	if float64(blobData.Size) > pc.AccInfo.BlobSizeLimitMB*mbConst {
-		err := dasherr.LimitErr("Cannot upload BLOB", "AppBlobs.MaxSizeMB", pc.AccInfo.BlobSizeLimitMB)
-		pc.explainLimit(pc.AccInfo.AccType, err.Error())
-		return err
+	if blobData.BlobNs == "html" {
+		if float64(blobData.Size) > pc.AccInfo.HtmlSizeLimitMB*mbConst {
+			err := dasherr.LimitErr("Cannot upload BLOB", "HtmlSizeMB", pc.AccInfo.HtmlSizeLimitMB)
+			pc.explainLimit(pc.AccInfo.AccType, err.Error())
+			return err
+		}
+	} else {
+		if float64(blobData.Size) > pc.AccInfo.BlobSizeLimitMB*mbConst {
+			err := dasherr.LimitErr("Cannot upload BLOB", "AppBlobs.MaxSizeMB", pc.AccInfo.BlobSizeLimitMB)
+			pc.explainLimit(pc.AccInfo.AccType, err.Error())
+			return err
+		}
 	}
 	blobJson, err := dashutil.MarshalJson(blobData)
 	if err != nil {
-		return err
+		return dasherr.JsonMarshalErr("BlobData", err)
 	}
 	ctx, cancelFn := pc.ctxWithMd(streamGrpcTimeout)
 	defer cancelFn()

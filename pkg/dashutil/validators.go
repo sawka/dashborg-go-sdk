@@ -29,7 +29,7 @@ const (
 	ProcTagValMax    = 200
 	HostDataValMax   = 100
 	BlobKeyMax       = 100
-	ExtBlobKeyMax    = 100
+	BlobNsMax        = 20
 	SimpleIdMax      = 30
 )
 
@@ -48,8 +48,9 @@ var (
 	pathRe           = regexp.MustCompile("^/[a-zA-Z0-9._/-]*$")
 	tagRe            = regexp.MustCompile("^[a-zA-Z0-9._:/-]+$")
 	roleRe           = regexp.MustCompile("^(\\*|[a-z][a-z0-9-]+)$")
+	extBlobKeyRe     = regexp.MustCompile("^(?:([a-z][a-z0-9]*):)?([0-9a-zA-Z/_.-]+)$")
 	blobKeyRe        = regexp.MustCompile("^[0-9a-zA-Z/_.-]+$")
-	extBlobKeyRe     = regexp.MustCompile("^(?:([a-z0-9]+):)?([0-9a-zA-Z/_.-]+)$")
+	blobNsRe         = regexp.MustCompile("^[a-z][a-z0-9]*$")
 	simpleIdRe       = regexp.MustCompile("^[a-zA-Z][a-zA-Z0-9_-]*")
 	clientVersionRe  = regexp.MustCompile("^([a-z][a-z0-9_]*)-(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,4})$")
 	zoneAccessRe     = regexp.MustCompile("^[a-zA-Z0-9_.*-]+$")
@@ -62,6 +63,7 @@ var (
 
 var ValidHandlerType = map[string]bool{"data": true, "handler": true, "stream": true, "call": true, "auth": true, "html": true, "init": true}
 var ValidActionType = map[string]bool{"setdata": true, "event": true, "invalidate": true, "html": true, "panelauth": true, "panelauthchallenge": true, "error": true, "blob": true, "blobext": true, "streamopen": true, "backendpush": true}
+var ValidBlobNs = map[string]bool{"app": true, "html": true}
 
 func IsZoneNameValid(zoneName string) bool {
 	if len(zoneName) > ZoneNameMax {
@@ -207,11 +209,11 @@ func IsBlobKeyValid(s string) bool {
 	return blobKeyRe.MatchString(s)
 }
 
-func IsExtBlobKeyValid(s string) bool {
-	if len(s) == 0 || len(s) > ExtBlobKeyMax {
+func IsBlobNsValid(s string) bool {
+	if len(s) == 0 || len(s) > BlobNsMax {
 		return false
 	}
-	return extBlobKeyRe.MatchString(s)
+	return ValidBlobNs[s]
 }
 
 func IsRoleValid(s string) bool {
