@@ -9,9 +9,14 @@ message RtnStatus {
     bool PermErr = 4;
 }
 
+message AppId {
+    string AppName = 3;
+    string AppVersion = 4;
+}
+
 message RRAction {
     int64 Ts = 1;
-    string ActionType = 2;  // "setdata", "event", "invalidate", "html", "panelauth", "panelauthchallenge", "error", "blob", "blobext", "streamopen", "triggerdata", "backendpush"
+    string ActionType = 2;
     string Selector = 3;    // path, selector, controlid
     string JsonData = 4;
     string OpType = 5;
@@ -25,8 +30,8 @@ message RRAction {
 message SendResponseMessage {
     int64 Ts = 1;
     string ReqId = 2;
-    string RequestType = 3; // "data", "handler", "stream"
-    string PanelName = 4;
+    string RequestType = 3;
+    AppId AppId = 4;
     string FeClientId = 5;
     bool ResponseDone = 6;
     repeated RRAction Actions = 7;
@@ -37,26 +42,19 @@ message RequestMessage {
     int64 Ts = 1;
     string AccId = 2;
     string ZoneName = 3;
-    string PanelName = 4;
-    string RequestType = 5; // "data", "handler", "streamclose", "servermessage"
+    AppId AppId = 4;
+    string RequestType = 5;
     string Path = 6;
     string ReqId = 7;
     string FeClientId = 8;
     string ControlId = 9;
     string JsonData = 10;
     string AuthData = 11;
-    string PanelStateData = 12;
+    string AppStateData = 12;
     RtnStatus Status = 13;     // only used for server-side errors
-    int64 TimeoutMs = 15;
-    repeated string DataPaths = 16;
-    bool IsBackendCall = 17;
+    int64 TimeoutMs = 14;
+    bool IsBackendCall = 15;
 }
-
-message HandlerKey {
-    string PanelName = 1;
-    string HandlerType = 2; // "data", "handler"
-    string Path = 3;
-}    
 
 message ConnectClientMessage {
     int64 Ts = 1;
@@ -68,14 +66,14 @@ message ConnectClientMessage {
     map<string,string> ProcTags = 7;
     map<string,string> HostData = 8;
     int64 StartTs = 9;
-    repeated string ReconnectAppRuntimes = 13;
+    repeated AppId ReconnectAppRuntimes = 10;
 }
 
 message ConnectClientResponse {
     RtnStatus Status = 1;
-    string ConnId = 5;
-    string AccInfoJson = 6;
-    repeated string ReconnectErrs = 7;
+    string ConnId = 2;
+    string AccInfoJson = 3;
+    repeated string ReconnectErrs = 4;
 }
 
 message RequestStreamMessage {
@@ -84,20 +82,19 @@ message RequestStreamMessage {
 
 message SendResponseResponse {
     RtnStatus Status = 1;
-    int32 NumStreamClients = 4;
+    int32 NumStreamClients = 2;
 }
 
 message StartStreamMessage {
     int64 Ts = 1;
-
-    string PanelName = 2;
+    AppId AppId = 2;
     string FeClientId = 3;
     string ExistingReqId = 4;
 }
 
 message StartStreamResponse {
     RtnStatus Status = 1;
-    string ReqId = 3;
+    string ReqId = 2;
 }
 
 message ReflectZoneMessage {
@@ -106,12 +103,12 @@ message ReflectZoneMessage {
 
 message ReflectZoneResponse {
     RtnStatus Status = 1;
-    string JsonData = 3;
+    string JsonData = 2;
 }
 
 message CallDataHandlerMessage {
     int64 Ts = 1;
-    string PanelName = 2;
+    AppId AppId = 2;
     string Path = 3;
     string JsonData = 4;
 }
@@ -123,7 +120,7 @@ message CallDataHandlerResponse {
 
 message BackendPushMessage {
     int64 Ts = 1;
-    string PanelName = 2;
+    AppId AppId = 2;
     string Path = 3;
 }
 
@@ -133,7 +130,7 @@ message BackendPushResponse {
 
 message OpenAppMessage {
     int64 Ts = 1;
-    string AppName = 2;
+    AppId AppId = 2;
 }
 
 message OpenAppResponse {
@@ -143,24 +140,23 @@ message OpenAppResponse {
 
 message WriteAppMessage {
     int64 Ts = 1;
-    string AppName = 2;
+    AppId AppId = 2;
     string AppConfigJson = 3;
     bool ConnectApp = 4;
 }
 
 message WriteAppResponse {
     RtnStatus Status = 1;
-    map<string,string> OptionWarnings = 3;
+    map<string,string> OptionWarnings = 2;
 }
 
 message SetBlobMessage {
     int64 Ts = 1;
-    string AppName = 2;
-    string AppVersion = 3;
-    string BlobDataJson = 4;
-    string BlobBytesKey = 5;
-    bytes BlobBytes = 6;
-    bool ClientErr = 7;
+    AppId AppId = 2;
+    string BlobDataJson = 3;
+    string BlobBytesKey = 4;
+    bytes BlobBytes = 5;
+    bool ClientErr = 6;
 }
 
 message SetBlobResponse {
@@ -171,7 +167,7 @@ message SetBlobResponse {
 
 message RemoveAppMessage {
     int64 Ts = 1;
-    string AppName = 2;
+    AppId AppId = 2;
 }
 
 message RemoveAppResponse {
@@ -180,9 +176,8 @@ message RemoveAppResponse {
 
 message RemoveBlobMessage {
     int64 Ts = 1;
-    string AppName = 2;
-    string AppVersion = 3;
-    string BlobDataJson = 4;
+    AppId AppId = 2;
+    string BlobDataJson = 3;
 }
 
 message RemoveBlobResponse {

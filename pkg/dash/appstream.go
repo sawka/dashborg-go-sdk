@@ -130,7 +130,7 @@ func (pc *appClient) connectStream(appName string, streamOpts StreamOpts, feClie
 	existingReqId := pc.stream_getReqId(streamKey{AppName: appName, StreamId: streamOpts.StreamId})
 	m := &dashproto.StartStreamMessage{
 		Ts:            dashutil.Ts(),
-		PanelName:     appName,
+		AppId:         &dashproto.AppId{AppName: appName},
 		FeClientId:    feClientId,
 		ExistingReqId: existingReqId,
 	}

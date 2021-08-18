@@ -9,7 +9,7 @@ const (
 	ZoneNameMax      = 20
 	ZoneAccessMax    = 50
 	ControlNameMax   = 30
-	PanelNameMax     = 20
+	AppNameMax       = 20
 	ProcNameMax      = 20
 	FileNameMax      = 80
 	EmailMax         = 80
@@ -36,7 +36,7 @@ const (
 var (
 	zoneNameRe       = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_.-]*$")
 	controlNameRe    = regexp.MustCompile("^[a-zA-Z0-9_.:#/-]+$")
-	panelNameRe      = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_.-]*$")
+	appNameRe        = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_.-]*$")
 	procNameRe       = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
 	uuidRe           = regexp.MustCompile("^[a-fA-F0-9-]{36}$")
 	handlerRe        = regexp.MustCompile("^/[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$")
@@ -79,18 +79,11 @@ func IsZoneAccessValid(zoneAccess string) bool {
 	return zoneAccessRe.MatchString(zoneAccess)
 }
 
-func IsPanelNameValid(panelName string) bool {
-	if len(panelName) > PanelNameMax {
-		return false
-	}
-	return panelNameRe.MatchString(panelName)
-}
-
 func IsAppNameValid(appName string) bool {
-	if len(appName) > PanelNameMax {
+	if len(appName) > AppNameMax {
 		return false
 	}
-	return panelNameRe.MatchString(appName)
+	return appNameRe.MatchString(appName)
 }
 
 func IsSimpleFileNameValid(fileName string) bool {

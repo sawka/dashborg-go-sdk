@@ -26,11 +26,6 @@ type handlerKey struct {
 
 type handlerFuncType = func(*Request) (interface{}, error)
 
-type handlerVal struct {
-	ProtoHKey *dashproto.HandlerKey
-	HandlerFn handlerFuncType
-}
-
 type streamControl struct {
 	AppName        string
 	StreamOpts     StreamOpts
@@ -97,7 +92,7 @@ func (pc *appClient) SendRequestResponse(req *Request, done bool) (int, error) {
 		Ts:           dashutil.Ts(),
 		ReqId:        req.info.ReqId,
 		RequestType:  req.info.RequestType,
-		PanelName:    req.info.AppName,
+		AppId:        &dashproto.AppId{AppName: req.info.AppName},
 		FeClientId:   req.info.FeClientId,
 		ResponseDone: done,
 	}
@@ -110,22 +105,22 @@ func (pc *appClient) SendRequestResponse(req *Request, done bool) (int, error) {
 	return pc.DBServiceAdapter.SendResponseProtoRpc(m)
 }
 
-func (pc *appClient) sendWrongAppResponse(reqMsg *dashproto.RequestMessage) {
+func (pc *appClient) sendErrResponse(reqMsg *dashproto.RequestMessage, errMsg string) {
 	m := &dashproto.SendResponseMessage{
 		Ts:           dashutil.Ts(),
 		ReqId:        reqMsg.ReqId,
 		RequestType:  reqMsg.RequestType,
-		PanelName:    reqMsg.PanelName,
+		AppId:        reqMsg.AppId,
 		FeClientId:   reqMsg.FeClientId,
 		ResponseDone: true,
-		Err:          "Wrong AppName",
+		Err:          errMsg,
 	}
 	pc.DBServiceAdapter.SendResponseProtoRpc(m)
 }
 
 func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) {
-	if reqMsg.PanelName != pc.App.GetAppConfig().AppName {
-		go pc.sendWrongAppResponse(reqMsg)
+	if reqMsg.AppId.AppName != pc.App.GetAppConfig().AppName {
+		go pc.sendErrResponse(reqMsg, "Wrong AppName")
 		return
 	}
 
@@ -142,7 +137,7 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 			StartTime:   time.Now(),
 			ReqId:       reqMsg.ReqId,
 			RequestType: reqMsg.RequestType,
-			AppName:     reqMsg.PanelName,
+			AppName:     reqMsg.AppId.AppName,
 			Path:        reqMsg.Path,
 			FeClientId:  reqMsg.FeClientId,
 		},
@@ -152,7 +147,7 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 		container: pc.Container,
 	}
 	hkey := handlerKey{
-		AppName: reqMsg.PanelName,
+		AppName: reqMsg.AppId.AppName,
 		Path:    reqMsg.Path,
 	}
 	switch reqMsg.RequestType {
@@ -178,16 +173,16 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 	preq.dataJson = reqMsg.JsonData
 
 	var pstate interface{}
-	if reqMsg.PanelStateData != "" {
-		err := json.Unmarshal([]byte(reqMsg.PanelStateData), &pstate)
+	if reqMsg.AppStateData != "" {
+		err := json.Unmarshal([]byte(reqMsg.AppStateData), &pstate)
 		if err != nil {
-			preq.err = fmt.Errorf("Cannot unmarshal PanelStateData: %v", err)
+			preq.err = fmt.Errorf("Cannot unmarshal AppStateData: %v", err)
 			preq.Done()
 			return
 		}
 	}
 	preq.appState = pstate
-	preq.appStateJson = reqMsg.PanelStateData
+	preq.appStateJson = reqMsg.AppStateData
 
 	var authData AuthAtom
 	if reqMsg.AuthData != "" {

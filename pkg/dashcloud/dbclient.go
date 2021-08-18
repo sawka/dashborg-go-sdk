@@ -201,9 +201,9 @@ func makeHostData() map[string]string {
 func (pc *DashCloudClient) sendConnectClientMessage(isReconnect bool) error {
 	// only allow one proc message at a time (synchronize)
 	hostData := makeHostData()
-	reconApps := make([]string, 0)
+	reconApps := make([]*dashproto.AppId, 0)
 	for _, appstruct := range pc.AppMap {
-		reconApps = append(reconApps, appstruct.App.GetAppName())
+		reconApps = append(reconApps, &dashproto.AppId{AppName: appstruct.App.GetAppName()})
 	}
 	m := &dashproto.ConnectClientMessage{
 		Ts:                   dashutil.Ts(),
@@ -382,8 +382,8 @@ func (pc *DashCloudClient) RemoveApp(appName string) error {
 		return NotConnectedErr
 	}
 	m := &dashproto.RemoveAppMessage{
-		Ts:      dashutil.Ts(),
-		AppName: appName,
+		Ts:    dashutil.Ts(),
+		AppId: &dashproto.AppId{AppName: appName},
 	}
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
@@ -464,21 +464,21 @@ func (pc *DashCloudClient) runRequestStreamLoop() {
 	}
 }
 
-func (pc *DashCloudClient) sendNoAppResponse(reqMsg *dashproto.RequestMessage) {
+func (pc *DashCloudClient) sendErrResponse(reqMsg *dashproto.RequestMessage, errMsg string) {
 	m := &dashproto.SendResponseMessage{
 		Ts:           dashutil.Ts(),
 		ReqId:        reqMsg.ReqId,
 		RequestType:  reqMsg.RequestType,
-		PanelName:    reqMsg.PanelName,
+		AppId:        reqMsg.AppId,
 		FeClientId:   reqMsg.FeClientId,
 		ResponseDone: true,
-		Err:          "No App Found",
+		Err:          errMsg,
 	}
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
 	_, err := pc.DBService.SendResponse(ctx, m)
 	if err != nil {
-		pc.logV("Error sending No App Response: %v\n", err)
+		pc.logV("Error sending Error Response: %v\n", err)
 	}
 }
 
@@ -515,7 +515,7 @@ func (pc *DashCloudClient) runRequestStream() (bool, dasherr.ErrCode) {
 				break
 			}
 		}
-		pc.logV("Dashborg gRPC got request: app=%s, type=%s, path=%s\n", reqMsg.PanelName, reqMsg.RequestType, reqMsg.Path)
+		pc.logV("Dashborg gRPC got request: app=%s, type=%s, path=%s\n", reqMsg.AppId.AppName, reqMsg.RequestType, reqMsg.Path)
 		go func() {
 			atomic.AddInt64(&reqCounter, 1)
 			timeoutMs := reqMsg.TimeoutMs
@@ -525,12 +525,16 @@ func (pc *DashCloudClient) runRequestStream() (bool, dasherr.ErrCode) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
 			defer cancel()
 
-			appName := reqMsg.PanelName
+			if reqMsg.AppId == nil || !dashutil.IsAppNameValid(reqMsg.AppId.AppName) {
+				pc.sendErrResponse(reqMsg, "Bad Request")
+				return
+			}
+			appName := reqMsg.AppId.AppName
 			pc.Lock.Lock()
 			appClient := pc.AppMap[appName]
 			pc.Lock.Unlock()
 			if appClient == nil {
-				pc.sendNoAppResponse(reqMsg)
+				pc.sendErrResponse(reqMsg, "No App Found")
 				return
 			}
 			appClient.AppClient.DispatchRequest(ctx, reqMsg)
@@ -540,14 +544,14 @@ func (pc *DashCloudClient) runRequestStream() (bool, dasherr.ErrCode) {
 	return (elapsed >= 5*time.Second), endingErrCode
 }
 
-func (pc *DashCloudClient) BackendPush(panelName string, path string, data interface{}) error {
+func (pc *DashCloudClient) BackendPush(appName string, path string, data interface{}) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
 	m := &dashproto.BackendPushMessage{
-		Ts:        dashutil.Ts(),
-		PanelName: panelName,
-		Path:      path,
+		Ts:    dashutil.Ts(),
+		AppId: &dashproto.AppId{AppName: appName},
+		Path:  path,
 	}
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
@@ -579,7 +583,7 @@ func (pc *DashCloudClient) ReflectZone() (*ReflectZoneType, error) {
 	return &rtn, nil
 }
 
-func (pc *DashCloudClient) CallDataHandler(panelName string, path string, data interface{}) (interface{}, error) {
+func (pc *DashCloudClient) CallDataHandler(appName string, path string, data interface{}) (interface{}, error) {
 	if !pc.IsConnected() {
 		return nil, NotConnectedErr
 	}
@@ -588,10 +592,10 @@ func (pc *DashCloudClient) CallDataHandler(panelName string, path string, data i
 		return nil, err
 	}
 	m := &dashproto.CallDataHandlerMessage{
-		Ts:        dashutil.Ts(),
-		PanelName: panelName,
-		Path:      path,
-		JsonData:  jsonData,
+		Ts:       dashutil.Ts(),
+		AppId:    &dashproto.AppId{AppName: appName},
+		Path:     path,
+		JsonData: jsonData,
 	}
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
@@ -640,8 +644,8 @@ func (pc *DashCloudClient) OpenApp(appName string) (*dash.App, error) {
 		return nil, NotConnectedErr
 	}
 	m := &dashproto.OpenAppMessage{
-		Ts:      dashutil.Ts(),
-		AppName: appName,
+		Ts:    dashutil.Ts(),
+		AppId: &dashproto.AppId{AppName: appName},
 	}
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
@@ -675,7 +679,7 @@ func (pc *DashCloudClient) baseWriteApp(appName string, shouldConnect bool, acfg
 	}
 	m := &dashproto.WriteAppMessage{
 		Ts:            dashutil.Ts(),
-		AppName:       appName,
+		AppId:         &dashproto.AppId{AppName: appName},
 		AppConfigJson: jsonVal,
 		ConnectApp:    shouldConnect,
 	}
@@ -709,8 +713,7 @@ func (pc *DashCloudClient) RemoveBlob(acfg dash.AppConfig, blob dash.BlobData) e
 	}
 	m := &dashproto.RemoveBlobMessage{
 		Ts:           dashutil.Ts(),
-		AppName:      acfg.AppName,
-		AppVersion:   acfg.AppVersion,
+		AppId:        &dashproto.AppId{AppName: acfg.AppName, AppVersion: acfg.AppVersion},
 		BlobDataJson: blobJson,
 	}
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
@@ -773,8 +776,7 @@ func (pc *DashCloudClient) SetBlobData(acfg dash.AppConfig, blobData dash.BlobDa
 
 	m := &dashproto.SetBlobMessage{
 		Ts:           dashutil.Ts(),
-		AppName:      acfg.AppName,
-		AppVersion:   acfg.AppVersion,
+		AppId:        &dashproto.AppId{AppName: acfg.AppName, AppVersion: acfg.AppVersion},
 		BlobDataJson: blobJson,
 	}
 	err = bclient.Send(m)
