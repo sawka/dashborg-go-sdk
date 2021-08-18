@@ -71,19 +71,10 @@ message ConnectClientMessage {
     repeated string ReconnectAppRuntimes = 13;
 }
 
-message AccInfo {
-    string AccType = 1;
-    string AccName = 2;
-    string AccCName = 3;
-    bool AccJWTEnabled = 4;
-    bool NewAccount = 5;
-    double BlobSizeLimitMB = 6;
-}
-
 message ConnectClientResponse {
     RtnStatus Status = 1;
     string ConnId = 5;
-    AccInfo AccInfo = 6;
+    string AccInfoJson = 6;
     repeated string ReconnectErrs = 7;
 }
 

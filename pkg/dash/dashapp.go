@@ -19,6 +19,8 @@ import (
 var notAuthorizedErr = fmt.Errorf("Not Authorized")
 
 const MaxAppConfigSize = 1000000
+const rootHtmlKey = "html:root"
+const htmlMimeType = "text/html"
 
 const (
 	OptionInitHandler   = "inithandler"
@@ -33,6 +35,10 @@ const (
 	VisTypeHidden        = "hidden"  // always hide
 	VisTypeDefault       = "default" // shown if user has permission
 	VisTypeAlwaysVisible = "visible" // always show
+
+	HtmlTypeStatic               = "static"
+	HtmlTypeDynamicWhenConnected = "dynamic-when-connected"
+	HtmlTypeDynamic              = "dynamic"
 )
 
 // html: static, dynamic, dynamic-when-connected
@@ -47,7 +53,6 @@ type AppConfig struct {
 	ProcRunId          string                      `json:"procrunid"`            // set by container
 	ClientVersion      string                      `json:"clientversion"`
 	Options            map[string]GenericAppOption `json:"options"`
-	StaticHtml         string                      `json:"statichtml,omitempty"`
 	StaticData         []staticDataVal             `json:"staticdata,omitempty"`
 	ClearExistingData  bool                        `json:"clearexistingdata,omitempty"`
 	ClearExistingBlobs bool                        `json:"clearexistingblobs,omitempty"`
@@ -336,11 +341,18 @@ func (app *App) SetAppTitle(title string) {
 	}
 }
 
-func (app *App) SetHtml(html string) {
-	app.SetOption(OptionHtml, GenericAppOption{
-		Type: "static",
-	})
-	app.AppConfig.StaticHtml = html
+func (app *App) SetHtml(htmlStr string) error {
+	bytesReader := bytes.NewReader([]byte(htmlStr))
+	blobData, err := BlobDataFromReadSeeker(rootHtmlKey, htmlMimeType, bytesReader)
+	if err != nil {
+		return err
+	}
+	err = app.SetRawBlobData(blobData, bytesReader)
+	if err != nil {
+		return err
+	}
+	app.SetOption(OptionHtml, GenericAppOption{Type: HtmlTypeStatic})
+	return nil
 }
 
 func (app *App) SetHtmlFromFile(fileName string) error {
@@ -353,9 +365,17 @@ func (app *App) SetHtmlFromFile(fileName string) error {
 	if err != nil {
 		return err
 	}
+	bytesReader := bytes.NewReader([]byte(htmlStr))
+	blobData, err := BlobDataFromReadSeeker(rootHtmlKey, htmlMimeType, bytesReader)
+	if err != nil {
+		return err
+	}
+	err = app.SetRawBlobData(blobData, bytesReader)
+	if err != nil {
+		return err
+	}
 	app.appRuntime.html = htmlValue
-	app.SetOption(OptionHtml, GenericAppOption{Type: "dynamic-when-connected"})
-	app.AppConfig.StaticHtml = htmlStr
+	app.SetOption(OptionHtml, GenericAppOption{Type: HtmlTypeDynamicWhenConnected})
 	return nil
 }
 

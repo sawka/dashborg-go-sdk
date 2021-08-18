@@ -49,7 +49,7 @@ var (
 	tagRe            = regexp.MustCompile("^[a-zA-Z0-9._:/-]+$")
 	roleRe           = regexp.MustCompile("^(\\*|[a-z][a-z0-9-]+)$")
 	blobKeyRe        = regexp.MustCompile("^[0-9a-zA-Z/_.-]+$")
-	extBlobKeyRe     = regexp.MustCompile("^([a-z0-9]+:)?([0-9a-zA-Z/_.-]+)$")
+	extBlobKeyRe     = regexp.MustCompile("^(?:([a-z0-9]+):)?([0-9a-zA-Z/_.-]+)$")
 	simpleIdRe       = regexp.MustCompile("^[a-zA-Z][a-zA-Z0-9_-]*")
 	clientVersionRe  = regexp.MustCompile("^([a-z][a-z0-9_]*)-(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,4})$")
 	zoneAccessRe     = regexp.MustCompile("^[a-zA-Z0-9_.*-]+$")

@@ -54,6 +54,16 @@ type AppStruct struct {
 	App       dash.AppRuntime
 }
 
+type accInfoType struct {
+	AccType         string  `json:"acctype"`
+	AccName         string  `json:"accname"`
+	AccCName        string  `json:"acccname"`
+	AccJWTEnabled   bool    `json:"accjwtenabled"`
+	NewAccount      bool    `json:"newaccount"`
+	BlobSizeLimitMB float64 `json:"blobsizelimitmb"`
+	HtmlSizeLimitMB float64 `json:"htmlsizelimitmb"`
+}
+
 type DashCloudClient struct {
 	Lock      *sync.Mutex
 	StartTime time.Time
@@ -66,7 +76,7 @@ type DashCloudClient struct {
 	DoneCh    chan bool
 	PermErr   bool
 	ExitErr   error
-	AccInfo   *dashproto.AccInfo
+	AccInfo   accInfoType
 }
 
 func makeCloudClient(config *Config) *DashCloudClient {
@@ -216,6 +226,16 @@ func (pc *DashCloudClient) sendConnectClientMessage(isReconnect bool) error {
 			pc.log("%s\n", recErr)
 		}
 	}
+	var accInfo accInfoType
+	if dashErr == nil {
+		jsonErr := json.Unmarshal([]byte(resp.AccInfoJson), &accInfo)
+		if jsonErr != nil {
+			dashErr = dasherr.JsonUnmarshalErr("AccInfo", jsonErr)
+		}
+		if accInfo.AccType == "" {
+			dashErr = dasherr.JsonUnmarshalErr("AccInfo", fmt.Errorf("No AccType in AccInfo"))
+		}
+	}
 	if dashErr != nil {
 		pc.ConnId.Store("")
 		if !dasherr.CanRetry(dashErr) {
@@ -227,16 +247,16 @@ func (pc *DashCloudClient) sendConnectClientMessage(isReconnect bool) error {
 	}
 	pc.ConnId.Store(resp.ConnId)
 	pc.Lock.Lock()
-	pc.AccInfo = resp.AccInfo
+	pc.AccInfo = accInfo
 	pc.Lock.Unlock()
 	if !isReconnect {
-		if resp.AccInfo.NewAccount {
+		if accInfo.NewAccount {
 			pc.printNewAccMessage()
-		} else if resp.AccInfo.AccType == "anon" {
+		} else if accInfo.AccType == "anon" {
 			pc.printAnonAccMessage()
 		}
 		if pc.Config.Verbose {
-			pc.log("DashborgCloudClient Connected, AccId:%s Zone:%s ConnId:%s AccType:%v\n", pc.Config.AccId, pc.Config.ZoneName, resp.ConnId, resp.AccInfo.AccType)
+			pc.log("DashborgCloudClient Connected, AccId:%s Zone:%s ConnId:%s AccType:%v\n", pc.Config.AccId, pc.Config.ZoneName, resp.ConnId, accInfo.AccType)
 		} else {
 			pc.log("DashborgCloudClient Connected, AccId:%s Zone:%s\n", pc.Config.AccId, pc.Config.ZoneName)
 		}
@@ -274,9 +294,7 @@ func (pc *DashCloudClient) handleStatusErrors(fnName string, resp interface{}, r
 	if forceLog || pc.Config.Verbose {
 		pc.log("DashborgCloudClient %v\n", rtnErr)
 	}
-	if pc.AccInfo != nil {
-		pc.explainLimit(pc.AccInfo.AccType, rtnErr.Error())
-	}
+	pc.explainLimit(pc.AccInfo.AccType, rtnErr.Error())
 	return rtnErr
 }
 
@@ -321,9 +339,6 @@ func (pc *DashCloudClient) showAppLink(appName string) {
 	pc.Lock.Lock()
 	accInfo := pc.AccInfo
 	pc.Lock.Unlock()
-	if accInfo == nil {
-		return
-	}
 	if pc.Config.NoShowJWT || !accInfo.AccJWTEnabled {
 		pc.log("DashborgCloudClient App Link [%s]: %s\n", appName, pc.appLink(appName))
 	} else {
@@ -704,7 +719,7 @@ func (pc *DashCloudClient) SetBlobData(acfg dash.AppConfig, blobData dash.BlobDa
 	if blobData.Size <= 0 {
 		return dasherr.ValidateErr(fmt.Errorf("Invalid Size passed to SetBlobData (cannot be 0)"))
 	}
-	if !dashutil.IsBlobKeyValid(blobData.BlobKey) {
+	if !dashutil.IsExtBlobKeyValid(blobData.BlobKey) {
 		return dasherr.ValidateErr(fmt.Errorf("Invalid BlobKey passed to SetBlobData"))
 	}
 	if float64(blobData.Size) > pc.AccInfo.BlobSizeLimitMB*mbConst {
@@ -877,7 +892,7 @@ func (pc *DashCloudClient) getAccHost() string {
 	pc.Lock.Lock()
 	defer pc.Lock.Unlock()
 
-	if pc.AccInfo != nil && pc.AccInfo.AccCName != "" {
+	if pc.AccInfo.AccCName != "" {
 		if pc.Config.Env != "prod" {
 			return fmt.Sprintf("https://%s:8080", pc.AccInfo.AccCName)
 		}

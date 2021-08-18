@@ -155,6 +155,9 @@ func JsonUnmarshalErr(thing string, err error) error {
 }
 
 func ValidateErr(err error) error {
+	if GetErrCode(err) == ErrCodeValidation {
+		return err
+	}
 	return &DashErr{
 		err:       err,
 		code:      ErrCodeValidation,
