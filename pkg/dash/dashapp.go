@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -24,6 +25,7 @@ const htmlMimeType = "text/html"
 const appBlobNs = "app"
 const htmlBlobNs = "html"
 const rootHtmlKey = htmlBlobNs + ":" + "root"
+const jsonMimeType = "application/json"
 
 const (
 	OptionInitHandler   = "inithandler"
@@ -510,6 +512,23 @@ func (app *App) SetBlobDataFromFile(key string, mimeType string, fileName string
 	}
 	blobData.Metadata = metadata
 	return app.SetRawBlobData(blobData, fd)
+}
+
+func (app *App) SetJsonBlob(extBlobKey string, data interface{}, metadata interface{}) error {
+	var jsonBuf bytes.Buffer
+	enc := json.NewEncoder(&jsonBuf)
+	enc.SetEscapeHTML(false)
+	err := enc.Encode(data)
+	if err != nil {
+		return dasherr.JsonMarshalErr("BlobData", err)
+	}
+	reader := bytes.NewReader(jsonBuf.Bytes())
+	blob, err := BlobDataFromReadSeeker(extBlobKey, jsonMimeType, reader)
+	if err != nil {
+		return err
+	}
+	blob.Metadata = metadata
+	return app.SetRawBlobData(blob, reader)
 }
 
 func (app *App) RemoveBlob(extBlobKey string) error {

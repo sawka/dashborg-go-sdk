@@ -66,14 +66,12 @@ message ConnectClientMessage {
     map<string,string> ProcTags = 7;
     map<string,string> HostData = 8;
     int64 StartTs = 9;
-    repeated AppId ReconnectAppRuntimes = 10;
 }
 
 message ConnectClientResponse {
     RtnStatus Status = 1;
     string ConnId = 2;
     string AccInfoJson = 3;
-    repeated string ReconnectErrs = 4;
 }
 
 message RequestStreamMessage {

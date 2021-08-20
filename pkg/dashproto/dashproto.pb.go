@@ -541,16 +541,15 @@ type ConnectClientMessage struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Ts                   int64             `protobuf:"varint,1,opt,name=Ts,proto3" json:"Ts,omitempty"`
-	ProcRunId            string            `protobuf:"bytes,2,opt,name=ProcRunId,proto3" json:"ProcRunId,omitempty"`
-	AccId                string            `protobuf:"bytes,3,opt,name=AccId,proto3" json:"AccId,omitempty"`
-	ZoneName             string            `protobuf:"bytes,4,opt,name=ZoneName,proto3" json:"ZoneName,omitempty"`
-	AnonAcc              bool              `protobuf:"varint,5,opt,name=AnonAcc,proto3" json:"AnonAcc,omitempty"`
-	ProcName             string            `protobuf:"bytes,6,opt,name=ProcName,proto3" json:"ProcName,omitempty"`
-	ProcTags             map[string]string `protobuf:"bytes,7,rep,name=ProcTags,proto3" json:"ProcTags,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
-	HostData             map[string]string `protobuf:"bytes,8,rep,name=HostData,proto3" json:"HostData,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
-	StartTs              int64             `protobuf:"varint,9,opt,name=StartTs,proto3" json:"StartTs,omitempty"`
-	ReconnectAppRuntimes []*AppId          `protobuf:"bytes,10,rep,name=ReconnectAppRuntimes,proto3" json:"ReconnectAppRuntimes,omitempty"`
+	Ts        int64             `protobuf:"varint,1,opt,name=Ts,proto3" json:"Ts,omitempty"`
+	ProcRunId string            `protobuf:"bytes,2,opt,name=ProcRunId,proto3" json:"ProcRunId,omitempty"`
+	AccId     string            `protobuf:"bytes,3,opt,name=AccId,proto3" json:"AccId,omitempty"`
+	ZoneName  string            `protobuf:"bytes,4,opt,name=ZoneName,proto3" json:"ZoneName,omitempty"`
+	AnonAcc   bool              `protobuf:"varint,5,opt,name=AnonAcc,proto3" json:"AnonAcc,omitempty"`
+	ProcName  string            `protobuf:"bytes,6,opt,name=ProcName,proto3" json:"ProcName,omitempty"`
+	ProcTags  map[string]string `protobuf:"bytes,7,rep,name=ProcTags,proto3" json:"ProcTags,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+	HostData  map[string]string `protobuf:"bytes,8,rep,name=HostData,proto3" json:"HostData,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+	StartTs   int64             `protobuf:"varint,9,opt,name=StartTs,proto3" json:"StartTs,omitempty"`
 }
 
 func (x *ConnectClientMessage) Reset() {
@@ -648,22 +647,14 @@ func (x *ConnectClientMessage) GetStartTs() int64 {
 	return 0
 }
 
-func (x *ConnectClientMessage) GetReconnectAppRuntimes() []*AppId {
-	if x != nil {
-		return x.ReconnectAppRuntimes
-	}
-	return nil
-}
-
 type ConnectClientResponse struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Status        *RtnStatus `protobuf:"bytes,1,opt,name=Status,proto3" json:"Status,omitempty"`
-	ConnId        string     `protobuf:"bytes,2,opt,name=ConnId,proto3" json:"ConnId,omitempty"`
-	AccInfoJson   string     `protobuf:"bytes,3,opt,name=AccInfoJson,proto3" json:"AccInfoJson,omitempty"`
-	ReconnectErrs []string   `protobuf:"bytes,4,rep,name=ReconnectErrs,proto3" json:"ReconnectErrs,omitempty"`
+	Status      *RtnStatus `protobuf:"bytes,1,opt,name=Status,proto3" json:"Status,omitempty"`
+	ConnId      string     `protobuf:"bytes,2,opt,name=ConnId,proto3" json:"ConnId,omitempty"`
+	AccInfoJson string     `protobuf:"bytes,3,opt,name=AccInfoJson,proto3" json:"AccInfoJson,omitempty"`
 }
 
 func (x *ConnectClientResponse) Reset() {
@@ -717,13 +708,6 @@ func (x *ConnectClientResponse) GetAccInfoJson() string {
 		return x.AccInfoJson
 	}
 	return ""
-}
-
-func (x *ConnectClientResponse) GetReconnectErrs() []string {
-	if x != nil {
-		return x.ReconnectErrs
-	}
-	return nil
 }
 
 type RequestStreamMessage struct {
@@ -1970,7 +1954,7 @@ var file_pkg_dashproto_dashproto_proto_rawDesc = []byte{
 	0x75, 0x74, 0x4d, 0x73, 0x18, 0x0e, 0x20, 0x01, 0x28, 0x03, 0x52, 0x09, 0x54, 0x69, 0x6d, 0x65,
 	0x6f, 0x75, 0x74, 0x4d, 0x73, 0x12, 0x24, 0x0a, 0x0d, 0x49, 0x73, 0x42, 0x61, 0x63, 0x6b, 0x65,
 	0x6e, 0x64, 0x43, 0x61, 0x6c, 0x6c, 0x18, 0x0f, 0x20, 0x01, 0x28, 0x08, 0x52, 0x0d, 0x49, 0x73,
-	0x42, 0x61, 0x63, 0x6b, 0x65, 0x6e, 0x64, 0x43, 0x61, 0x6c, 0x6c, 0x22, 0xa8, 0x04, 0x0a, 0x14,
+	0x42, 0x61, 0x63, 0x6b, 0x65, 0x6e, 0x64, 0x43, 0x61, 0x6c, 0x6c, 0x22, 0xde, 0x03, 0x0a, 0x14,
 	0x43, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x4d, 0x65, 0x73,
 	0x73, 0x61, 0x67, 0x65, 0x12, 0x0e, 0x0a, 0x02, 0x54, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x03,
 	0x52, 0x02, 0x54, 0x73, 0x12, 0x1c, 0x0a, 0x09, 0x50, 0x72, 0x6f, 0x63, 0x52, 0x75, 0x6e, 0x49,
@@ -1993,30 +1977,23 @@ var file_pkg_dashproto_dashproto_proto_rawDesc = []byte{
 	0x2e, 0x48, 0x6f, 0x73, 0x74, 0x44, 0x61, 0x74, 0x61, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x52, 0x08,
 	0x48, 0x6f, 0x73, 0x74, 0x44, 0x61, 0x74, 0x61, 0x12, 0x18, 0x0a, 0x07, 0x53, 0x74, 0x61, 0x72,
 	0x74, 0x54, 0x73, 0x18, 0x09, 0x20, 0x01, 0x28, 0x03, 0x52, 0x07, 0x53, 0x74, 0x61, 0x72, 0x74,
-	0x54, 0x73, 0x12, 0x48, 0x0a, 0x14, 0x52, 0x65, 0x63, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x41,
-	0x70, 0x70, 0x52, 0x75, 0x6e, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x18, 0x0a, 0x20, 0x03, 0x28, 0x0b,
-	0x32, 0x14, 0x2e, 0x64, 0x61, 0x73, 0x68, 0x62, 0x6f, 0x72, 0x67, 0x2e, 0x72, 0x70, 0x63, 0x31,
-	0x2e, 0x41, 0x70, 0x70, 0x49, 0x64, 0x52, 0x14, 0x52, 0x65, 0x63, 0x6f, 0x6e, 0x6e, 0x65, 0x63,
-	0x74, 0x41, 0x70, 0x70, 0x52, 0x75, 0x6e, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x1a, 0x3b, 0x0a, 0x0d,
-	0x50, 0x72, 0x6f, 0x63, 0x54, 0x61, 0x67, 0x73, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x12, 0x10, 0x0a,
-	0x03, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12,
-	0x14, 0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05,
-	0x76, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38, 0x01, 0x1a, 0x3b, 0x0a, 0x0d, 0x48, 0x6f, 0x73,
-	0x74, 0x44, 0x61, 0x74, 0x61, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65,
-	0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x14, 0x0a, 0x05,
-	0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x76, 0x61, 0x6c,
-	0x75, 0x65, 0x3a, 0x02, 0x38, 0x01, 0x22, 0xa9, 0x01, 0x0a, 0x15, 0x43, 0x6f, 0x6e, 0x6e, 0x65,
-	0x63, 0x74, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
-	0x12, 0x30, 0x0a, 0x06, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b,
-	0x32, 0x18, 0x2e, 0x64, 0x61, 0x73, 0x68, 0x62, 0x6f, 0x72, 0x67, 0x2e, 0x72, 0x70, 0x63, 0x31,
-	0x2e, 0x52, 0x74, 0x6e, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x06, 0x53, 0x74, 0x61, 0x74,
-	0x75, 0x73, 0x12, 0x16, 0x0a, 0x06, 0x43, 0x6f, 0x6e, 0x6e, 0x49, 0x64, 0x18, 0x02, 0x20, 0x01,
-	0x28, 0x09, 0x52, 0x06, 0x43, 0x6f, 0x6e, 0x6e, 0x49, 0x64, 0x12, 0x20, 0x0a, 0x0b, 0x41, 0x63,
-	0x63, 0x49, 0x6e, 0x66, 0x6f, 0x4a, 0x73, 0x6f, 0x6e, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52,
-	0x0b, 0x41, 0x63, 0x63, 0x49, 0x6e, 0x66, 0x6f, 0x4a, 0x73, 0x6f, 0x6e, 0x12, 0x24, 0x0a, 0x0d,
-	0x52, 0x65, 0x63, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x45, 0x72, 0x72, 0x73, 0x18, 0x04, 0x20,
-	0x03, 0x28, 0x09, 0x52, 0x0d, 0x52, 0x65, 0x63, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x45, 0x72,
-	0x72, 0x73, 0x22, 0x26, 0x0a, 0x14, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x53, 0x74, 0x72,
+	0x54, 0x73, 0x1a, 0x3b, 0x0a, 0x0d, 0x50, 0x72, 0x6f, 0x63, 0x54, 0x61, 0x67, 0x73, 0x45, 0x6e,
+	0x74, 0x72, 0x79, 0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x14, 0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38, 0x01, 0x1a,
+	0x3b, 0x0a, 0x0d, 0x48, 0x6f, 0x73, 0x74, 0x44, 0x61, 0x74, 0x61, 0x45, 0x6e, 0x74, 0x72, 0x79,
+	0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b,
+	0x65, 0x79, 0x12, 0x14, 0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38, 0x01, 0x22, 0x83, 0x01, 0x0a,
+	0x15, 0x43, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x52, 0x65,
+	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x30, 0x0a, 0x06, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73,
+	0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x18, 0x2e, 0x64, 0x61, 0x73, 0x68, 0x62, 0x6f, 0x72,
+	0x67, 0x2e, 0x72, 0x70, 0x63, 0x31, 0x2e, 0x52, 0x74, 0x6e, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73,
+	0x52, 0x06, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x12, 0x16, 0x0a, 0x06, 0x43, 0x6f, 0x6e, 0x6e,
+	0x49, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x43, 0x6f, 0x6e, 0x6e, 0x49, 0x64,
+	0x12, 0x20, 0x0a, 0x0b, 0x41, 0x63, 0x63, 0x49, 0x6e, 0x66, 0x6f, 0x4a, 0x73, 0x6f, 0x6e, 0x18,
+	0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x41, 0x63, 0x63, 0x49, 0x6e, 0x66, 0x6f, 0x4a, 0x73,
+	0x6f, 0x6e, 0x22, 0x26, 0x0a, 0x14, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x53, 0x74, 0x72,
 	0x65, 0x61, 0x6d, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x12, 0x0e, 0x0a, 0x02, 0x54, 0x73,
 	0x18, 0x01, 0x20, 0x01, 0x28, 0x03, 0x52, 0x02, 0x54, 0x73, 0x22, 0x74, 0x0a, 0x14, 0x53, 0x65,
 	0x6e, 0x64, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e,
@@ -2279,56 +2256,55 @@ var file_pkg_dashproto_dashproto_proto_depIdxs = []int32{
 	0,  // 3: dashborg.rpc1.RequestMessage.Status:type_name -> dashborg.rpc1.RtnStatus
 	27, // 4: dashborg.rpc1.ConnectClientMessage.ProcTags:type_name -> dashborg.rpc1.ConnectClientMessage.ProcTagsEntry
 	28, // 5: dashborg.rpc1.ConnectClientMessage.HostData:type_name -> dashborg.rpc1.ConnectClientMessage.HostDataEntry
-	1,  // 6: dashborg.rpc1.ConnectClientMessage.ReconnectAppRuntimes:type_name -> dashborg.rpc1.AppId
-	0,  // 7: dashborg.rpc1.ConnectClientResponse.Status:type_name -> dashborg.rpc1.RtnStatus
-	0,  // 8: dashborg.rpc1.SendResponseResponse.Status:type_name -> dashborg.rpc1.RtnStatus
-	1,  // 9: dashborg.rpc1.StartStreamMessage.AppId:type_name -> dashborg.rpc1.AppId
-	0,  // 10: dashborg.rpc1.StartStreamResponse.Status:type_name -> dashborg.rpc1.RtnStatus
-	0,  // 11: dashborg.rpc1.ReflectZoneResponse.Status:type_name -> dashborg.rpc1.RtnStatus
-	1,  // 12: dashborg.rpc1.CallDataHandlerMessage.AppId:type_name -> dashborg.rpc1.AppId
-	0,  // 13: dashborg.rpc1.CallDataHandlerResponse.Status:type_name -> dashborg.rpc1.RtnStatus
-	1,  // 14: dashborg.rpc1.BackendPushMessage.AppId:type_name -> dashborg.rpc1.AppId
-	0,  // 15: dashborg.rpc1.BackendPushResponse.Status:type_name -> dashborg.rpc1.RtnStatus
-	1,  // 16: dashborg.rpc1.OpenAppMessage.AppId:type_name -> dashborg.rpc1.AppId
-	0,  // 17: dashborg.rpc1.OpenAppResponse.Status:type_name -> dashborg.rpc1.RtnStatus
-	1,  // 18: dashborg.rpc1.WriteAppMessage.AppId:type_name -> dashborg.rpc1.AppId
-	0,  // 19: dashborg.rpc1.WriteAppResponse.Status:type_name -> dashborg.rpc1.RtnStatus
-	29, // 20: dashborg.rpc1.WriteAppResponse.OptionWarnings:type_name -> dashborg.rpc1.WriteAppResponse.OptionWarningsEntry
-	1,  // 21: dashborg.rpc1.SetBlobMessage.AppId:type_name -> dashborg.rpc1.AppId
-	0,  // 22: dashborg.rpc1.SetBlobResponse.Status:type_name -> dashborg.rpc1.RtnStatus
-	1,  // 23: dashborg.rpc1.RemoveAppMessage.AppId:type_name -> dashborg.rpc1.AppId
-	0,  // 24: dashborg.rpc1.RemoveAppResponse.Status:type_name -> dashborg.rpc1.RtnStatus
-	1,  // 25: dashborg.rpc1.RemoveBlobMessage.AppId:type_name -> dashborg.rpc1.AppId
-	0,  // 26: dashborg.rpc1.RemoveBlobResponse.Status:type_name -> dashborg.rpc1.RtnStatus
-	5,  // 27: dashborg.rpc1.DashborgService.ConnectClient:input_type -> dashborg.rpc1.ConnectClientMessage
-	11, // 28: dashborg.rpc1.DashborgService.ReflectZone:input_type -> dashborg.rpc1.ReflectZoneMessage
-	13, // 29: dashborg.rpc1.DashborgService.CallDataHandler:input_type -> dashborg.rpc1.CallDataHandlerMessage
-	7,  // 30: dashborg.rpc1.DashborgService.RequestStream:input_type -> dashborg.rpc1.RequestStreamMessage
-	3,  // 31: dashborg.rpc1.DashborgService.SendResponse:input_type -> dashborg.rpc1.SendResponseMessage
-	9,  // 32: dashborg.rpc1.DashborgService.StartStream:input_type -> dashborg.rpc1.StartStreamMessage
-	15, // 33: dashborg.rpc1.DashborgService.BackendPush:input_type -> dashborg.rpc1.BackendPushMessage
-	17, // 34: dashborg.rpc1.DashborgService.OpenApp:input_type -> dashborg.rpc1.OpenAppMessage
-	19, // 35: dashborg.rpc1.DashborgService.WriteApp:input_type -> dashborg.rpc1.WriteAppMessage
-	21, // 36: dashborg.rpc1.DashborgService.SetBlob:input_type -> dashborg.rpc1.SetBlobMessage
-	25, // 37: dashborg.rpc1.DashborgService.RemoveBlob:input_type -> dashborg.rpc1.RemoveBlobMessage
-	23, // 38: dashborg.rpc1.DashborgService.RemoveApp:input_type -> dashborg.rpc1.RemoveAppMessage
-	6,  // 39: dashborg.rpc1.DashborgService.ConnectClient:output_type -> dashborg.rpc1.ConnectClientResponse
-	12, // 40: dashborg.rpc1.DashborgService.ReflectZone:output_type -> dashborg.rpc1.ReflectZoneResponse
-	14, // 41: dashborg.rpc1.DashborgService.CallDataHandler:output_type -> dashborg.rpc1.CallDataHandlerResponse
-	4,  // 42: dashborg.rpc1.DashborgService.RequestStream:output_type -> dashborg.rpc1.RequestMessage
-	8,  // 43: dashborg.rpc1.DashborgService.SendResponse:output_type -> dashborg.rpc1.SendResponseResponse
-	10, // 44: dashborg.rpc1.DashborgService.StartStream:output_type -> dashborg.rpc1.StartStreamResponse
-	16, // 45: dashborg.rpc1.DashborgService.BackendPush:output_type -> dashborg.rpc1.BackendPushResponse
-	18, // 46: dashborg.rpc1.DashborgService.OpenApp:output_type -> dashborg.rpc1.OpenAppResponse
-	20, // 47: dashborg.rpc1.DashborgService.WriteApp:output_type -> dashborg.rpc1.WriteAppResponse
-	22, // 48: dashborg.rpc1.DashborgService.SetBlob:output_type -> dashborg.rpc1.SetBlobResponse
-	26, // 49: dashborg.rpc1.DashborgService.RemoveBlob:output_type -> dashborg.rpc1.RemoveBlobResponse
-	24, // 50: dashborg.rpc1.DashborgService.RemoveApp:output_type -> dashborg.rpc1.RemoveAppResponse
-	39, // [39:51] is the sub-list for method output_type
-	27, // [27:39] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	0,  // 6: dashborg.rpc1.ConnectClientResponse.Status:type_name -> dashborg.rpc1.RtnStatus
+	0,  // 7: dashborg.rpc1.SendResponseResponse.Status:type_name -> dashborg.rpc1.RtnStatus
+	1,  // 8: dashborg.rpc1.StartStreamMessage.AppId:type_name -> dashborg.rpc1.AppId
+	0,  // 9: dashborg.rpc1.StartStreamResponse.Status:type_name -> dashborg.rpc1.RtnStatus
+	0,  // 10: dashborg.rpc1.ReflectZoneResponse.Status:type_name -> dashborg.rpc1.RtnStatus
+	1,  // 11: dashborg.rpc1.CallDataHandlerMessage.AppId:type_name -> dashborg.rpc1.AppId
+	0,  // 12: dashborg.rpc1.CallDataHandlerResponse.Status:type_name -> dashborg.rpc1.RtnStatus
+	1,  // 13: dashborg.rpc1.BackendPushMessage.AppId:type_name -> dashborg.rpc1.AppId
+	0,  // 14: dashborg.rpc1.BackendPushResponse.Status:type_name -> dashborg.rpc1.RtnStatus
+	1,  // 15: dashborg.rpc1.OpenAppMessage.AppId:type_name -> dashborg.rpc1.AppId
+	0,  // 16: dashborg.rpc1.OpenAppResponse.Status:type_name -> dashborg.rpc1.RtnStatus
+	1,  // 17: dashborg.rpc1.WriteAppMessage.AppId:type_name -> dashborg.rpc1.AppId
+	0,  // 18: dashborg.rpc1.WriteAppResponse.Status:type_name -> dashborg.rpc1.RtnStatus
+	29, // 19: dashborg.rpc1.WriteAppResponse.OptionWarnings:type_name -> dashborg.rpc1.WriteAppResponse.OptionWarningsEntry
+	1,  // 20: dashborg.rpc1.SetBlobMessage.AppId:type_name -> dashborg.rpc1.AppId
+	0,  // 21: dashborg.rpc1.SetBlobResponse.Status:type_name -> dashborg.rpc1.RtnStatus
+	1,  // 22: dashborg.rpc1.RemoveAppMessage.AppId:type_name -> dashborg.rpc1.AppId
+	0,  // 23: dashborg.rpc1.RemoveAppResponse.Status:type_name -> dashborg.rpc1.RtnStatus
+	1,  // 24: dashborg.rpc1.RemoveBlobMessage.AppId:type_name -> dashborg.rpc1.AppId
+	0,  // 25: dashborg.rpc1.RemoveBlobResponse.Status:type_name -> dashborg.rpc1.RtnStatus
+	5,  // 26: dashborg.rpc1.DashborgService.ConnectClient:input_type -> dashborg.rpc1.ConnectClientMessage
+	11, // 27: dashborg.rpc1.DashborgService.ReflectZone:input_type -> dashborg.rpc1.ReflectZoneMessage
+	13, // 28: dashborg.rpc1.DashborgService.CallDataHandler:input_type -> dashborg.rpc1.CallDataHandlerMessage
+	7,  // 29: dashborg.rpc1.DashborgService.RequestStream:input_type -> dashborg.rpc1.RequestStreamMessage
+	3,  // 30: dashborg.rpc1.DashborgService.SendResponse:input_type -> dashborg.rpc1.SendResponseMessage
+	9,  // 31: dashborg.rpc1.DashborgService.StartStream:input_type -> dashborg.rpc1.StartStreamMessage
+	15, // 32: dashborg.rpc1.DashborgService.BackendPush:input_type -> dashborg.rpc1.BackendPushMessage
+	17, // 33: dashborg.rpc1.DashborgService.OpenApp:input_type -> dashborg.rpc1.OpenAppMessage
+	19, // 34: dashborg.rpc1.DashborgService.WriteApp:input_type -> dashborg.rpc1.WriteAppMessage
+	21, // 35: dashborg.rpc1.DashborgService.SetBlob:input_type -> dashborg.rpc1.SetBlobMessage
+	25, // 36: dashborg.rpc1.DashborgService.RemoveBlob:input_type -> dashborg.rpc1.RemoveBlobMessage
+	23, // 37: dashborg.rpc1.DashborgService.RemoveApp:input_type -> dashborg.rpc1.RemoveAppMessage
+	6,  // 38: dashborg.rpc1.DashborgService.ConnectClient:output_type -> dashborg.rpc1.ConnectClientResponse
+	12, // 39: dashborg.rpc1.DashborgService.ReflectZone:output_type -> dashborg.rpc1.ReflectZoneResponse
+	14, // 40: dashborg.rpc1.DashborgService.CallDataHandler:output_type -> dashborg.rpc1.CallDataHandlerResponse
+	4,  // 41: dashborg.rpc1.DashborgService.RequestStream:output_type -> dashborg.rpc1.RequestMessage
+	8,  // 42: dashborg.rpc1.DashborgService.SendResponse:output_type -> dashborg.rpc1.SendResponseResponse
+	10, // 43: dashborg.rpc1.DashborgService.StartStream:output_type -> dashborg.rpc1.StartStreamResponse
+	16, // 44: dashborg.rpc1.DashborgService.BackendPush:output_type -> dashborg.rpc1.BackendPushResponse
+	18, // 45: dashborg.rpc1.DashborgService.OpenApp:output_type -> dashborg.rpc1.OpenAppResponse
+	20, // 46: dashborg.rpc1.DashborgService.WriteApp:output_type -> dashborg.rpc1.WriteAppResponse
+	22, // 47: dashborg.rpc1.DashborgService.SetBlob:output_type -> dashborg.rpc1.SetBlobResponse
+	26, // 48: dashborg.rpc1.DashborgService.RemoveBlob:output_type -> dashborg.rpc1.RemoveBlobResponse
+	24, // 49: dashborg.rpc1.DashborgService.RemoveApp:output_type -> dashborg.rpc1.RemoveAppResponse
+	38, // [38:50] is the sub-list for method output_type
+	26, // [26:38] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_pkg_dashproto_dashproto_proto_init() }

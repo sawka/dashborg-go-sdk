@@ -201,31 +201,21 @@ func makeHostData() map[string]string {
 func (pc *DashCloudClient) sendConnectClientMessage(isReconnect bool) error {
 	// only allow one proc message at a time (synchronize)
 	hostData := makeHostData()
-	reconApps := make([]*dashproto.AppId, 0)
-	for _, appstruct := range pc.AppMap {
-		reconApps = append(reconApps, &dashproto.AppId{AppName: appstruct.App.GetAppName()})
-	}
 	m := &dashproto.ConnectClientMessage{
-		Ts:                   dashutil.Ts(),
-		ProcRunId:            pc.ProcRunId,
-		AccId:                pc.Config.AccId,
-		ZoneName:             pc.Config.ZoneName,
-		AnonAcc:              pc.Config.AnonAcc,
-		ProcName:             pc.Config.ProcName,
-		ProcTags:             pc.Config.ProcTags,
-		HostData:             hostData,
-		StartTs:              dashutil.DashTime(pc.StartTime),
-		ReconnectAppRuntimes: reconApps,
+		Ts:        dashutil.Ts(),
+		ProcRunId: pc.ProcRunId,
+		AccId:     pc.Config.AccId,
+		ZoneName:  pc.Config.ZoneName,
+		AnonAcc:   pc.Config.AnonAcc,
+		ProcName:  pc.Config.ProcName,
+		ProcTags:  pc.Config.ProcTags,
+		HostData:  hostData,
+		StartTs:   dashutil.DashTime(pc.StartTime),
 	}
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
 	resp, respErr := pc.DBService.ConnectClient(ctx, m)
 	dashErr := pc.handleStatusErrors("ConnectClient", resp, respErr, true)
-	if resp != nil && len(resp.ReconnectErrs) > 0 {
-		for _, recErr := range resp.ReconnectErrs {
-			pc.log("%s\n", recErr)
-		}
-	}
 	var accInfo accInfoType
 	if dashErr == nil {
 		jsonErr := json.Unmarshal([]byte(resp.AccInfoJson), &accInfo)
@@ -264,8 +254,31 @@ func (pc *DashCloudClient) sendConnectClientMessage(isReconnect bool) error {
 		if pc.Config.Verbose {
 			pc.log("DashborgCloudClient ReConnected, AccId:%s Zone:%s ConnId:%s\n", pc.Config.AccId, pc.Config.ZoneName, resp.ConnId)
 		}
+		pc.reconnectApps()
 	}
 	return nil
+}
+
+func (pc *DashCloudClient) getAppNames() []string {
+	pc.Lock.Lock()
+	defer pc.Lock.Unlock()
+	var appNames []string
+	for appName, _ := range pc.AppMap {
+		appNames = append(appNames, appName)
+	}
+	return appNames
+}
+
+func (pc *DashCloudClient) reconnectApps() {
+	appNames := pc.getAppNames()
+	for _, appName := range appNames {
+		err := pc.baseWriteApp(appName, true, nil, fmt.Sprintf("ReconnectApp(%s)", appName))
+		if err != nil {
+			pc.log("DashborgCloudClient %v\n", err)
+		} else {
+			pc.logV("DashborgCloudClient reconnected app:%s\n", appName)
+		}
+	}
 }
 
 func (pc *DashCloudClient) printNewAccMessage() {
@@ -424,7 +437,7 @@ func (pc *DashCloudClient) ConnectAppRuntime(app dash.AppRuntime) error {
 func (pc *DashCloudClient) runRequestStreamLoop() {
 	defer close(pc.DoneCh)
 
-	w := &dashutil.ExpoWait{}
+	w := &ExpoWait{CloudClient: pc}
 	for {
 		state := pc.Conn.GetState()
 		if state == connectivity.Shutdown {
