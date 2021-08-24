@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+
+	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
 var errType = reflect.TypeOf((*error)(nil)).Elem()
@@ -73,7 +75,7 @@ func ca_unmarshalMulti(hType reflect.Type, args []reflect.Value, argNum int, jso
 // * *Request
 // * AppStateType (if specified in App)
 // * data-array args
-func (app *App) makeCallArgs(hType reflect.Type, req *Request) ([]reflect.Value, error) {
+func (apprt *AppRuntimeImpl) makeCallArgs(hType reflect.Type, req *Request) ([]reflect.Value, error) {
 	rtn := make([]reflect.Value, hType.NumIn())
 	if hType.NumIn() == 0 {
 		return rtn, nil
@@ -86,9 +88,9 @@ func (app *App) makeCallArgs(hType reflect.Type, req *Request) ([]reflect.Value,
 	if argNum == hType.NumIn() {
 		return rtn, nil
 	}
-	stateType := app.appRuntime.appStateType
+	stateType := apprt.appStateType
 	if stateType != nil && stateType == hType.In(argNum) {
-		stateV, err := unmarshalToType(req.appStateJson, stateType)
+		stateV, err := unmarshalToType(req.rawData.AppStateJson, stateType)
 		if err != nil {
 			return nil, fmt.Errorf("Cannot unmarshal appStateJson to type:%v err:%v", hType.In(1), err)
 		}
@@ -103,12 +105,12 @@ func (app *App) makeCallArgs(hType reflect.Type, req *Request) ([]reflect.Value,
 	if dataInterface == nil {
 		ca_unmarshalNil(hType, rtn, argNum)
 	} else if reflect.ValueOf(dataInterface).Kind() == reflect.Slice {
-		err := ca_unmarshalMulti(hType, rtn, argNum, req.dataJson)
+		err := ca_unmarshalMulti(hType, rtn, argNum, req.rawData.DataJson)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		err := ca_unmarshalSingle(hType, rtn, argNum, req.dataJson)
+		err := ca_unmarshalSingle(hType, rtn, argNum, req.rawData.DataJson)
 		if err != nil {
 			return nil, err
 		}
@@ -142,58 +144,47 @@ type CallHandlerOpts struct {
 	StateType reflect.Type
 }
 
-// HandlerEx registers an app handler using reflection.  The function must
-// return an error.  First optional argument to the function is a *dash.Request.  2nd optional
+// HandlerEx registers a handler using reflection.  The function must
+// return (interface{}, error) or error.  First optional argument to the function is a *dash.Request.  2nd optional
 // argument is the AppStateType (if one has been set in the app).  The rest of the arguments
 // are mapped to the request Data as an array.  If request Data is longer, the arguments are ignored.  If
 // request Data is shorter, the missing arguments are set to their zero value.  If request Data is not
 // an array, it will be converted to a single element array, if request Data is null it will be converted
 // to a zero-element array.  The handler will throw an error if the Data or AppState values cannot be
 // converted to their respective go types (using json.Unmarshal).
-func (app *App) HandlerEx(path string, handlerFn interface{}) error {
+func (apprt *AppRuntimeImpl) Handler(path string, handlerFn interface{}) error {
+	if !dashutil.IsHandlerPathValid(path) {
+		return fmt.Errorf("Invalid handler path")
+	}
 	hType := reflect.TypeOf(handlerFn)
-	if !checkOutput(hType, errType) {
-		return fmt.Errorf("Dashborg Panel Handler must return one error value")
+	if hType.Kind() != reflect.Func {
+		return fmt.Errorf("handlerFn must be a func")
+	}
+	if !checkOutput(hType, errType) && !checkOutput(hType, interfaceType, errType) {
+		return fmt.Errorf("Dashborg Panel Handler must return (interface{}, error) or error")
 	}
 	hVal := reflect.ValueOf(handlerFn)
-	app.Handler(path, func(req *Request) error {
-		args, err := app.makeCallArgs(hType, req)
-		if err != nil {
-			return err
-		}
-		rtnVals := hVal.Call(args)
-		if rtnVals[0].IsNil() {
-			return nil
-		}
-		return rtnVals[0].Interface().(error)
-	})
-	return nil
-}
-
-// HandlerEx registers an app data-handler using reflection.  The function must
-// return two values (interface{}, error).  First optional argument to the function is a *dash.Request.  2nd optional
-// argument is the AppStateType (if one has been set in the app).  The rest of the arguments
-// are mapped to the request Data as an array.  If request Data is longer, the arguments are ignored.  If
-// request Data is shorter, the missing arguments are set to their zero value.  If request Data is not
-// an array, it will be converted to a single element array, if request Data is null it will be converted
-// to a zero-element array. The handler will throw an error if the Data or AppState values cannot be
-// converted to their respective go types (using json.Unmarshal).
-func (app *App) DataHandlerEx(path string, handlerFn interface{}) error {
-	hType := reflect.TypeOf(handlerFn)
-	if !checkOutput(hType, interfaceType, errType) {
-		return fmt.Errorf("Dashborg Data Handler must return two values (interface{}, error)")
-	}
-	hVal := reflect.ValueOf(handlerFn)
-	app.DataHandler(path, func(req *Request) (interface{}, error) {
-		args, err := app.makeCallArgs(hType, req)
+	hfn := func(req *Request) (interface{}, error) {
+		args, err := apprt.makeCallArgs(hType, req)
 		if err != nil {
 			return nil, err
 		}
 		rtnVals := hVal.Call(args)
-		if rtnVals[1].IsNil() {
-			return rtnVals[0].Interface(), nil
+		if len(rtnVals) == 2 {
+			// (interface{}, error)
+			var errRtn error
+			if !rtnVals[1].IsNil() {
+				errRtn = rtnVals[1].Interface().(error)
+			}
+			return rtnVals[0].Interface(), errRtn
+		} else {
+			// error
+			if rtnVals[0].IsNil() {
+				return nil, nil
+			}
+			return nil, rtnVals[0].Interface().(error)
 		}
-		return rtnVals[0].Interface(), rtnVals[1].Interface().(error)
-	})
+	}
+	apprt.setHandler(path, handlerType{HandlerFn: hfn})
 	return nil
 }

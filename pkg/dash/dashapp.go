@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"reflect"
+	"sort"
 	"sync"
 
 	"github.com/google/uuid"
@@ -26,6 +27,20 @@ const appBlobNs = "app"
 const htmlBlobNs = "html"
 const rootHtmlKey = htmlBlobNs + ":" + "root"
 const jsonMimeType = "application/json"
+
+const (
+	requestTypeHtml    = "html"
+	requestTypeInit    = "init"
+	requestTypeData    = "data"
+	requestTypeAuth    = "auth"
+	requestTypeStream  = "stream"
+	requestTypeHandler = "handler"
+)
+
+const (
+	handlerPathInit = "/@init"
+	handlerPathHtml = "/@html"
+)
 
 const (
 	OptionInitHandler   = "inithandler"
@@ -44,10 +59,14 @@ const (
 	HtmlTypeStatic               = "static"
 	HtmlTypeDynamicWhenConnected = "dynamic-when-connected"
 	HtmlTypeDynamic              = "dynamic"
-)
 
-// html: static, dynamic, dynamic-when-connected
-// offlinemode: enable, disable
+	InitHandlerRequired              = "required"
+	InitHandlerRequiredWhenConnected = "required-when-connected"
+	InitHandlerNone                  = "none"
+
+	OfflineModeEnable  = "enable"
+	OfflineModeDisable = "disable"
+)
 
 // AppConfig is passed as JSON to the container.  this struct
 // helps with marshaling/unmarshaling the structure.
@@ -58,9 +77,12 @@ type AppConfig struct {
 	ProcRunId          string                      `json:"procrunid"`            // set by container
 	ClientVersion      string                      `json:"clientversion"`
 	Options            map[string]GenericAppOption `json:"options"`
-	StaticData         []staticDataVal             `json:"staticdata,omitempty"`
-	ClearExistingData  bool                        `json:"clearexistingdata,omitempty"`
 	ClearExistingBlobs bool                        `json:"clearexistingblobs,omitempty"`
+}
+
+type AppId struct {
+	AppName    string
+	AppVersion string
 }
 
 // super-set of all option fields for JSON marshaling/parsing
@@ -73,11 +95,6 @@ type GenericAppOption struct {
 	Order        float64  `json:"order,omitempty"`
 }
 
-type staticDataVal struct {
-	Path string      `json:"path"`
-	Data interface{} `json:"data"`
-}
-
 type BlobData struct {
 	BlobNs   string      `json:"blobns"`
 	BlobKey  string      `json:"blobkey"`
@@ -88,6 +105,15 @@ type BlobData struct {
 	Metadata interface{} `json:"metadata"`
 	Removed  bool        `json:"removed"`
 }
+
+type middlewareType struct {
+	Name     string
+	Fn       MiddlewareFuncType
+	Priority float64
+}
+
+type MiddlewareNextFuncType func(req *Request) (interface{}, error)
+type MiddlewareFuncType func(req *Request, nextFn MiddlewareNextFuncType) (interface{}, error)
 
 func (b BlobData) ExtBlobKey() string {
 	return fmt.Sprintf("%s:%s", b.BlobNs, b.BlobKey)
@@ -103,25 +129,30 @@ type ProcInfo struct {
 
 type AppRuntime interface {
 	GetAppName() string
-	GetAppConfig() AppConfig
 	RunHandler(req *Request) (interface{}, error)
 }
 
-type appRuntimeImpl struct {
+type AppRuntimeImpl struct {
+	appName      string
 	lock         *sync.Mutex
 	appStateType reflect.Type
 	html         valueType
-	handlers     map[handlerKey]handlerType
+	handlers     map[string]handlerType
+	middlewares  []middlewareType
 }
 
 type App struct {
 	AppConfig  AppConfig
-	appRuntime *appRuntimeImpl
-	Container  Container
+	appRuntime *AppRuntimeImpl
+	api        InternalApi
 	isNewApp   bool
 
 	// liveUpdateMode  bool
 	// connectOnlyMode bool
+}
+
+func (app *App) Runtime() *AppRuntimeImpl {
+	return app.appRuntime
 }
 
 type valueType interface {
@@ -198,19 +229,20 @@ func defaultAuthOpt() GenericAppOption {
 	return authOpt
 }
 
-func makeAppRuntime() *appRuntimeImpl {
-	rtn := &appRuntimeImpl{
-		lock: &sync.Mutex{},
+func makeAppRuntime(appName string) *AppRuntimeImpl {
+	rtn := &AppRuntimeImpl{
+		appName: appName,
+		lock:    &sync.Mutex{},
 	}
-	rtn.handlers = make(map[handlerKey]handlerType)
-	rtn.handlers[handlerKey{HandlerType: "html"}] = handlerType{HandlerFn: rtn.htmlHandler}
+	rtn.handlers = make(map[string]handlerType)
+	rtn.handlers[handlerPathHtml] = handlerType{HandlerFn: rtn.htmlHandler}
 	return rtn
 }
 
-func MakeApp(appName string, container Container) *App {
+func MakeApp(appName string, api InternalApi) *App {
 	rtn := &App{
-		Container:  container,
-		appRuntime: makeAppRuntime(),
+		api:        api,
+		appRuntime: makeAppRuntime(appName),
 		AppConfig: AppConfig{
 			AppVersion: uuid.New().String(),
 			AppName:    appName,
@@ -224,12 +256,9 @@ func MakeApp(appName string, container Container) *App {
 	return rtn
 }
 
-func (app *App) SetOfflineMode(allow bool) {
-	if allow {
-		app.AppConfig.Options[OptionOfflineMode] = GenericAppOption{Type: "allow"}
-	} else {
-		delete(app.AppConfig.Options, OptionOfflineMode)
-	}
+// offline mode type is either OfflineModeEnable or OfflineModeDisable
+func (app *App) SetOfflineModeType(offlineModeType string) {
+	app.AppConfig.Options[OptionOfflineMode] = GenericAppOption{Type: offlineModeType}
 }
 
 func (app *App) IsNew() bool {
@@ -244,18 +273,14 @@ func (app *App) IsNew() bool {
 // 	app.liveUpdateMode = liveUpdate
 // }
 
-func (app *App) ClearExistingData() {
-	app.AppConfig.ClearExistingData = true
-}
-
 func (app *App) ClearExistingBlobs() {
 	app.AppConfig.ClearExistingBlobs = true
 }
 
-func MakeAppFromConfig(cfg AppConfig, container Container) *App {
+func MakeAppFromConfig(cfg AppConfig, api InternalApi) *App {
 	rtn := &App{
-		Container:  container,
-		appRuntime: makeAppRuntime(),
+		api:        api,
+		appRuntime: makeAppRuntime(cfg.AppName),
 		AppConfig:  cfg,
 	}
 	rtn.AppConfig.AppVersion = uuid.New().String()
@@ -263,40 +288,46 @@ func MakeAppFromConfig(cfg AppConfig, container Container) *App {
 }
 
 type handlerType struct {
-	HandlerFn       func(req *Request) (interface{}, error)
-	BoundHandlerKey *handlerKey
+	HandlerFn func(req *Request) (interface{}, error)
 }
 
 func (app *App) GetAppConfig() AppConfig {
 	return app.AppConfig
 }
 
-func (app *App) RunHandler(req *Request) (interface{}, error) {
-	return app.appRuntime.RunHandler(req)
-}
-
-func (app *appRuntimeImpl) SetHandler(hkey handlerKey, handler handlerType) {
+func (app *AppRuntimeImpl) setHandler(path string, handler handlerType) {
 	app.lock.Lock()
 	defer app.lock.Unlock()
-	app.handlers[hkey] = handler
+	app.handlers[path] = handler
 }
 
-func (app *appRuntimeImpl) RunHandler(req *Request) (interface{}, error) {
-	hkey := handlerKey{
-		HandlerType: req.info.RequestType,
-		Path:        req.info.Path,
-	}
-	app.lock.Lock()
-	hval, ok := app.handlers[hkey]
-	app.lock.Unlock()
+func (apprt *AppRuntimeImpl) RunHandler(req *Request) (interface{}, error) {
+	path := req.info.Path
+	apprt.lock.Lock()
+	hval, ok := apprt.handlers[path]
+	mws := apprt.middlewares
+	apprt.lock.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("No handler found for %s:%s", req.info.AppName, req.info.Path)
 	}
-	rtn, err := hval.HandlerFn(req)
+	rtn, err := mwHelper(req, hval, mws, 0)
 	if err != nil {
 		return nil, err
 	}
 	return rtn, nil
+}
+
+func mwHelper(outerReq *Request, hval handlerType, mws []middlewareType, mwPos int) (interface{}, error) {
+	if mwPos >= len(mws) {
+		return hval.HandlerFn(outerReq)
+	}
+	mw := mws[mwPos]
+	return mw.Fn(outerReq, func(innerReq *Request) (interface{}, error) {
+		if innerReq == nil {
+			panic("No Request Passed to middleware nextFn")
+		}
+		return mwHelper(innerReq, hval, mws, mwPos+1)
+	})
 }
 
 func (app *App) RemoveOption(optName string) {
@@ -323,6 +354,7 @@ func (app *App) getAuthOpt() GenericAppOption {
 	return authOpt
 }
 
+// authType must be AuthTypeZone
 func (app *App) SetAuthType(authType string) {
 	authOpt := app.getAuthOpt()
 	authOpt.Type = authType
@@ -338,6 +370,7 @@ func (app *App) SetAllowedRoles(roles ...string) {
 // SetAppVisibility controls whether the app shows in the UI's app-switcher (see VisType constants)
 // Apps will be sorted by displayOrder (and then AppTitle).  displayOrder of 0 (the default) will
 // sort to the end of the list, not the beginning
+// visType is either VisTypeHidden, VisTypeDefault, or VisTypeAlwaysVisible
 func (app *App) SetAppVisibility(visType string, displayOrder float64) {
 	visOpt := GenericAppOption{Type: visType, Order: displayOrder}
 	app.AppConfig.Options[OptionAppVisibility] = visOpt
@@ -389,23 +422,61 @@ func (app *App) SetHtmlFromFile(fileName string) error {
 	return nil
 }
 
-func (app *App) SetAppStateType(appStateType reflect.Type) {
-	app.appRuntime.appStateType = appStateType
+func (apprt *AppRuntimeImpl) SetAppStateType(appStateType reflect.Type) {
+	apprt.appStateType = appStateType
 }
 
-func (app *App) SetInitHandler(handlerFn func(req *Request) error) {
-	hkey := handlerKey{HandlerType: "init"}
-	app.SetOption(OptionInitHandler, GenericAppOption{Type: "handler"})
-	app.appRuntime.SetHandler(hkey, handlerType{HandlerFn: wrapHandler(handlerFn)})
+// initType is either InitHandlerRequired, InitHandlerRequiredWhenConnected, or InitHandlerNone
+func (app *App) SetInitHandlerType(initType string) {
+	app.SetOption(OptionInitHandler, GenericAppOption{Type: initType})
 }
 
-func (app *App) Handler(path string, handlerFn func(req *Request) error) error {
-	hkey := handlerKey{HandlerType: "handler", Path: path}
-	app.appRuntime.SetHandler(hkey, handlerType{HandlerFn: wrapHandler(handlerFn)})
+func (apprt *AppRuntimeImpl) GetAppName() string {
+	return apprt.appName
+}
+
+func (apprt *AppRuntimeImpl) AddRawMiddleware(name string, mwFunc MiddlewareFuncType, priority float64) {
+	apprt.RemoveMiddleware(name)
+	apprt.lock.Lock()
+	defer apprt.lock.Unlock()
+	newmws := make([]middlewareType, len(apprt.middlewares)+1)
+	copy(newmws, apprt.middlewares)
+	newmws[len(apprt.middlewares)] = middlewareType{Name: name, Fn: mwFunc, Priority: priority}
+	sort.Slice(newmws, func(i int, j int) bool {
+		mw1 := newmws[i]
+		mw2 := newmws[j]
+		return mw1.Priority > mw2.Priority
+	})
+	apprt.middlewares = newmws
+}
+
+func (apprt *AppRuntimeImpl) RemoveMiddleware(name string) {
+	apprt.lock.Lock()
+	defer apprt.lock.Unlock()
+	mws := make([]middlewareType, 0)
+	for _, mw := range apprt.middlewares {
+		if mw.Name == name {
+			continue
+		}
+		mws = append(mws, mw)
+	}
+	apprt.middlewares = mws
+}
+
+func (apprt *AppRuntimeImpl) SetRawHandler(path string, handlerFn func(req *Request) (interface{}, error)) error {
+	if !dashutil.IsHandlerPathValid(path) {
+		return fmt.Errorf("Invalid handler path")
+	}
+	apprt.setHandler(path, handlerType{HandlerFn: handlerFn})
 	return nil
 }
 
-func (app *appRuntimeImpl) htmlHandler(req *Request) (interface{}, error) {
+func (apprt *AppRuntimeImpl) SetInitHandler(handlerFn func(req *Request) error) error {
+	apprt.setHandler(handlerPathInit, handlerType{HandlerFn: wrapHandler(handlerFn)})
+	return nil
+}
+
+func (app *AppRuntimeImpl) htmlHandler(req *Request) (interface{}, error) {
 	if app.html == nil {
 		return nil, nil
 	}
@@ -417,18 +488,8 @@ func (app *appRuntimeImpl) htmlHandler(req *Request) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	RequestEx{req}.SetHtml(htmlStr)
+	req.setHtml(htmlStr)
 	return nil, nil
-}
-
-func (app *App) DataHandler(path string, handlerFn func(req *Request) (interface{}, error)) error {
-	hkey := handlerKey{HandlerType: "data", Path: path}
-	app.appRuntime.SetHandler(hkey, handlerType{HandlerFn: handlerFn})
-	return nil
-}
-
-func (app *App) SetStaticData(path string, data interface{}) {
-	app.AppConfig.StaticData = append(app.AppConfig.StaticData, staticDataVal{Path: path, Data: data})
 }
 
 func (app *App) GetAppName() string {
@@ -440,7 +501,7 @@ func (app *App) GetAppName() string {
 // from calling BlobDataFromReadSeeker or BlobDataFromReader rather than
 // creating a BlobData directly.
 func (app *App) SetRawBlobData(blobData BlobData, reader io.Reader) error {
-	err := app.Container.SetBlobData(app.AppConfig, blobData, reader)
+	err := app.api.SetBlobData(app.AppConfig, blobData, reader)
 	if err != nil {
 		log.Printf("Dashborg error setting blob data app:%s blobkey:%s err:%v\n", app.AppConfig.AppName, blobData.ExtBlobKey(), err)
 		return err
@@ -543,5 +604,5 @@ func (app *App) RemoveBlob(extBlobKey string) error {
 		BlobNs:  blobNs,
 		BlobKey: blobKey,
 	}
-	return app.Container.RemoveBlob(app.AppConfig, blobData)
+	return app.api.RemoveBlob(app.AppConfig, blobData)
 }

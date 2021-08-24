@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"runtime/debug"
 	"sync"
@@ -17,12 +18,6 @@ import (
 
 const returnChSize = 20
 const smallDrainSleep = 5 * time.Millisecond
-
-type handlerKey struct {
-	AppName     string
-	HandlerType string // data, handler
-	Path        string
-}
 
 type handlerFuncType = func(*Request) (interface{}, error)
 
@@ -46,7 +41,12 @@ type AppClient interface {
 	StartStream(appName string, streamOpts StreamOpts, feClientId string) (*Request, string, error)
 }
 
-type DBServiceAdapter interface {
+// internal callbacks into DashCloud package.  Not for use by end-user, API subject to change.
+type InternalApi interface {
+	// StartBareStream(appName string, streamOpts StreamOpts) (*Request, error)
+	// BackendPush(appName string, path string, data interface{}) error
+	SetBlobData(acfg AppConfig, blob BlobData, r io.Reader) error
+	RemoveBlob(acfg AppConfig, blob BlobData) error
 	SendResponseProtoRpc(m *dashproto.SendResponseMessage) (int, error)
 	StartStreamProtoRpc(m *dashproto.StartStreamMessage) (string, error)
 }
@@ -56,28 +56,26 @@ type AppClientConfig struct {
 }
 
 type appClient struct {
-	Lock             *sync.Mutex
-	StartTs          time.Time
-	App              AppRuntime
-	Config           AppClientConfig
-	DBServiceAdapter DBServiceAdapter
-	ConnId           *atomic.Value
-	StreamMap        map[streamKey]streamControl // map streamKey -> streamControl
-	StreamKeyMap     map[string]streamKey        // map reqid -> streamKey
-	Container        Container
+	Lock         *sync.Mutex
+	StartTs      time.Time
+	App          AppRuntime
+	Config       AppClientConfig
+	ConnId       *atomic.Value
+	StreamMap    map[streamKey]streamControl // map streamKey -> streamControl
+	StreamKeyMap map[string]streamKey        // map reqid -> streamKey
+	Api          InternalApi
 }
 
-func MakeAppClient(container Container, app AppRuntime, service DBServiceAdapter, config AppClientConfig, connId *atomic.Value) AppClient {
+func MakeAppClient(api InternalApi, app AppRuntime, config AppClientConfig, connId *atomic.Value) AppClient {
 	rtn := &appClient{
-		Lock:             &sync.Mutex{},
-		StartTs:          time.Now(),
-		App:              app,
-		DBServiceAdapter: service,
-		Config:           config,
-		ConnId:           connId,
-		StreamMap:        make(map[streamKey]streamControl),
-		StreamKeyMap:     make(map[string]streamKey),
-		Container:        container,
+		Lock:         &sync.Mutex{},
+		StartTs:      time.Now(),
+		App:          app,
+		Config:       config,
+		ConnId:       connId,
+		StreamMap:    make(map[streamKey]streamControl),
+		StreamKeyMap: make(map[string]streamKey),
+		Api:          api,
 	}
 	return rtn
 }
@@ -102,7 +100,7 @@ func (pc *appClient) SendRequestResponse(req *Request, done bool) (int, error) {
 	} else {
 		m.Actions = req.clearActions()
 	}
-	return pc.DBServiceAdapter.SendResponseProtoRpc(m)
+	return pc.Api.SendResponseProtoRpc(m)
 }
 
 func (pc *appClient) sendErrResponse(reqMsg *dashproto.RequestMessage, errMsg string) {
@@ -115,11 +113,11 @@ func (pc *appClient) sendErrResponse(reqMsg *dashproto.RequestMessage, errMsg st
 		ResponseDone: true,
 		Err:          errMsg,
 	}
-	pc.DBServiceAdapter.SendResponseProtoRpc(m)
+	pc.Api.SendResponseProtoRpc(m)
 }
 
 func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) {
-	if reqMsg.AppId.AppName != pc.App.GetAppConfig().AppName {
+	if reqMsg.AppId.AppName != pc.App.GetAppName() {
 		go pc.sendErrResponse(reqMsg, "Wrong AppName")
 		return
 	}
@@ -144,48 +142,32 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 		ctx:       ctx,
 		lock:      &sync.Mutex{},
 		appClient: pc,
-		container: pc.Container,
+		api:       pc.Api,
 	}
-	hkey := handlerKey{
-		AppName: reqMsg.AppId.AppName,
-		Path:    reqMsg.Path,
-	}
-	switch reqMsg.RequestType {
-	case "data":
-		hkey.HandlerType = "data"
-	case "handler":
-		hkey.HandlerType = "handler"
-	case "html":
-		hkey.HandlerType = "html"
-	case "auth":
-		hkey.HandlerType = "auth"
-	case "init":
-		hkey.HandlerType = "init"
-	case "streamclose":
-		pc.stream_serverStop(preq.info.ReqId)
-		return // no response for streamclose
-	default:
+	if !dashutil.IsRequestTypeValid(reqMsg.RequestType) {
 		preq.err = fmt.Errorf("Invalid RequestMessage.RequestType [%s]", reqMsg.RequestType)
 		preq.Done()
 		return
 	}
-
-	preq.dataJson = reqMsg.JsonData
-
-	var pstate interface{}
+	if reqMsg.RequestType == "streamclose" {
+		pc.stream_serverStop(preq.info.ReqId)
+		return // no response for streamclose
+	}
+	preq.rawData.DataJson = reqMsg.JsonData
 	if reqMsg.AppStateData != "" {
+		var pstate interface{}
 		err := json.Unmarshal([]byte(reqMsg.AppStateData), &pstate)
 		if err != nil {
 			preq.err = fmt.Errorf("Cannot unmarshal AppStateData: %v", err)
 			preq.Done()
 			return
 		}
+		preq.appState = pstate
+		preq.rawData.AppStateJson = reqMsg.AppStateData
 	}
-	preq.appState = pstate
-	preq.appStateJson = reqMsg.AppStateData
 
-	var authData AuthAtom
 	if reqMsg.AuthData != "" {
+		var authData AuthAtom
 		err := json.Unmarshal([]byte(reqMsg.AuthData), &authData)
 		if err != nil {
 			preq.err = fmt.Errorf("Cannot unmarshal authData: %v", err)
@@ -193,11 +175,12 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 			return
 		}
 		preq.authData = &authData
+		preq.rawData.AuthDataJson = reqMsg.AuthData
 	}
 
 	defer func() {
 		if panicErr := recover(); panicErr != nil {
-			log.Printf("Dashborg PANIC in Handler %v | %v\n", hkey, panicErr)
+			log.Printf("Dashborg PANIC in Handler %s:%s | %v\n", reqMsg.RequestType, reqMsg.Path, panicErr)
 			preq.err = fmt.Errorf("PANIC in handler %v", panicErr)
 			debug.PrintStack()
 		}
@@ -205,18 +188,19 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 	}()
 	var dataResult interface{}
 	dataResult, preq.err = pc.App.RunHandler(preq)
-	if preq.err != nil {
+	if preq.err != nil || preq.isDone {
 		return
 	}
-	if hkey.HandlerType == "data" {
+	if dataResult != nil {
 		jsonData, err := dashutil.MarshalJson(dataResult)
 		if err != nil {
-			preq.err = err
+			preq.err = dasherr.JsonMarshalErr("handler-return-value", err)
 			return
 		}
 		rrAction := &dashproto.RRAction{
 			Ts:         dashutil.Ts(),
 			ActionType: "setdata",
+			Selector:   RtnSetDataPath,
 			JsonData:   jsonData,
 		}
 		preq.appendRR(rrAction)

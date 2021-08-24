@@ -1,7 +1,5 @@
 package dash
 
-import "io"
-
 const ClientVersion = "go-0.6.0"
 
 const (
@@ -17,14 +15,7 @@ const (
 	AccTypeEnterprise = "enterprise"
 )
 
-type Container interface {
-	ConnectApp(app AppRuntime) error
-	StartBareStream(appName string, streamOpts StreamOpts) (*Request, error)
-	BackendPush(appName string, path string, data interface{}) error
-	WaitForShutdown() error
-	SetBlobData(acfg AppConfig, blob BlobData, r io.Reader) error
-	RemoveBlob(acfg AppConfig, blob BlobData) error
-}
+const RtnSetDataPath = "@rtn"
 
 type StreamOpts struct {
 	StreamId       string `json:"streamid"`       // if unset will be set to a random uuid

@@ -364,7 +364,7 @@ func (pc *DashCloudClient) showAppLink(appName string) {
 	}
 }
 
-func (pc *DashCloudClient) ConnectApp(app dash.AppRuntime) error {
+func (pc *DashCloudClient) ConnectApp(app *dash.App) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
@@ -378,9 +378,9 @@ func (pc *DashCloudClient) ConnectApp(app dash.AppRuntime) error {
 	clientConfig := dash.AppClientConfig{
 		Verbose: pc.Config.Verbose,
 	}
-	appClient := dash.MakeAppClient(pc, app, pc, clientConfig, pc.ConnId)
+	appClient := dash.MakeAppClient(pc.InternalApi(), app.Runtime(), clientConfig, pc.ConnId)
 	pc.Lock.Lock()
-	pc.AppMap[appName] = &AppStruct{App: app, AppClient: appClient}
+	pc.AppMap[appName] = &AppStruct{App: app.Runtime(), AppClient: appClient}
 	pc.Lock.Unlock()
 	pc.showAppLink(appName)
 	if dashErr != nil {
@@ -422,7 +422,7 @@ func (pc *DashCloudClient) ConnectAppRuntime(app dash.AppRuntime) error {
 	clientConfig := dash.AppClientConfig{
 		Verbose: pc.Config.Verbose,
 	}
-	appClient := dash.MakeAppClient(pc, app, pc, clientConfig, pc.ConnId)
+	appClient := dash.MakeAppClient(pc.InternalApi(), app, clientConfig, pc.ConnId)
 	pc.Lock.Lock()
 	pc.AppMap[appName] = &AppStruct{App: app, AppClient: appClient}
 	pc.Lock.Unlock()
@@ -437,7 +437,7 @@ func (pc *DashCloudClient) ConnectAppRuntime(app dash.AppRuntime) error {
 func (pc *DashCloudClient) runRequestStreamLoop() {
 	defer close(pc.DoneCh)
 
-	w := &ExpoWait{CloudClient: pc}
+	w := &expoWait{CloudClient: pc}
 	for {
 		state := pc.Conn.GetState()
 		if state == connectivity.Shutdown {
@@ -528,7 +528,7 @@ func (pc *DashCloudClient) runRequestStream() (bool, dasherr.ErrCode) {
 				break
 			}
 		}
-		pc.logV("Dashborg gRPC got request: app=%s, type=%s, path=%s\n", reqMsg.AppId.AppName, reqMsg.RequestType, reqMsg.Path)
+		pc.logV("Dashborg gRPC got request %s://%s%s\n", reqMsg.RequestType, reqMsg.AppId.AppName, reqMsg.Path)
 		go func() {
 			atomic.AddInt64(&reqCounter, 1)
 			timeoutMs := reqMsg.TimeoutMs
@@ -557,7 +557,7 @@ func (pc *DashCloudClient) runRequestStream() (bool, dasherr.ErrCode) {
 	return (elapsed >= 5*time.Second), endingErrCode
 }
 
-func (pc *DashCloudClient) BackendPush(appName string, path string, data interface{}) error {
+func (pc *DashCloudClient) backendPush(appName string, path string, data interface{}) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
@@ -596,7 +596,7 @@ func (pc *DashCloudClient) ReflectZone() (*ReflectZoneType, error) {
 	return &rtn, nil
 }
 
-func (pc *DashCloudClient) CallDataHandler(appName string, path string, data interface{}) (interface{}, error) {
+func (pc *DashCloudClient) callDataHandler(appName string, path string, data interface{}) (interface{}, error) {
 	if !pc.IsConnected() {
 		return nil, NotConnectedErr
 	}
@@ -627,12 +627,16 @@ func (pc *DashCloudClient) CallDataHandler(appName string, path string, data int
 	return rtn, nil
 }
 
+func (pc *DashCloudClient) InternalApi() *InternalApi {
+	return &InternalApi{client: pc}
+}
+
 // Bare streams start with no connected clients.  ControlPath is ignored, and NoServerCancel must be set to true.
 // A future request can attach to the stream by calling req.StartStream() and passing the
 // same StreamId.  An error will be returned if a stream with this StreamId has already started.
 // Unlike StartStream StreamId must be specified ("" will return an error).
 // Caller is responsible for calling req.Done() when the stream is finished.
-func (pc *DashCloudClient) StartBareStream(appName string, streamOpts dash.StreamOpts) (*dash.Request, error) {
+func (pc *DashCloudClient) startBareStream(appName string, streamOpts dash.StreamOpts) (*dash.Request, error) {
 	if !pc.IsConnected() {
 		return nil, NotConnectedErr
 	}
@@ -668,14 +672,14 @@ func (pc *DashCloudClient) OpenApp(appName string) (*dash.App, error) {
 		return nil, dashErr
 	}
 	if resp.AppConfigJson == "" {
-		return dash.MakeApp(appName, pc), nil
+		return dash.MakeApp(appName, pc.InternalApi()), nil
 	}
 	var rtn dash.AppConfig
 	err := json.Unmarshal([]byte(resp.AppConfigJson), &rtn)
 	if err != nil {
 		return nil, dasherr.JsonUnmarshalErr("AppConfig", err)
 	}
-	return dash.MakeAppFromConfig(rtn, pc), nil
+	return dash.MakeAppFromConfig(rtn, pc.InternalApi()), nil
 }
 
 func (pc *DashCloudClient) baseWriteApp(appName string, shouldConnect bool, acfg *dash.AppConfig, writeAppFnStr string) error {
@@ -719,7 +723,7 @@ func (pc *DashCloudClient) WriteApp(acfg dash.AppConfig) error {
 	return nil
 }
 
-func (pc *DashCloudClient) RemoveBlob(acfg dash.AppConfig, blob dash.BlobData) error {
+func (pc *DashCloudClient) removeBlob(acfg dash.AppConfig, blob dash.BlobData) error {
 	blobJson, err := dashutil.MarshalJson(blob)
 	if err != nil {
 		return dasherr.JsonMarshalErr("BlobData", err)
@@ -743,7 +747,7 @@ func (pc *DashCloudClient) RemoveBlob(acfg dash.AppConfig, blob dash.BlobData) e
 // It is possible to pass a nil io.Reader.  The call will succeed if there is already a blob with the
 // same SHA-256 (it will linked to this app).  If a matching blob is not found, SetBlobData will return
 // an error when trying to read from the nil Reader.
-func (pc *DashCloudClient) SetBlobData(acfg dash.AppConfig, blobData dash.BlobData, r io.Reader) error {
+func (pc *DashCloudClient) setBlobData(acfg dash.AppConfig, blobData dash.BlobData, r io.Reader) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
@@ -959,7 +963,7 @@ func (pc *DashCloudClient) appLink(appName string) string {
 }
 
 // StartStreamProtoRpc is for use by the Dashborg AppClient, not to be called by end user.
-func (pc *DashCloudClient) StartStreamProtoRpc(m *dashproto.StartStreamMessage) (string, error) {
+func (pc *DashCloudClient) startStreamProtoRpc(m *dashproto.StartStreamMessage) (string, error) {
 	if !pc.IsConnected() {
 		return "", NotConnectedErr
 	}
@@ -978,7 +982,7 @@ func (pc *DashCloudClient) StartStreamProtoRpc(m *dashproto.StartStreamMessage) 
 }
 
 // SendResponseProtoRpc is for internal use by the Dashborg AppClient, not to be called by the end user.
-func (pc *DashCloudClient) SendResponseProtoRpc(m *dashproto.SendResponseMessage) (int, error) {
+func (pc *DashCloudClient) sendResponseProtoRpc(m *dashproto.SendResponseMessage) (int, error) {
 	if !pc.IsConnected() {
 		return 0, NotConnectedErr
 	}

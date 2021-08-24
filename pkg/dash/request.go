@@ -34,27 +34,36 @@ type RequestInfo struct {
 	FeClientId  string // unique id for client
 }
 
-type Request struct {
-	info RequestInfo
-
-	dataJson     string      // Raw JSON for Data (used for manual unmarshalling into custom struct)
-	appState     interface{} // json-unmarshaled app state for this request
-	appStateJson string      // Raw JSON for appState (used for manual unmarshalling into custom struct)
-	authData     *AuthAtom   // authentication tokens associated with this request
-
-	infoMsgs  []string              // debugging information
-	err       error                 // set if an error occured (when set, RRActions are not sent)
-	rrActions []*dashproto.RRAction // output, these are the actions that will be returned
-	lock      *sync.Mutex           // synchronizes RRActions
-	ctx       context.Context       // gRPC context / streaming context
-	isDone    bool                  // set after Done() is called and response has been sent to server
-
-	appClient *appClient
-	container Container
+type RawRequestData struct {
+	DataJson     string
+	AppStateJson string
+	AuthDataJson string
 }
 
-type RequestEx struct {
-	Req *Request
+type Request struct {
+	lock      *sync.Mutex     // synchronizes RRActions
+	ctx       context.Context // gRPC context / streaming context
+	info      RequestInfo
+	rawData   RawRequestData
+	appClient *appClient
+	api       InternalApi
+	appState  interface{}           // json-unmarshaled app state for this request
+	authData  *AuthAtom             // authentication tokens associated with this request
+	err       error                 // set if an error occured (when set, RRActions are not sent)
+	rrActions []*dashproto.RRAction // output, these are the actions that will be returned
+	isDone    bool                  // set after Done() is called and response has been sent to server
+	infoMsgs  []string              // debugging information
+}
+
+func (req *Request) canSetData(path string) bool {
+	if path == RtnSetDataPath && req.info.RequestType == requestTypeData {
+		return true
+	}
+	return req.info.RequestType == requestTypeHandler || req.info.RequestType == requestTypeStream || req.info.RequestType == requestTypeInit
+}
+
+func (req *Request) canSetHtml() bool {
+	return req.info.RequestType == requestTypeHandler || req.info.RequestType == requestTypeHtml
 }
 
 func (req *Request) RequestInfo() RequestInfo {
@@ -63,10 +72,6 @@ func (req *Request) RequestInfo() RequestInfo {
 
 func (req *Request) Context() context.Context {
 	return req.ctx
-}
-
-func (req *Request) Container() Container {
-	return req.container
 }
 
 func (req *Request) AuthData() *AuthAtom {
@@ -90,18 +95,18 @@ func (req *Request) UrlParams() url.Values {
 }
 
 func (req *Request) BindData(obj interface{}) error {
-	if req.dataJson == "" {
+	if req.rawData.DataJson == "" {
 		return nil
 	}
-	err := json.Unmarshal([]byte(req.dataJson), obj)
+	err := json.Unmarshal([]byte(req.rawData.DataJson), obj)
 	return err
 }
 
 func (req *Request) BindAppState(obj interface{}) error {
-	if req.appStateJson == "" {
+	if req.rawData.AppStateJson == "" {
 		return nil
 	}
-	err := json.Unmarshal([]byte(req.appStateJson), obj)
+	err := json.Unmarshal([]byte(req.rawData.AppStateJson), obj)
 	return err
 }
 
@@ -178,6 +183,9 @@ func (req *Request) SetBlob(path string, mimeType string, reader io.Reader) erro
 	if req.isDone {
 		return fmt.Errorf("Cannot call SetBlob(), path=%s, Request is already done", path)
 	}
+	if !req.canSetData(path) {
+		return fmt.Errorf("Cannot call SetData(), reqinfo=%s data-path=%s reqtype=%s, for non-handler/stream request", req.reqInfoStr(), path, req.info.RequestType)
+	}
 	if !dashutil.IsMimeTypeValid(mimeType) {
 		return fmt.Errorf("Invalid Mime-Type passed to SetBlobData mime-type=%s", mimeType)
 	}
@@ -227,10 +235,17 @@ func (req *Request) SetBlobFromFile(path string, mimeType string, fileName strin
 	return req.SetBlob(path, mimeType, fd)
 }
 
+func (req *Request) reqInfoStr() string {
+	return fmt.Sprintf("%s://%s%s", req.info.RequestType, req.info.AppName, req.info.Path)
+}
+
 // SetData is used to return data to the client.  Will replace the contents of path with data.
 func (req *Request) DataOp(op string, path string, data interface{}) error {
 	if req.isDone {
-		return fmt.Errorf("Cannot call SetData(), path=%s, Request is already done", path)
+		return fmt.Errorf("Cannot call SetData(), reqinfo=%s data-path=%s, Request is already done", req.reqInfoStr())
+	}
+	if !req.canSetData(path) {
+		return fmt.Errorf("Cannot call SetData(), reqinfo=%s data-path=%s reqtype=%s, for non-handler/stream request", req.reqInfoStr(), path, req.info.RequestType)
 	}
 	jsonData, err := dashutil.MarshalJson(data)
 	if err != nil {
@@ -257,6 +272,12 @@ func (req *Request) SetData(path string, data interface{}) error {
 
 // SetHtml returns html to be rendered by the client.  Only valid for root handler requests (path = "/")
 func (req *Request) setHtml(html string) error {
+	if req.isDone {
+		return fmt.Errorf("Cannot call SetHtml(), Request is already done")
+	}
+	if !req.canSetHtml() {
+		return fmt.Errorf("Cannot call SetHtml() for request-type=%s", req.info.RequestType)
+	}
 	ts := dashutil.Ts()
 	htmlAction := &dashproto.RRAction{
 		Ts:         ts,
@@ -278,11 +299,7 @@ func (req *Request) setHtmlFromFile(fileName string) error {
 	if err != nil {
 		return err
 	}
-	return RequestEx{req}.SetHtml(string(htmlBytes))
-}
-
-func (req *Request) isRootReq() bool {
-	return req.info.RequestType == "handler" && req.info.AppName != "" && req.info.Path == "/"
+	return req.setHtml(string(htmlBytes))
 }
 
 // Call from a handler to force the client to invalidate and re-pull data that matches path.
@@ -352,50 +369,13 @@ func (req *Request) setAuthData(aa *AuthAtom) {
 }
 
 func (req *Request) isStream() bool {
-	return req.info.RequestType == "stream"
+	return req.info.RequestType == requestTypeStream
 }
 
-func (rex RequestEx) SetAuthData(aa *AuthAtom) {
-	rex.Req.setAuthData(aa)
+func (req *Request) RawData() RawRequestData {
+	return req.rawData
 }
 
-func (rex RequestEx) SetHtml(html string) error {
-	return rex.Req.setHtml(html)
-}
-
-func (rex RequestEx) SetHtmlFromFile(fileName string) error {
-	return rex.Req.setHtmlFromFile(fileName)
-}
-
-func (rex RequestEx) AppendAppAuthChallenge(ch interface{}) error {
-	challengeJson, err := dashutil.MarshalJson(ch)
-	if err != nil {
-		return err
-	}
-	rex.Req.appendRR(&dashproto.RRAction{
-		Ts:         dashutil.Ts(),
-		ActionType: "panelauthchallenge",
-		JsonData:   string(challengeJson),
-	})
-	return nil
-}
-
-func (rex RequestEx) AppendInfoMessage(message string) {
-	rex.Req.infoMsgs = append(rex.Req.infoMsgs, message)
-}
-
-func (rex RequestEx) RawDataJson() string {
-	return rex.Req.dataJson
-}
-
-func (rex RequestEx) RawAppStateJson() string {
-	return rex.Req.appStateJson
-}
-
-func (rex RequestEx) IsDone() bool {
-	return rex.Req.isDone
-}
-
-func (rex RequestEx) AppRuntime() AppRuntime {
-	return rex.Req.appClient.App
+func (req *Request) IsDone() bool {
+	return req.isDone
 }

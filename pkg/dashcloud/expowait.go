@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-type ExpoWait struct {
+type expoWait struct {
 	ForceWait       bool
 	InitialWait     time.Time
 	CurWaitDeadline time.Time
@@ -13,7 +13,7 @@ type ExpoWait struct {
 	CloudClient     *DashCloudClient
 }
 
-func (w *ExpoWait) Wait() bool {
+func (w *expoWait) Wait() bool {
 	hasInitialWait := !w.InitialWait.IsZero()
 	if w.InitialWait.IsZero() {
 		w.InitialWait = time.Now()
@@ -49,6 +49,6 @@ func (w *ExpoWait) Wait() bool {
 	return rtnOk
 }
 
-func (w *ExpoWait) Reset() {
-	*w = ExpoWait{CloudClient: w.CloudClient}
+func (w *expoWait) Reset() {
+	*w = expoWait{CloudClient: w.CloudClient}
 }

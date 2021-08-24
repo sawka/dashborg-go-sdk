@@ -39,7 +39,7 @@ var (
 	appNameRe        = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_.-]*$")
 	procNameRe       = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
 	uuidRe           = regexp.MustCompile("^[a-fA-F0-9-]{36}$")
-	handlerRe        = regexp.MustCompile("^/[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$")
+	handlerPathRe    = regexp.MustCompile("^/\\@?[a-zA-Z0-9_-][a-zA-Z0-9_/-]*$")
 	base64Re         = regexp.MustCompile("^[a-zA-Z0-9/+=]+$")
 	hexRe            = regexp.MustCompile("^[a-f0-9]+$")
 	imageMimeTypeRe  = regexp.MustCompile("^image/[a-z0-9.-]+$")
@@ -61,7 +61,7 @@ var (
 	passwordRe = regexp.MustCompile("^[a-zA-Z0-9]+$")
 )
 
-var ValidHandlerType = map[string]bool{"data": true, "handler": true, "stream": true, "call": true, "auth": true, "html": true, "init": true}
+var ValidRequestType = map[string]bool{"data": true, "handler": true, "stream": true, "auth": true, "html": true, "init": true}
 var ValidActionType = map[string]bool{"setdata": true, "event": true, "invalidate": true, "html": true, "panelauth": true, "panelauthchallenge": true, "error": true, "blob": true, "blobext": true, "streamopen": true, "backendpush": true}
 var ValidBlobNs = map[string]bool{"app": true, "html": true}
 
@@ -118,7 +118,7 @@ func IsHandlerPathValid(handler string) bool {
 	if len(handler) > HandlerPathMax {
 		return false
 	}
-	return handlerRe.MatchString(handler)
+	return handlerPathRe.MatchString(handler)
 }
 
 func IsPublicKeyValid(publicKey string) bool {
@@ -180,8 +180,8 @@ func IsPathValid(s string) bool {
 	return pathRe.MatchString(s)
 }
 
-func IsHandlerTypeValid(s string) bool {
-	return ValidHandlerType[s]
+func IsRequestTypeValid(s string) bool {
+	return ValidRequestType[s]
 }
 
 func IsActionTypeValid(s string) bool {

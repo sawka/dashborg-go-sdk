@@ -134,7 +134,7 @@ func (pc *appClient) connectStream(appName string, streamOpts StreamOpts, feClie
 		FeClientId:    feClientId,
 		ExistingReqId: existingReqId,
 	}
-	return pc.DBServiceAdapter.StartStreamProtoRpc(m)
+	return pc.Api.StartStreamProtoRpc(m)
 }
 
 // If feClientId is "", then this starts a "bare" stream (not connected to any frontend client).
@@ -187,7 +187,7 @@ func (pc *appClient) StartStream(appName string, streamOpts StreamOpts, feClient
 		ctx:       sc.Ctx,
 		lock:      &sync.Mutex{},
 		appClient: pc,
-		container: pc.Container,
+		api:       pc.Api,
 	}
 	return streamReq, sc.ReqId, nil
 }
