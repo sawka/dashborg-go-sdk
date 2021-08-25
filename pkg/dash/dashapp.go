@@ -2,26 +2,20 @@ package dash
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"reflect"
 	"sort"
 	"sync"
 
 	"github.com/google/uuid"
-	"github.com/sawka/dashborg-go-sdk/pkg/dasherr"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
 var notAuthorizedErr = fmt.Errorf("Not Authorized")
 
-const MaxAppConfigSize = 1000000
+const MaxAppConfigSize = 10000
 const htmlMimeType = "text/html"
 const appBlobNs = "app"
 const htmlBlobNs = "html"
@@ -104,6 +98,7 @@ type BlobData struct {
 	UpdateTs int64       `json:"updatets"`
 	Metadata interface{} `json:"metadata"`
 	Removed  bool        `json:"removed"`
+	Added    bool        `json:"added"`
 }
 
 type middlewareType struct {
@@ -128,7 +123,7 @@ type ProcInfo struct {
 }
 
 type AppRuntime interface {
-	GetAppName() string
+	AppName() string
 	RunHandler(req *Request) (interface{}, error)
 }
 
@@ -142,13 +137,10 @@ type AppRuntimeImpl struct {
 }
 
 type App struct {
-	AppConfig  AppConfig
+	appConfig  AppConfig
 	appRuntime *AppRuntimeImpl
 	api        InternalApi
 	isNewApp   bool
-
-	// liveUpdateMode  bool
-	// connectOnlyMode bool
 }
 
 func (app *App) Runtime() *AppRuntimeImpl {
@@ -243,22 +235,22 @@ func MakeApp(appName string, api InternalApi) *App {
 	rtn := &App{
 		api:        api,
 		appRuntime: makeAppRuntime(appName),
-		AppConfig: AppConfig{
+		appConfig: AppConfig{
 			AppVersion: uuid.New().String(),
 			AppName:    appName,
 		},
 		isNewApp: true,
 	}
-	rtn.AppConfig.Options = make(map[string]GenericAppOption)
+	rtn.appConfig.Options = make(map[string]GenericAppOption)
 	authOpt := defaultAuthOpt()
-	rtn.AppConfig.Options[OptionAuth] = authOpt
-	rtn.AppConfig.Options[OptionOfflineMode] = GenericAppOption{Type: "allow"}
+	rtn.appConfig.Options[OptionAuth] = authOpt
+	rtn.appConfig.Options[OptionOfflineMode] = GenericAppOption{Type: "allow"}
 	return rtn
 }
 
 // offline mode type is either OfflineModeEnable or OfflineModeDisable
 func (app *App) SetOfflineModeType(offlineModeType string) {
-	app.AppConfig.Options[OptionOfflineMode] = GenericAppOption{Type: offlineModeType}
+	app.appConfig.Options[OptionOfflineMode] = GenericAppOption{Type: offlineModeType}
 }
 
 func (app *App) IsNew() bool {
@@ -273,17 +265,13 @@ func (app *App) IsNew() bool {
 // 	app.liveUpdateMode = liveUpdate
 // }
 
-func (app *App) ClearExistingBlobs() {
-	app.AppConfig.ClearExistingBlobs = true
-}
-
 func MakeAppFromConfig(cfg AppConfig, api InternalApi) *App {
 	rtn := &App{
 		api:        api,
 		appRuntime: makeAppRuntime(cfg.AppName),
-		AppConfig:  cfg,
+		appConfig:  cfg,
 	}
-	rtn.AppConfig.AppVersion = uuid.New().String()
+	rtn.appConfig.AppVersion = uuid.New().String()
 	return rtn
 }
 
@@ -291,8 +279,8 @@ type handlerType struct {
 	HandlerFn func(req *Request) (interface{}, error)
 }
 
-func (app *App) GetAppConfig() AppConfig {
-	return app.AppConfig
+func (app *App) AppConfig() AppConfig {
+	return app.appConfig
 }
 
 func (app *AppRuntimeImpl) setHandler(path string, handler handlerType) {
@@ -330,12 +318,12 @@ func mwHelper(outerReq *Request, hval handlerType, mws []middlewareType, mwPos i
 	})
 }
 
-func (app *App) RemoveOption(optName string) {
-	delete(app.AppConfig.Options, optName)
+func (app *App) RawOptionRemove(optName string) {
+	delete(app.appConfig.Options, optName)
 }
 
-func (app *App) SetOption(optName string, opt GenericAppOption) {
-	app.AppConfig.Options[optName] = opt
+func (app *App) RawOptionSet(optName string, opt GenericAppOption) {
+	app.appConfig.Options[optName] = opt
 }
 
 func wrapHandler(handlerFn func(req *Request) error) func(req *Request) (interface{}, error) {
@@ -347,7 +335,7 @@ func wrapHandler(handlerFn func(req *Request) error) func(req *Request) (interfa
 }
 
 func (app *App) getAuthOpt() GenericAppOption {
-	authOpt, ok := app.AppConfig.Options[OptionAuth]
+	authOpt, ok := app.appConfig.Options[OptionAuth]
 	if !ok {
 		return defaultAuthOpt()
 	}
@@ -358,13 +346,13 @@ func (app *App) getAuthOpt() GenericAppOption {
 func (app *App) SetAuthType(authType string) {
 	authOpt := app.getAuthOpt()
 	authOpt.Type = authType
-	app.AppConfig.Options[OptionAuth] = authOpt
+	app.appConfig.Options[OptionAuth] = authOpt
 }
 
 func (app *App) SetAllowedRoles(roles ...string) {
 	authOpt := app.getAuthOpt()
 	authOpt.AllowedRoles = roles
-	app.AppConfig.Options[OptionAuth] = authOpt
+	app.appConfig.Options[OptionAuth] = authOpt
 }
 
 // SetAppVisibility controls whether the app shows in the UI's app-switcher (see VisType constants)
@@ -373,15 +361,19 @@ func (app *App) SetAllowedRoles(roles ...string) {
 // visType is either VisTypeHidden, VisTypeDefault, or VisTypeAlwaysVisible
 func (app *App) SetAppVisibility(visType string, displayOrder float64) {
 	visOpt := GenericAppOption{Type: visType, Order: displayOrder}
-	app.AppConfig.Options[OptionAppVisibility] = visOpt
+	app.appConfig.Options[OptionAppVisibility] = visOpt
 }
 
 func (app *App) SetAppTitle(title string) {
 	if title == "" {
-		delete(app.AppConfig.Options, OptionTitle)
+		delete(app.appConfig.Options, OptionTitle)
 	} else {
-		app.AppConfig.Options[OptionTitle] = GenericAppOption{AppTitle: title}
+		app.appConfig.Options[OptionTitle] = GenericAppOption{AppTitle: title}
 	}
+}
+
+func (app *App) Blobs() BlobManager {
+	return makeAppBlobManager(app, app.api)
 }
 
 func (app *App) SetHtml(htmlStr string) error {
@@ -390,11 +382,11 @@ func (app *App) SetHtml(htmlStr string) error {
 	if err != nil {
 		return err
 	}
-	err = app.SetRawBlobData(blobData, bytesReader)
+	err = app.Blobs().SetRawBlobData(blobData, bytesReader)
 	if err != nil {
 		return err
 	}
-	app.SetOption(OptionHtml, GenericAppOption{Type: HtmlTypeStatic})
+	app.RawOptionSet(OptionHtml, GenericAppOption{Type: HtmlTypeStatic})
 	return nil
 }
 
@@ -413,12 +405,12 @@ func (app *App) SetHtmlFromFile(fileName string) error {
 	if err != nil {
 		return err
 	}
-	err = app.SetRawBlobData(blobData, bytesReader)
+	err = app.Blobs().SetRawBlobData(blobData, bytesReader)
 	if err != nil {
 		return err
 	}
 	app.appRuntime.html = htmlValue
-	app.SetOption(OptionHtml, GenericAppOption{Type: HtmlTypeDynamicWhenConnected})
+	app.RawOptionSet(OptionHtml, GenericAppOption{Type: HtmlTypeDynamicWhenConnected})
 	return nil
 }
 
@@ -428,10 +420,10 @@ func (apprt *AppRuntimeImpl) SetAppStateType(appStateType reflect.Type) {
 
 // initType is either InitHandlerRequired, InitHandlerRequiredWhenConnected, or InitHandlerNone
 func (app *App) SetInitHandlerType(initType string) {
-	app.SetOption(OptionInitHandler, GenericAppOption{Type: initType})
+	app.RawOptionSet(OptionInitHandler, GenericAppOption{Type: initType})
 }
 
-func (apprt *AppRuntimeImpl) GetAppName() string {
+func (apprt *AppRuntimeImpl) AppName() string {
 	return apprt.appName
 }
 
@@ -492,117 +484,6 @@ func (app *AppRuntimeImpl) htmlHandler(req *Request) (interface{}, error) {
 	return nil, nil
 }
 
-func (app *App) GetAppName() string {
-	return app.AppConfig.AppName
-}
-
-// SetRawBlobData blobData must have BlobKey, MimeType, Size, and Sha256 set.
-// Clients will normally call SetBlobDataFromFile, or construct a BlobData
-// from calling BlobDataFromReadSeeker or BlobDataFromReader rather than
-// creating a BlobData directly.
-func (app *App) SetRawBlobData(blobData BlobData, reader io.Reader) error {
-	err := app.api.SetBlobData(app.AppConfig, blobData, reader)
-	if err != nil {
-		log.Printf("Dashborg error setting blob data app:%s blobkey:%s err:%v\n", app.AppConfig.AppName, blobData.ExtBlobKey(), err)
-		return err
-	}
-	return nil
-}
-
-// Will call Seek(0, 0) on the reader twice, once at the beginning and once at the end.
-// If an error is returned, the seek position is not specified.  If no error is returned
-// the reader will be reset to the beginning.
-// A []byte can be wrapped in a bytes.Buffer to use this function (error will always be nil)
-func BlobDataFromReadSeeker(extBlobKey string, mimeType string, r io.ReadSeeker) (BlobData, error) {
-	blobNs, blobKey, err := dashutil.ParseExtBlobKey(extBlobKey)
-	if err != nil {
-		return BlobData{}, dasherr.ValidateErr(fmt.Errorf("Invalid BlobKey"))
-	}
-	if blobNs == "" {
-		blobNs = appBlobNs
-	}
-	_, err = r.Seek(0, 0)
-	if err != nil {
-		return BlobData{}, nil
-	}
-	h := sha256.New()
-	numCopyBytes, err := io.Copy(h, r)
-	if err != nil {
-		return BlobData{}, err
-	}
-	hashVal := h.Sum(nil)
-	hashValStr := base64.StdEncoding.EncodeToString(hashVal[:])
-	_, err = r.Seek(0, 0)
-	if err != nil {
-		return BlobData{}, err
-	}
-	blobData := BlobData{
-		BlobNs:   blobNs,
-		BlobKey:  blobKey,
-		MimeType: mimeType,
-		Sha256:   hashValStr,
-		Size:     numCopyBytes,
-	}
-	return blobData, nil
-}
-
-// If you only have an io.Reader, this function will call ioutil.ReadAll, read the full stream
-// into a []byte, compute the size and SHA-256, and then wrap the []byte in a *bytes.Reader
-// suitable to pass to SetRawBlobData()
-func BlobDataFromReader(extBlobKey string, mimeType string, r io.Reader) (BlobData, *bytes.Reader, error) {
-	barr, err := ioutil.ReadAll(r)
-	if err != nil {
-		return BlobData{}, nil, err
-	}
-	breader := bytes.NewReader(barr)
-	blobData, err := BlobDataFromReadSeeker(extBlobKey, mimeType, breader)
-	if err != nil {
-		return BlobData{}, nil, err
-	}
-	return blobData, breader, nil
-}
-
-func (app *App) SetBlobDataFromFile(key string, mimeType string, fileName string, metadata interface{}) error {
-	fd, err := os.Open(fileName)
-	if err != nil {
-		return err
-	}
-	blobData, err := BlobDataFromReadSeeker(key, mimeType, fd)
-	if err != nil {
-		return err
-	}
-	blobData.Metadata = metadata
-	return app.SetRawBlobData(blobData, fd)
-}
-
-func (app *App) SetJsonBlob(extBlobKey string, data interface{}, metadata interface{}) error {
-	var jsonBuf bytes.Buffer
-	enc := json.NewEncoder(&jsonBuf)
-	enc.SetEscapeHTML(false)
-	err := enc.Encode(data)
-	if err != nil {
-		return dasherr.JsonMarshalErr("BlobData", err)
-	}
-	reader := bytes.NewReader(jsonBuf.Bytes())
-	blob, err := BlobDataFromReadSeeker(extBlobKey, jsonMimeType, reader)
-	if err != nil {
-		return err
-	}
-	blob.Metadata = metadata
-	return app.SetRawBlobData(blob, reader)
-}
-
-func (app *App) RemoveBlob(extBlobKey string) error {
-	blobNs, blobKey, err := dashutil.ParseExtBlobKey(extBlobKey)
-	if err != nil {
-		return dasherr.ValidateErr(fmt.Errorf("Invalid BlobKey"))
-	}
-	if blobNs == "" {
-		blobNs = appBlobNs
-	}
-	blobData := BlobData{
-		BlobNs:  blobNs,
-		BlobKey: blobKey,
-	}
-	return app.api.RemoveBlob(app.AppConfig, blobData)
+func (app *App) AppName() string {
+	return app.appConfig.AppName
 }

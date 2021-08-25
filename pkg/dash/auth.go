@@ -5,11 +5,7 @@ import (
 )
 
 const MaxAuthExp = 24 * time.Hour
-
-const (
-	AuthScopeApp  = "app"
-	AuthScopeZone = "zone"
-)
+const AuthScopeZone = "zone"
 
 type AuthAtom struct {
 	Scope string                 `json:"scope"` // scope of this atom acc, zone, app

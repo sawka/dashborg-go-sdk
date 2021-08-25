@@ -368,9 +368,9 @@ func (pc *DashCloudClient) ConnectApp(app *dash.App) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
-	appName := app.GetAppName()
-	appConfig := app.GetAppConfig()
-	dashErr := pc.baseWriteApp(app.GetAppName(), true, &appConfig, fmt.Sprintf("ConnectApp(%s)", app.GetAppName()))
+	appName := app.AppName()
+	appConfig := app.AppConfig()
+	dashErr := pc.baseWriteApp(app.AppName(), true, &appConfig, fmt.Sprintf("ConnectApp(%s)", app.AppName()))
 	if dashErr != nil && !dasherr.CanRetry(dashErr) {
 		pc.log("DashborgCloudClient %v\n", dashErr)
 		return dashErr
@@ -413,7 +413,7 @@ func (pc *DashCloudClient) ConnectAppRuntime(app dash.AppRuntime) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
-	appName := app.GetAppName()
+	appName := app.AppName()
 	dashErr := pc.baseWriteApp(appName, true, nil, fmt.Sprintf("ConnectAppRuntime(%s)", appName))
 	if dashErr != nil && !dasherr.CanRetry(dashErr) {
 		pc.log("DashborgCloudClient %v\n", dashErr)
@@ -713,9 +713,10 @@ func (pc *DashCloudClient) baseWriteApp(appName string, shouldConnect bool, acfg
 	return nil
 }
 
-func (pc *DashCloudClient) WriteApp(acfg dash.AppConfig) error {
-	dashErr := pc.baseWriteApp(acfg.AppName, false, &acfg, fmt.Sprintf("WriteApp(%s)", acfg.AppName))
-	pc.showAppLink(acfg.AppName)
+func (pc *DashCloudClient) WriteApp(app *dash.App) error {
+	acfg := app.AppConfig()
+	dashErr := pc.baseWriteApp(app.AppName(), false, &acfg, fmt.Sprintf("WriteApp(%s)", acfg.AppName))
+	pc.showAppLink(app.AppName())
 	if dashErr != nil {
 		pc.log("DashborgCloudClient %v\n", dashErr)
 		return dashErr
@@ -979,6 +980,30 @@ func (pc *DashCloudClient) startStreamProtoRpc(m *dashproto.StartStreamMessage) 
 		return "", fmt.Errorf("Dashborg startStream returned reqid:%s does not match existing reqid:%s", resp.ReqId, m.ExistingReqId)
 	}
 	return resp.ReqId, nil
+}
+
+func (pc *DashCloudClient) listBlobs(appName string, appVersion string) ([]dash.BlobData, error) {
+	if !pc.IsConnected() {
+		return nil, NotConnectedErr
+	}
+	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
+	defer cancelFn()
+	m := &dashproto.ListBlobsMessage{
+		Ts:    dashutil.Ts(),
+		AppId: &dashproto.AppId{AppName: appName, AppVersion: appVersion},
+	}
+	resp, respErr := pc.DBService.ListBlobs(ctx, m)
+	dashErr := pc.handleStatusErrors("ListBlobs", resp, respErr, false)
+	if dashErr != nil {
+		pc.logV("DashborgCloudClient %v\n", dashErr)
+		return nil, dashErr
+	}
+	var rtn []dash.BlobData
+	err := json.Unmarshal([]byte(resp.BlobDataJson), &rtn)
+	if err != nil {
+		return nil, dasherr.JsonMarshalErr("BlobData", err)
+	}
+	return rtn, nil
 }
 
 // SendResponseProtoRpc is for internal use by the Dashborg AppClient, not to be called by the end user.

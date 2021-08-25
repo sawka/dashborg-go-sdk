@@ -182,6 +182,16 @@ message RemoveBlobResponse {
     RtnStatus Status = 1;
 }
 
+message ListBlobsMessage {
+    int64 Ts = 1;
+    AppId AppId = 2;
+}
+
+message ListBlobsResponse {
+    RtnStatus Status = 1;
+    string BlobDataJson = 2;
+}
+
 service DashborgService {
     rpc ConnectClient(ConnectClientMessage) returns (ConnectClientResponse) {}
     rpc ReflectZone(ReflectZoneMessage) returns (ReflectZoneResponse) {}
@@ -192,6 +202,7 @@ service DashborgService {
     rpc StartStream(StartStreamMessage) returns (StartStreamResponse) {}
     rpc BackendPush(BackendPushMessage) returns (BackendPushResponse) {}
 
+    rpc ListBlobs(ListBlobsMessage) returns (ListBlobsResponse) {}
     rpc OpenApp(OpenAppMessage) returns (OpenAppResponse) {}
     rpc WriteApp(WriteAppMessage) returns (WriteAppResponse) {}
     rpc SetBlob(stream SetBlobMessage) returns (stream SetBlobResponse) {}

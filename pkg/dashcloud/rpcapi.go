@@ -41,3 +41,7 @@ func (rpc *InternalApi) CallDataHandler(appName string, path string, data interf
 func (rpc *InternalApi) BackendPush(appName string, path string, data interface{}) error {
 	return rpc.client.backendPush(appName, path, data)
 }
+
+func (rpc *InternalApi) ListBlobs(appName string, appVersion string) ([]dash.BlobData, error) {
+	return rpc.client.listBlobs(appName, appVersion)
+}

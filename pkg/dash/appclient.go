@@ -35,6 +35,8 @@ type streamKey struct {
 	StreamId string
 }
 
+// internal interface (for communication with Dashborg Cloud Service)
+// API is not stable
 type AppClient interface {
 	DispatchRequest(ctx context.Context, reqMsg *dashproto.RequestMessage)
 	SendRequestResponse(req *Request, done bool) (int, error)
@@ -47,6 +49,7 @@ type InternalApi interface {
 	// BackendPush(appName string, path string, data interface{}) error
 	SetBlobData(acfg AppConfig, blob BlobData, r io.Reader) error
 	RemoveBlob(acfg AppConfig, blob BlobData) error
+	ListBlobs(appName string, appVersion string) ([]BlobData, error)
 	SendResponseProtoRpc(m *dashproto.SendResponseMessage) (int, error)
 	StartStreamProtoRpc(m *dashproto.StartStreamMessage) (string, error)
 }
@@ -117,7 +120,7 @@ func (pc *appClient) sendErrResponse(reqMsg *dashproto.RequestMessage, errMsg st
 }
 
 func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.RequestMessage) {
-	if reqMsg.AppId.AppName != pc.App.GetAppName() {
+	if reqMsg.AppId.AppName != pc.App.AppName() {
 		go pc.sendErrResponse(reqMsg, "Wrong AppName")
 		return
 	}
