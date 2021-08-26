@@ -127,19 +127,10 @@ func (pc *DashCloudClient) getGrpcServer() (*grpcConfig, error) {
 }
 
 func (pc *DashCloudClient) startClient() error {
-	err := pc.connectGrpc()
-	if err != nil {
-		pc.logV("Dashborg ERROR connecting gRPC client: %v\n", err)
-	}
-	if pc.Config.ShutdownCh != nil {
-		go func() {
-			<-pc.Config.ShutdownCh
-			pc.externalShutdown()
-		}()
-	}
 	if pc.Config.DashborgSrvHost == "" {
 		grpcConfig, err := pc.getGrpcServer()
 		if err != nil {
+			pc.logV("DashborgCloudClient error starting: %v\n", err)
 			return err
 		}
 		pc.Config.DashborgSrvHost = grpcConfig.GrpcServer
@@ -148,8 +139,18 @@ func (pc *DashCloudClient) startClient() error {
 			pc.log("Dashborg Using gRPC host %s:%d\n", pc.Config.DashborgSrvHost, pc.Config.DashborgSrvPort)
 		}
 	}
+	err := pc.connectGrpc()
+	if err != nil {
+		pc.logV("Dashborg ERROR connecting gRPC client: %v\n", err)
+	}
 	if pc.Config.Verbose {
 		pc.log("Dashborg Initialized CloudClient AccId:%s Zone:%s ProcName:%s ProcRunId:%s\n", pc.Config.AccId, pc.Config.ZoneName, pc.Config.ProcName, pc.ProcRunId)
+	}
+	if pc.Config.ShutdownCh != nil {
+		go func() {
+			<-pc.Config.ShutdownCh
+			pc.externalShutdown()
+		}()
 	}
 	err = pc.sendConnectClientMessage(false)
 	if err != nil && !dasherr.CanRetry(err) {
