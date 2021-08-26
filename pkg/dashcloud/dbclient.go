@@ -921,6 +921,15 @@ func (pc *DashCloudClient) MakeJWTAppLink(appName string, validTime time.Duratio
 	if userId == "" {
 		userId = "jwt-user"
 	}
+	if !dashutil.IsRoleValid(roleName) {
+		return "", dasherr.ValidateErr(fmt.Errorf("Invalid RoleName"))
+	}
+	if !dashutil.IsUserIdValid(userId) {
+		return "", dasherr.ValidateErr(fmt.Errorf("Invalid UserId"))
+	}
+	if validTime > 24*time.Hour {
+		return "", dasherr.ValidateErr(fmt.Errorf("Maximum validTime for JWT tokens is 24-hours"))
+	}
 	jwtToken, err := pc.Config.MakeAccountJWT(validTime, userId, roleName)
 	if err != nil {
 		return "", err

@@ -221,7 +221,10 @@ func defaultAuthOpt() GenericAppOption {
 	return authOpt
 }
 
-func makeAppRuntime(appName string) *AppRuntimeImpl {
+// Apps that are created using dashcloud.OpenApp() have their own built in runtime.
+// Only call MakeAppRuntime when you want to call dashcloud.ConnectAppRuntime()
+// without calling OpenApp.
+func MakeAppRuntime(appName string) *AppRuntimeImpl {
 	rtn := &AppRuntimeImpl{
 		appName: appName,
 		lock:    &sync.Mutex{},
@@ -234,7 +237,7 @@ func makeAppRuntime(appName string) *AppRuntimeImpl {
 func MakeApp(appName string, api InternalApi) *App {
 	rtn := &App{
 		api:        api,
-		appRuntime: makeAppRuntime(appName),
+		appRuntime: MakeAppRuntime(appName),
 		appConfig: AppConfig{
 			AppVersion: uuid.New().String(),
 			AppName:    appName,
@@ -268,7 +271,7 @@ func (app *App) IsNew() bool {
 func MakeAppFromConfig(cfg AppConfig, api InternalApi) *App {
 	rtn := &App{
 		api:        api,
-		appRuntime: makeAppRuntime(cfg.AppName),
+		appRuntime: MakeAppRuntime(cfg.AppName),
 		appConfig:  cfg,
 	}
 	rtn.appConfig.AppVersion = uuid.New().String()

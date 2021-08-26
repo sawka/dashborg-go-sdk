@@ -1,97 +1,271 @@
 # Dashborg Go SDK
 
-Dashborg is an alternative web framework to create and deploy bite-sized internal tools without overhead, scaffolding, or JavaScript!
+Dashborg is Frontend as a Service (FEaaS) built for backend and devops engineers to quickly create secure bite-sized internal tools, status pages, and reports.
 
-## Why?
+Dashborg saves you time by handling all of the tedious details of frontend app creation and deployment (hosting, security, authentication, transport, UI libraries, JavaScript frameworks, CSS frameworks, etc.).
 
-Creating good looking, modern, secure admin tools should be easy.  But, there is a huge amount of overhead, configuration, and scaffolding to set up a JavaScript stack, add security/authentication, and create good looking UI components.  Then there is the operational overhead of deployment (opening ports, domain names, and load balancers).
+**Static Apps** allow you to send HTML, data, images, and CSV files to the Dashborg Service from anywhere, including cron jobs and serverless functions (AWS Lambda or Google Cloud Functions).  Great for reports or showing the status of scripts or jobs that run on backend servers.
 
-Simple tools might only need 50-lines of real application logic, but your application server code, UI templates, and configuration files can add 10-20 new files and directories!  If you set up a JavaScript stack, you'll add a package.json, webpack.config, .babelrc, and literally *hundreds of megabytes* of node_modules just to run ReactJS.
+**Connected Apps** allow you to connect any backend server to the Dashborg service (using an *outbound* connection).  Once connected, your backend can receive and respond to UI events (button clicks, form submissions, dropdown selections, etc.).  Connected apps are great for creating live status pages, admin tools, query interfaces, and configuration tools.
 
-This is crazy.
-
-Dashborg is simple.  One HTML file (which can be inlined) for your UI and a couple of lines of code
-to create handlers to call your backend functions.  And, if you use the Dashborg Cloud service, you get
-https, pluggable authentication, and instant deployment to a secure public URL.
+Dashborg is easy to get started with.  You can have your first app deployed in 5-minutes (no account/registration required).  Free tier covers most simple use cases.
 
 ## Dashborg Hello World
 
-First create an App:
-```golang
-app := dash.MakeApp("hello-world")
+Get the SDK:
+```
+go get github.com/sawka/dashborg-go-sdk
 ```
 
-Then, create some handlers for actions you want to run, or data you want to view:
+Connect to the Dashborg Cloud Service (no account required):
 ```golang
-app.Handler("/run-action", func(req *dash.Request) error {
-    fmt.Printf("running backend action\n")
-    return nil
-})
+config := &dashcloud.Config{AutoKeygen: true, AnonAcc: true}
+client, _ := dashcloud.MakeClient(config)
 ```
 
-Create a declarative HTML view to render your App and call your handlers.  You can use
-any regular HTML, or pre-styled Dashborg components (they have the ```d-``` prefix):
-
+Open your first app, and allow offline access:
 ```golang
-<panel>
-  <h1>Demo Dashboard</h1>
-  <d-button handler="/run-action">Run Action</d-button>
-</panel>
+app, _ := client.OpenApp("hello-world")
+app.SetOfflineModeType(dash.OfflineModeEnable)
 ```
 
-Set this HTML in your app as a string or save it in a file:
-```golang
-app.SetHtml(PANEL_HTML)                 // pass as a string
-app.SetHtmlFromFile("hello-world.html") // or pass a filename
+Create a declarative HTML view to render in your App.  Most HTML is supported as-is,
+with Dashborg controls are implemented with custom tags (d-foreach, d-if, d-button, d-table, etc.).
+Use &lt;app&gt; as your top-level tag.  Setting ```ui="dashborg"``` imports the Dashborg UI controls and styles.
+Save as "hello-world.html":
+```html
+<app ui="dashborg">
+  <h1>Hello World</h1>
+</app>
 ```
 
-Connect your App to the local-container to view it:
-
-```golang
-container, _ := dashlocal.MakeContainer(nil)
-container.ConnectApp(app)
-container.WaitForShutdown() // runs until the container is shutdown
+Set your app's HTML (can also be set using a raw string using app.SetHtml):
+```
+app.SetHtmlFromFile("./hello-world.html")
 ```
 
-View/test your app at [http://localhost:8082](http://localhost:8082)!
+Write the app to the Dashborg Cloud Service:
+```
+client.WriteApp(app)
+```
 
-## Dashborg Cloud
-
-Want to deploy your app in the cloud?  Change the container to
-the dashcloud container.  No registration is required, a new account id, and public/private keypair will be
-auto provisioned (when using the AutoKeygen flag in the config).
-
+Here's the complete code:
 ```golang
-cfg := &dashcloud.Config{
-    AnonAcc:    true,
-    AutoKeygen: true,
+package main
+
+import (
+    "github.com/sawka/dashborg-go-sdk/pkg/dash"
+    "github.com/sawka/dashborg-go-sdk/pkg/dashcloud"
+)
+
+func main() {
+    config := &dashcloud.Config{AutoKeygen: true, AnonAcc: true}
+    client, _ := dashcloud.MakeClient(config)
+    app, _ := client.OpenApp("hello-world")
+    app.SetOfflineModeType(dash.OfflineModeEnable)
+    app.SetHtmlFromFile("./hello-world.html")
+    client.WriteApp(app)
 }
-container, _ := dashcloud.MakeClient(cfg)
-container.ConnectApp(app)
-container.WaitForShutdown()
 ```
 
-You should see output that looks similar to:
+Run your code, and you'll see a secure link to your app that includes a JWT token that will grant access.
+Copy and paste (or click) on the link to see your first Dashborg App!
 
-<pre style="font-size: 14px; line-height: normal; overflow-x: scroll;">
-Dashborg created new self-signed keypair [dashborg-client.key, dashborg-client.crt] for AccId:<b>[YOUR ACCOUNT ID]</b>
-Dashborg KeyFile:dashborg-client.key CertFile:dashborg-client.crt SHA256:<b>[PUBLIC KEY HASH]</b>
-Dashborg Initialized CloudClient AccId:<b>[YOUR ACCOUNT ID]</b> Zone:default ProcName:demo ProcRunId:221e5a4c-51ff-4921-81ad-a9702a9e8583
-Dashborg CloudContainer App Link [todo]: <b>[SECURE LINK TO YOUR APP]</b>
-</pre>
+### Connected Apps
 
-Your application communicates with the Dashborg cloud with public/private key authentication, and the frontend is secured by default with a JWT token, verified with your new public/private keypair.  The Dashborg cloud can host multiple applications and supports multiple types of pluggable authentication.
+Now let's create a simple interactive app.  Here's how to create a button that calls a backend function
+and displays it's output:
 
-Full Code to the Hello World example in the golang directory of the dashborg-examples repository:
-[https://github.com/sawka/dashborg-examples/tree/master/golang](https://github.com/sawka/dashborg-examples/tree/master/golang)
+First add a button with an onclick handler to your UI.  Handlers are like URLs and start with "/".  Here
+we've hooked up a Dashborg Button control to the handler "/test-handler".  Using the Dashborg Button makes
+it look nice, but you can add a click handler to any HTML element.  The ```d-dataview``` element can
+show data as formatted JSON:
+```html
+  <app ui="dashborg">
+    <d-button onclickhandler="$.output = /test-handler">Run Test Handler</d-button>
+    <d-dataview bind="$.output"/>
+  </app>
+```
+
+When you click the button you'll get an error since we don't have any handlers registered.
+
+Let's modify our backend code
+to add our handler.  First we'll add our handler function to our app's Runtime().  Then instead of calling
+WriteApp(), we'll call ConnectApp() to connect the runtime.  WaitForShutdown() will keep our program
+running while we listen for events.
+
+```golang
+func TestFn() (interface{}, error) {
+    fmt.Printf("Calling TestFn!\n")
+    return map[string]interface{}{"success": true, "message": "TestFn Output!"}, nil
+}
+
+func main() {
+    config := &dashcloud.Config{AutoKeygen: true, AnonAcc: true}
+    client, _ := dashcloud.MakeClient(config)
+    app, _ := client.OpenApp("hello-world")
+    app.SetOfflineModeType(dash.OfflineModeEnable)
+    app.SetHtmlFromFile("./hello-world.html")
+    app.Runtime().Handler("/test-handler", TestFn)
+    client.ConnectApp(app)
+    client.WaitForShutdown()
+}
+```
+
+Run the code, click the button and you'll see "Calling TestFn!" appear in your console and
+the return value will appear in the Dashborg UI!
+
+AFAIK this is the simplest and quickest way to get a publically accessible, secure, button connected to backend
+code.
+
+### Adding BLOBs
+
+Want to show an image, or add a CSV file your end users to download, here's how to do it:
+```
+    // first argument is the key-name of the BLOB in your app, 2nd is mime-type, 3rd is filename
+    app.Blobs().SetBlobDataFromFile("myimage.jpg", "image/jpeg", "./path-to-image.jpg")
+    app.Blobs().SetBlobDataFromFile("data.csv", "text/csv", "./path-to-csv-on-filesystem.csv")
+```
+
+Show the image using a regular &lt;img&gt; tag in your HTML template.  Using a ```*``` as the first character in any HTML attribute makes it dynamic.  BLOB metadata is held in the special frontend variable ```$blobs```.
+```
+    <img src="* $blobs['myimage.jpg'].url"/>
+```
+
+Download the CSV using a standard HTML download link:
+```
+    <a href="* $blobs['data.csv'].url" download>Download CSV</a>
+```
+
+Or use a Dashborg download control to make it look nice (defined in the standard Dashborg UI package):
+```
+    <d-download blob="data.csv">Download CSV</d-download>
+```
+
+### Adding Static Data
+
+Dashborg uses JSON to transfer data between your app and the Dashborg service.  You can send any
+static JSON-compatible data to Dashborg using app.Blobs().SetJsonBlob().  Static data is available to
+apps even when there is no backend connected.  For dynamic data, use Runtime().Handler().
+Here we'll send an HTML color table as a BLOB named "colors":
+```golang
+type FavColor struct {
+    Name  string `json:"name"`
+    Color string `json:"color"`
+    Hex   string `json:"hex"`
+}
+...
+colors := make([]FavColor, 0)
+colors = append(colors, FavColor{"Mike", "blue", "#007fff"})
+colors = append(colors, FavColor{"Chris", "red", "#ee0000"})
+colors = append(colors, FavColor{"Jenny", "purple", "#a020f0"})
+app.Blobs().SetJsonBlob("colors", colors, nil)
+```
+
+Load the data into our datamodel using the &lt;d-data&gt; tag.  Read from blob "colors", set it into the 
+frontend data model at ```$.colors```:
+```html
+<d-data blob="colors" output.bindpath="$.colors"/>
+```
+
+Show the first color name as text using ```<d-text>```.  Use the hex color to show a
+small color square using a background-color style (style is dynamic when it starts with ```*```):
+```html
+<div>
+    <d-text bind="$.colors[0].name"/>'s favorite color is <d-text bind="$.colors[0].color"/>
+    <div style="width: 100px; height: 100px; background-color: *$.color[0].hex"/>
+</div>
+```
+
+You can loop using the built-in ```<d-foreach>``` tag (each element is bound to ```.``` inside the loop):
+```html
+<ul class="ui bulleted list">
+    <d-foreach bind="$.colors">
+      <li class="item" style="height: 24px">
+        <div class="row">
+          <div><d-text bind=".name"/> - Favorite Color is <d-text bind=".color"/></div>
+          <div style="width: 18px; height: 18px; background-color: * .hex"/>
+        </div>
+      </li>
+    </d-foreach>
+</ul>
+```
+
+Or use a Dashborg Table Control (@index is bound to the loop counter):
+```html
+<d-table bind="$.colors">
+   <d-col label="#" bind="@index+1"/>
+   <d-col label="Name" bind=".name"/>
+   <d-col label="Color" bind=".color"/>
+   <d-col label="Swatch">
+       <div style="width: 100px; height: 100px; background-color: * .hex"/>
+   </d-col>
+</d-table>
+```
+
+### Advanced Handlers / Forms
+
+Dashborg handlers are registered with reflection.  The first argument is an optional
+```*dash.Request``` struct.  The rest of the arguments come from the frontend code.  Functions 
+return void, interface{}, error, or (interface{}, error).  Errors are shown in the application (or handled by special
+error handlers), and the interface{} return value can be consumed by the calling code.
+
+Handlers can also manipulate the frontend directly (aside from their return value) by calling
+SetData() to set or change values in the frontend data-model.
+
+Here's a handler that manipulates the frontend's data model (data is automatically marshaled as JSON):
+```golang
+func Multiply2(req *dash.Request, num int) error {
+    req.SetData("$.output", num*2)
+    return nil
+}
+
+...
+app.Runtime().Handler("/mult2", Multiply2)
+```
+
+Now we'll use a button to call the function, and a div to show the return color.  Note that HTML inputs
+produce strings, so we must convert the string to a number using fn:int().
+```html
+<app>
+    <div class="row">
+        <d-input type="number" min="0" max="100" value.bindpath="$.inputnumber" defaultvalue="0"/>
+        <d-button onclickhandler="/mult2(fn:int($.inputnumber))">Multiply</d-button>
+    </div>
+    <div>
+        Output is <d-text bind="$.output || 0"/>
+    </div>
+</app>
+```
+
+## Security
+
+All communication from your backend to the Dashborg service is done over HTTPS/gRPC.  Your account is authenticated
+with a public/private keypair that can be auto-generated by the Dashborg SDK (AutoKeygen config setting).
+
+The frontend is served over HTTPS, and each account is hosted on its own subdomain to prevent inter-account XSS attacks 
+The Dashborg frontend offers pre-built authentication methods, with JWT tokens that are
+created from your private-key (the default for new anonymous accounts), simple passwords, or user logins.
+
+## Advanced Features
+
+* Write your own Dashborg components to reuse among your applications
+* Create staging/development zones to test your apps without affecting your production site
+* Assign roles to users (and passwords), set a list of allowed roles per app per zone
+* Stream data and updates from your backend to users
+* (Coming Soon) Create app instances to connect to individual backend servers -- great for managing individual nodes in a cluster or creating a log of every script run.
 
 ## Want to learn more?
 
-* **Doc Site**: https://docs.dashborg.net/
-* **Examples** (golang directory): https://github.com/sawka/dashborg-examples
-* **Tutorial**: https://docs.dashborg.net/tutorials/t1/
-* **Binding Data to Your HTML**: https://docs.dashborg.net/docs/binding-data/
-* **GoDoc**: https://pkg.go.dev/github.com/sawka/dashborg-go-sdk/pkg/dash
-* **Demo Site**: https://acc-421d595f-9e30-4178-bcc3-b853f890fb8e.console.dashborg.net/zone/default/default
+These resources are currently being updated for the new v0.6 Dashborg release.  Currently they
+refer to the older v0.5 release and are out of date.
 
-Questions?  [Join the Dashborg Slack Channel](https://join.slack.com/t/dashborgworkspace/shared_invite/zt-ls710ixw-nHmCAFiOQqzal2mu0r_87w)
+* <s>**Doc Site**: https://docs.dashborg.net/</s>
+* <s>**Examples** (golang directory): https://github.com/sawka/dashborg-examples</s>
+* <s>**Tutorial**: https://docs.dashborg.net/tutorials/t1/</s>
+* <s>**Binding Data to Your HTML**: https://docs.dashborg.net/docs/binding-data/</s>
+* <s>**GoDoc**: https://pkg.go.dev/github.com/sawka/dashborg-go-sdk/pkg/dash</s>
+* <s>**Demo Site**: https://acc-421d595f-9e30-4178-bcc3-b853f890fb8e.console.dashborg.net/zone/default/default</s>
+
+Questions?  [Join the Dashborg Slack Channel](https://join.slack.com/t/dashborgworkspace/shared_invite/zt-uphltkhj-r6C62szzoYz7_IIsoJ8WPg)
+

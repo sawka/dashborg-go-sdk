@@ -144,14 +144,15 @@ type CallHandlerOpts struct {
 	StateType reflect.Type
 }
 
-// HandlerEx registers a handler using reflection.  The function must
-// return (interface{}, error) or error.  First optional argument to the function is a *dash.Request.  2nd optional
-// argument is the AppStateType (if one has been set in the app).  The rest of the arguments
-// are mapped to the request Data as an array.  If request Data is longer, the arguments are ignored.  If
-// request Data is shorter, the missing arguments are set to their zero value.  If request Data is not
-// an array, it will be converted to a single element array, if request Data is null it will be converted
-// to a zero-element array.  The handler will throw an error if the Data or AppState values cannot be
-// converted to their respective go types (using json.Unmarshal).
+// HandlerEx registers a handler using reflection.
+// Return value must be return void, interface{}, error, or (interface{}, error).
+// First optional argument to the function is a *dash.Request.
+// Second optional argument is the AppStateType (if one has been set in the app runtime).
+// The rest of the arguments are mapped to the request Data as an array.  If request Data is longer,
+// the arguments are ignored.  If request Data is shorter, the missing arguments are set to their zero value.
+// If request Data is not an array, it will be converted to a single element array, if request Data is null
+// it will be converted to a zero-element array.  The handler will throw an error if the Data or AppState
+// values cannot be converted to their respective go types (using json.Unmarshal).
 func (apprt *AppRuntimeImpl) Handler(path string, handlerFn interface{}) error {
 	if !dashutil.IsHandlerPathValid(path) {
 		return fmt.Errorf("Invalid handler path")
@@ -160,7 +161,7 @@ func (apprt *AppRuntimeImpl) Handler(path string, handlerFn interface{}) error {
 	if hType.Kind() != reflect.Func {
 		return fmt.Errorf("handlerFn must be a func")
 	}
-	if !checkOutput(hType, errType) && !checkOutput(hType, interfaceType, errType) {
+	if hType.NumOut() != 0 && !checkOutput(hType, errType) && !checkOutput(hType, interfaceType) && !checkOutput(hType, interfaceType, errType) {
 		return fmt.Errorf("Dashborg Panel Handler must return (interface{}, error) or error")
 	}
 	hVal := reflect.ValueOf(handlerFn)
@@ -170,20 +171,30 @@ func (apprt *AppRuntimeImpl) Handler(path string, handlerFn interface{}) error {
 			return nil, err
 		}
 		rtnVals := hVal.Call(args)
-		if len(rtnVals) == 2 {
+		if len(rtnVals) == 0 {
+			return nil, nil
+		} else if len(rtnVals) == 1 {
+			if rtnVals[0].IsNil() {
+				return nil, nil
+			}
+			if checkOutput(hType, errType) {
+				if rtnVals[0].IsNil() {
+					return nil, nil
+				}
+				return nil, rtnVals[0].Interface().(error)
+			} else {
+				return rtnVals[0].Interface(), nil
+			}
+
+		} else {
 			// (interface{}, error)
 			var errRtn error
 			if !rtnVals[1].IsNil() {
 				errRtn = rtnVals[1].Interface().(error)
 			}
 			return rtnVals[0].Interface(), errRtn
-		} else {
-			// error
-			if rtnVals[0].IsNil() {
-				return nil, nil
-			}
-			return nil, rtnVals[0].Interface().(error)
 		}
+
 	}
 	apprt.setHandler(path, handlerType{HandlerFn: hfn})
 	return nil

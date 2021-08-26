@@ -31,6 +31,7 @@ const (
 	BlobKeyMax       = 100
 	BlobNsMax        = 20
 	SimpleIdMax      = 30
+	UserIdMax        = 100
 )
 
 var (
@@ -58,6 +59,7 @@ var (
 	// https://www.w3.org/TR/2016/REC-html51-20161101/sec-forms.html#email-state-typeemali
 	emailRe = regexp.MustCompile("^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
 
+	userIdRe   = regexp.MustCompile("^[a-z0-9A-Z_.@#-]+$")
 	passwordRe = regexp.MustCompile("^[a-zA-Z0-9]+$")
 )
 
@@ -241,4 +243,11 @@ func IsRoleListValid(s string) bool {
 		}
 	}
 	return true
+}
+
+func IsUserIdValid(s string) bool {
+	if len(s) == 0 || len(s) > UserIdMax {
+		return false
+	}
+	return userIdRe.MatchString(s)
 }
