@@ -257,15 +257,10 @@ created from your private-key (the default for new anonymous accounts), simple p
 
 ## Want to learn more?
 
-These resources are currently being updated for the new v0.6 Dashborg release.  Currently they
-refer to the older v0.5 release and are out of date.
-
-* <s>**Doc Site**: https://docs.dashborg.net/</s>
-* <s>**Examples** (golang directory): https://github.com/sawka/dashborg-examples</s>
-* <s>**Tutorial**: https://docs.dashborg.net/tutorials/t1/</s>
-* <s>**Binding Data to Your HTML**: https://docs.dashborg.net/docs/binding-data/</s>
-* <s>**GoDoc**: https://pkg.go.dev/github.com/sawka/dashborg-go-sdk/pkg/dash</s>
-* <s>**Demo Site**: https://acc-421d595f-9e30-4178-bcc3-b853f890fb8e.console.dashborg.net/zone/default/default</s>
+* **Doc Site**: https://docs.dashborg.net/
+* **Tutorial**: https://docs.dashborg.net/tutorials/t1/
+* **Binding Data to Your HTML**: https://docs.dashborg.net/docs/binding-data/
+* **GoDoc**: https://pkg.go.dev/github.com/sawka/dashborg-go-sdk/pkg/dash
 
 Questions?  [Join the Dashborg Slack Channel](https://join.slack.com/t/dashborgworkspace/shared_invite/zt-uphltkhj-r6C62szzoYz7_IIsoJ8WPg)
 
