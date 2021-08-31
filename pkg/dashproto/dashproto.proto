@@ -192,6 +192,23 @@ message ListBlobsResponse {
     string BlobDataJson = 2;
 }
 
+message SetPathMessage {
+    int64 Ts = 1;
+    string Path = 2;
+    string TxId = 3;
+    bool HasBody = 4;
+    string FileOptsJson = 5;
+    string BlobBytesKey = 6;
+    bytes BlobBytes = 7;
+    bool ClientErr = 8;
+}
+
+message SetPathResponse {
+    RtnStatus Status = 1;
+    bool BlobFound = 2;
+    string BlobBytesKey = 3;
+}
+
 service DashborgService {
     rpc ConnectClient(ConnectClientMessage) returns (ConnectClientResponse) {}
     rpc ReflectZone(ReflectZoneMessage) returns (ReflectZoneResponse) {}
@@ -208,5 +225,7 @@ service DashborgService {
     rpc SetBlob(stream SetBlobMessage) returns (stream SetBlobResponse) {}
     rpc RemoveBlob(RemoveBlobMessage) returns (RemoveBlobResponse) {}
     rpc RemoveApp(RemoveAppMessage) returns (RemoveAppResponse) {}
+
+    rpc SetPath(stream SetPathMessage) returns (stream SetPathResponse) {}
 }
 

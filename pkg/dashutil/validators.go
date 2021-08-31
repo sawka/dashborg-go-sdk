@@ -19,6 +19,8 @@ const (
 	Sha256HexLen     = 64
 	Sha256Base64Len  = 44
 	UuidLen          = 36
+	DescriptionMax   = 100
+	FileDisplayMax   = 100
 	HandlerPathMax   = 100
 	DataPathMax      = 200
 	PathMax          = 100
@@ -41,6 +43,7 @@ var (
 	procNameRe       = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
 	uuidRe           = regexp.MustCompile("^[a-fA-F0-9-]{36}$")
 	handlerPathRe    = regexp.MustCompile("^/\\@?[a-zA-Z0-9_-][a-zA-Z0-9_/-]*$")
+	fileDisplayRe    = regexp.MustCompile("^\\@[a-zA-Z0-9_-]+$")
 	base64Re         = regexp.MustCompile("^[a-zA-Z0-9/+=]+$")
 	hexRe            = regexp.MustCompile("^[a-f0-9]+$")
 	imageMimeTypeRe  = regexp.MustCompile("^image/[a-z0-9.-]+$")
@@ -66,6 +69,7 @@ var (
 var ValidRequestType = map[string]bool{"data": true, "handler": true, "stream": true, "auth": true, "html": true, "init": true}
 var ValidActionType = map[string]bool{"setdata": true, "event": true, "invalidate": true, "html": true, "panelauth": true, "panelauthchallenge": true, "error": true, "blob": true, "blobext": true, "streamopen": true, "backendpush": true}
 var ValidBlobNs = map[string]bool{"app": true, "html": true}
+var ValidFileType = map[string]bool{"static": true, "dir": true, "runtime": true}
 
 func IsZoneNameValid(zoneName string) bool {
 	if len(zoneName) > ZoneNameMax {
@@ -123,6 +127,13 @@ func IsHandlerPathValid(handler string) bool {
 	return handlerPathRe.MatchString(handler)
 }
 
+func IsPathValid(path string) bool {
+	if len(path) > PathMax {
+		return false
+	}
+	return pathRe.MatchString(path)
+}
+
 func IsPublicKeyValid(publicKey string) bool {
 	if len(publicKey) < 20 || len(publicKey) > 1000 {
 		return false
@@ -173,13 +184,6 @@ func IsPasswordValid(s string) bool {
 		return false
 	}
 	return true
-}
-
-func IsPathValid(s string) bool {
-	if len(s) == 0 || len(s) > PathMax {
-		return false
-	}
-	return pathRe.MatchString(s)
 }
 
 func IsRequestTypeValid(s string) bool {
@@ -250,4 +254,22 @@ func IsUserIdValid(s string) bool {
 		return false
 	}
 	return userIdRe.MatchString(s)
+}
+
+func IsFileTypeValid(s string) bool {
+	return ValidFileType[s]
+}
+
+func IsFileDisplayValid(s string) bool {
+	if IsPathValid(s) {
+		return true
+	}
+	if len(s) == 0 || len(s) > FileDisplayMax {
+		return false
+	}
+	return fileDisplayRe.MatchString(s)
+}
+
+func IsDescriptionValid(s string) bool {
+	return len(s) < DescriptionMax
 }

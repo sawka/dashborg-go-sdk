@@ -12,6 +12,7 @@ import (
 	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -709,7 +710,7 @@ func (pc *DashCloudClient) baseWriteApp(appName string, shouldConnect bool, acfg
 		return dashErr
 	}
 	for name, warning := range resp.OptionWarnings {
-		pc.log("%s WARNING option[%s]: %s\n", writeAppFnStr, name, warning)
+		pc.log("%s WARNING [%s]: %s\n", writeAppFnStr, name, warning)
 	}
 	return nil
 }
@@ -1060,4 +1061,166 @@ func (pc *DashCloudClient) drainBlobStream(bclient dashproto.DashborgService_Set
 			return
 		}
 	}
+}
+
+func (pc *DashCloudClient) drainSetPathStream(client dashproto.DashborgService_SetPathClient) {
+	client.CloseSend()
+	for {
+		_, err := client.Recv()
+		if err == nil {
+			continue
+		}
+		if err == io.EOF {
+			return
+		}
+		if err != nil {
+			pc.logV("drainSetPathStream error: %v\n", err)
+			return
+		}
+	}
+}
+
+func validateFileOpts(opts *dash.FileOpts) error {
+	if !dashutil.IsFileTypeValid(opts.FileType) {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid FileType"))
+	}
+	if !dashutil.IsRoleListValid(strings.Join(opts.AllowedRoles, ",")) {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid AllowedRoles"))
+	}
+	if opts.Display != "" && !dashutil.IsFileDisplayValid(opts.Display) {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid Display"))
+	}
+	if !dashutil.IsDescriptionValid(opts.Description) {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid Description (too long)"))
+	}
+	if opts.FileType == dash.FileTypeStatic {
+		if !dashutil.IsSha256Base64HashValid(opts.Sha256) {
+			return dasherr.ValidateErr(fmt.Errorf("Invalid SHA-256 hash value, must be a base64 encoded SHA-256 hash (44 characters), see dashutil.Sha256Base64()"))
+		}
+		if !dashutil.IsMimeTypeValid(opts.MimeType) {
+			return dasherr.ValidateErr(fmt.Errorf("Invalid MimeType"))
+		}
+		if opts.Size <= 0 {
+			return dasherr.ValidateErr(fmt.Errorf("Invalid Size (cannot be 0)"))
+		}
+	}
+	return nil
+}
+
+func (pc *DashCloudClient) setRawPath(path string, r io.Reader, fileOpts *dash.FileOpts) error {
+	if !pc.IsConnected() {
+		return NotConnectedErr
+	}
+	if fileOpts == nil {
+		return dasherr.ValidateErr(fmt.Errorf("SetRawPath cannot receive nil *FileOpts"))
+	}
+	if !dashutil.IsPathValid(path) {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid Path"))
+	}
+	if len(fileOpts.AllowedRoles) == 0 {
+		fileOpts.AllowedRoles = []string{dash.RoleUser}
+	}
+	err := validateFileOpts(fileOpts)
+	if err != nil {
+		return err
+	}
+	if fileOpts.FileType != dash.FileTypeStatic && r != nil {
+		return dasherr.ValidateErr(fmt.Errorf("SetRawPath no reader allowed except for file-type:static"))
+	}
+	optsJson, err := dashutil.MarshalJson(fileOpts)
+	if err != nil {
+		return dasherr.JsonMarshalErr("FileOpts", err)
+	}
+	ctx, cancelFn := pc.ctxWithMd(streamGrpcTimeout)
+	defer cancelFn()
+	client, err := pc.DBService.SetPath(ctx)
+	if err != nil {
+		return err
+	}
+	defer pc.drainSetPathStream(client)
+
+	m := &dashproto.SetPathMessage{
+		Ts:           dashutil.Ts(),
+		Path:         path,
+		HasBody:      (r != nil),
+		FileOptsJson: optsJson,
+	}
+	err = client.Send(m)
+	if err != nil {
+		return err
+	}
+	metaResp, respErr := client.Recv()
+	dashErr := pc.handleStatusErrors("SetPath", metaResp, respErr, true)
+	if dashErr != nil {
+		return dashErr
+	}
+	if metaResp.BlobFound || !m.HasBody {
+		return nil
+	}
+	maxBytes := maxBlobBytes
+	if int64(maxBytes) > fileOpts.Size {
+		maxBytes = int(fileOpts.Size)
+	}
+	readBuf := make([]byte, maxBytes)
+	var lastErr error
+	var totalRead int64
+	for {
+		if r == nil {
+			lastErr = dasherr.ValidateErr(fmt.Errorf("Nil Reader passed to SetPath"))
+		}
+		bytesRead, readErr := io.ReadFull(r, readBuf)
+		if bytesRead == 0 && readErr == io.EOF {
+			break
+		}
+		if readErr != nil && readErr != io.ErrUnexpectedEOF {
+			lastErr = readErr
+			break
+		}
+		totalRead += int64(bytesRead)
+		if totalRead > fileOpts.Size {
+			break
+		}
+		m := &dashproto.SetPathMessage{
+			Ts:           dashutil.Ts(),
+			BlobBytesKey: metaResp.BlobBytesKey,
+			BlobBytes:    readBuf[0:bytesRead],
+		}
+		clientErr := client.Send(m)
+		if clientErr != nil {
+			return clientErr
+		}
+		if readErr == io.ErrUnexpectedEOF {
+			break
+		}
+	}
+	if lastErr != nil || totalRead != fileOpts.Size {
+		m := &dashproto.SetPathMessage{
+			Ts:        dashutil.Ts(),
+			ClientErr: true,
+		}
+		err := client.Send(m)
+		if err != nil {
+			return err
+		}
+	}
+	if totalRead > fileOpts.Size {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid FileOpts.Size, does not match io.Reader.  Reader has more bytes."))
+	}
+	if totalRead < fileOpts.Size {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid FileOpts.Size, does not match io.Reader.  Reader has less bytes. (%d vs %d)", fileOpts.Size, totalRead))
+	}
+	err = client.CloseSend()
+	if err != nil {
+		return err
+	}
+	resp, respErr := client.Recv()
+	dashErr = pc.handleStatusErrors("SetPath", resp, respErr, false)
+	if dashErr != nil {
+		return dashErr
+	}
+	return nil
+}
+
+func (pc *DashCloudClient) DashFS() dash.DashFS {
+	return dash.MakeDashFS(pc.InternalApi())
 }

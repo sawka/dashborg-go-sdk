@@ -43,7 +43,7 @@ func BlobDataFromReadSeeker(extBlobKey string, mimeType string, r io.ReadSeeker)
 	}
 	_, err = r.Seek(0, 0)
 	if err != nil {
-		return BlobData{}, nil
+		return BlobData{}, err
 	}
 	h := sha256.New()
 	numCopyBytes, err := io.Copy(h, r)

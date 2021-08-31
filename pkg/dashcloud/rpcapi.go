@@ -45,3 +45,7 @@ func (rpc *InternalApi) BackendPush(appName string, path string, data interface{
 func (rpc *InternalApi) ListBlobs(appName string, appVersion string) ([]dash.BlobData, error) {
 	return rpc.client.listBlobs(appName, appVersion)
 }
+
+func (rpc *InternalApi) SetRawPath(path string, r io.Reader, fileOpts *dash.FileOpts) error {
+	return rpc.client.setRawPath(path, r, fileOpts)
+}

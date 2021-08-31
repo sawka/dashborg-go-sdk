@@ -52,6 +52,7 @@ type InternalApi interface {
 	ListBlobs(appName string, appVersion string) ([]BlobData, error)
 	SendResponseProtoRpc(m *dashproto.SendResponseMessage) (int, error)
 	StartStreamProtoRpc(m *dashproto.StartStreamMessage) (string, error)
+	SetRawPath(path string, r io.Reader, fileOpts *FileOpts) error
 }
 
 type AppClientConfig struct {
