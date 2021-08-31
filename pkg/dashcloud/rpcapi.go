@@ -30,7 +30,7 @@ func (rpc *InternalApi) SetBlobData(acfg dash.AppConfig, blobData dash.BlobData,
 	return rpc.client.setBlobData(acfg, blobData, r)
 }
 
-func (rpc *InternalApi) StartBareStream(appName string, streamOpts dash.StreamOpts) (*dash.Request, error) {
+func (rpc *InternalApi) StartBareStream(appName string, streamOpts dash.StreamOpts) (*dash.AppRequest, error) {
 	return rpc.client.startBareStream(appName, streamOpts)
 }
 
@@ -48,4 +48,12 @@ func (rpc *InternalApi) ListBlobs(appName string, appVersion string) ([]dash.Blo
 
 func (rpc *InternalApi) SetRawPath(path string, r io.Reader, fileOpts *dash.FileOpts) error {
 	return rpc.client.setRawPath(path, r, fileOpts)
+}
+
+func (rpc *InternalApi) RemovePath(path string) error {
+	return rpc.client.removePath(path)
+}
+
+func (rpc *InternalApi) FileInfo(path string, dirOpts *dash.DirOpts) ([]*dash.FileInfo, error) {
+	return rpc.client.fileInfo(path, dirOpts)
 }

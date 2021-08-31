@@ -10,7 +10,8 @@ import (
 
 var errType = reflect.TypeOf((*error)(nil)).Elem()
 var interfaceType = reflect.TypeOf((*interface{})(nil)).Elem()
-var reqType = reflect.TypeOf(&Request{})
+var appReqType = reflect.TypeOf(&AppRequest{})
+var reqType = reflect.TypeOf((*Request)(nil)).Elem()
 
 func checkOutput(mType reflect.Type, outputTypes ...reflect.Type) bool {
 	if mType.NumOut() != len(outputTypes) {
@@ -75,13 +76,13 @@ func ca_unmarshalMulti(hType reflect.Type, args []reflect.Value, argNum int, jso
 // * *Request
 // * AppStateType (if specified in App)
 // * data-array args
-func (apprt *AppRuntimeImpl) makeCallArgs(hType reflect.Type, req *Request) ([]reflect.Value, error) {
+func (apprt *AppRuntimeImpl) makeCallArgs(hType reflect.Type, req *AppRequest) ([]reflect.Value, error) {
 	rtn := make([]reflect.Value, hType.NumIn())
 	if hType.NumIn() == 0 {
 		return rtn, nil
 	}
 	argNum := 0
-	if hType.In(argNum) == reqType {
+	if hType.In(argNum) == appReqType || hType.In(argNum) == reqType {
 		rtn[argNum] = reflect.ValueOf(req)
 		argNum++
 	}
@@ -146,7 +147,7 @@ type CallHandlerOpts struct {
 
 // HandlerEx registers a handler using reflection.
 // Return value must be return void, interface{}, error, or (interface{}, error).
-// First optional argument to the function is a *dash.Request.
+// First optional argument to the function is a *dash.AppRequest.
 // Second optional argument is the AppStateType (if one has been set in the app runtime).
 // The rest of the arguments are mapped to the request Data as an array.  If request Data is longer,
 // the arguments are ignored.  If request Data is shorter, the missing arguments are set to their zero value.
@@ -165,7 +166,7 @@ func (apprt *AppRuntimeImpl) Handler(path string, handlerFn interface{}) error {
 		return fmt.Errorf("Dashborg Panel Handler must return (interface{}, error) or error")
 	}
 	hVal := reflect.ValueOf(handlerFn)
-	hfn := func(req *Request) (interface{}, error) {
+	hfn := func(req *AppRequest) (interface{}, error) {
 		args, err := apprt.makeCallArgs(hType, req)
 		if err != nil {
 			return nil, err

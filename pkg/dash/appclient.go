@@ -19,7 +19,7 @@ import (
 const returnChSize = 20
 const smallDrainSleep = 5 * time.Millisecond
 
-type handlerFuncType = func(*Request) (interface{}, error)
+type handlerFuncType = func(*AppRequest) (interface{}, error)
 
 type streamControl struct {
 	AppName        string
@@ -39,13 +39,13 @@ type streamKey struct {
 // API is not stable
 type AppClient interface {
 	DispatchRequest(ctx context.Context, reqMsg *dashproto.RequestMessage)
-	SendRequestResponse(req *Request, done bool) (int, error)
-	StartStream(appName string, streamOpts StreamOpts, feClientId string) (*Request, string, error)
+	SendRequestResponse(req *AppRequest, done bool) (int, error)
+	StartStream(appName string, streamOpts StreamOpts, feClientId string) (*AppRequest, string, error)
 }
 
 // internal callbacks into DashCloud package.  Not for use by end-user, API subject to change.
 type InternalApi interface {
-	// StartBareStream(appName string, streamOpts StreamOpts) (*Request, error)
+	// StartBareStream(appName string, streamOpts StreamOpts) (*AppRequest, error)
 	// BackendPush(appName string, path string, data interface{}) error
 	SetBlobData(acfg AppConfig, blob BlobData, r io.Reader) error
 	RemoveBlob(acfg AppConfig, blob BlobData) error
@@ -53,6 +53,8 @@ type InternalApi interface {
 	SendResponseProtoRpc(m *dashproto.SendResponseMessage) (int, error)
 	StartStreamProtoRpc(m *dashproto.StartStreamMessage) (string, error)
 	SetRawPath(path string, r io.Reader, fileOpts *FileOpts) error
+	RemovePath(path string) error
+	FileInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error)
 }
 
 type AppClientConfig struct {
@@ -85,7 +87,7 @@ func MakeAppClient(api InternalApi, app AppRuntime, config AppClientConfig, conn
 }
 
 // returns numStreamClients, err
-func (pc *appClient) SendRequestResponse(req *Request, done bool) (int, error) {
+func (pc *appClient) SendRequestResponse(req *AppRequest, done bool) (int, error) {
 	if req.isStream() && pc.stream_hasZeroClients(req.info.ReqId) {
 		req.clearActions()
 		return 0, nil
@@ -134,7 +136,7 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 		return
 	}
 
-	preq := &Request{
+	preq := &AppRequest{
 		info: RequestInfo{
 			StartTime:   time.Now(),
 			ReqId:       reqMsg.ReqId,

@@ -14,6 +14,11 @@ message AppId {
     string AppVersion = 4;
 }
 
+message PathId {
+    string Path = 1;
+    string PathFrag = 2;
+}
+
 message RRAction {
     int64 Ts = 1;
     string ActionType = 2;
@@ -38,6 +43,24 @@ message SendResponseMessage {
     string Err = 8;
 }
 
+message SendResponseResponse {
+    RtnStatus Status = 1;
+    int32 NumStreamClients = 2;
+}
+
+message SendResponseBlobMessage {
+    int64 Ts = 1;
+    string ReqId = 2;
+    string FeClientId = 3;
+    bool ResponseDone = 4;
+    string BlobMimeType = 5;
+    bytes BlobBytes = 6;
+}
+
+message SendResponseBlobResponse {
+    RtnStatus Status = 1;
+}
+
 message RequestMessage {
     int64 Ts = 1;
     string AccId = 2;
@@ -54,6 +77,7 @@ message RequestMessage {
     RtnStatus Status = 13;     // only used for server-side errors
     int64 TimeoutMs = 14;
     bool IsBackendCall = 15;
+    PathId PathId = 16;
 }
 
 message ConnectClientMessage {
@@ -76,11 +100,6 @@ message ConnectClientResponse {
 
 message RequestStreamMessage {
     int64 Ts = 1;
-}
-
-message SendResponseResponse {
-    RtnStatus Status = 1;
-    int32 NumStreamClients = 2;
 }
 
 message StartStreamMessage {
@@ -194,7 +213,7 @@ message ListBlobsResponse {
 
 message SetPathMessage {
     int64 Ts = 1;
-    string Path = 2;
+    PathId Path = 2;
     string TxId = 3;
     bool HasBody = 4;
     string FileOptsJson = 5;
@@ -209,6 +228,26 @@ message SetPathResponse {
     string BlobBytesKey = 3;
 }
 
+message RemovePathMessage {
+    int64 Ts = 1;
+    PathId Path = 2;
+}
+
+message RemovePathResponse {
+    RtnStatus Status = 1;
+}
+
+message FileInfoMessage {
+    int64 Ts = 1;
+    PathId Path = 2;
+    string DirOptsJson = 3;
+}
+
+message FileInfoResponse {
+    RtnStatus Status = 1;
+    string FileInfoJson = 2;
+}
+
 service DashborgService {
     rpc ConnectClient(ConnectClientMessage) returns (ConnectClientResponse) {}
     rpc ReflectZone(ReflectZoneMessage) returns (ReflectZoneResponse) {}
@@ -218,6 +257,7 @@ service DashborgService {
     rpc SendResponse(SendResponseMessage) returns (SendResponseResponse) {}
     rpc StartStream(StartStreamMessage) returns (StartStreamResponse) {}
     rpc BackendPush(BackendPushMessage) returns (BackendPushResponse) {}
+    rpc SendResponseBlob(stream SendResponseBlobMessage) returns (SendResponseBlobResponse) {}
 
     rpc ListBlobs(ListBlobsMessage) returns (ListBlobsResponse) {}
     rpc OpenApp(OpenAppMessage) returns (OpenAppResponse) {}
@@ -227,5 +267,7 @@ service DashborgService {
     rpc RemoveApp(RemoveAppMessage) returns (RemoveAppResponse) {}
 
     rpc SetPath(stream SetPathMessage) returns (stream SetPathResponse) {}
+    rpc RemovePath(RemovePathMessage) returns (RemovePathResponse) {}
+    rpc FileInfo(FileInfoMessage) returns (FileInfoResponse) {}
 }
 

@@ -411,6 +411,58 @@ func (pc *DashCloudClient) RemoveApp(appName string) error {
 	return nil
 }
 
+func (pc *DashCloudClient) removePath(path string) error {
+	if !pc.IsConnected() {
+		return NotConnectedErr
+	}
+	m := &dashproto.RemovePathMessage{
+		Ts:   dashutil.Ts(),
+		Path: &dashproto.PathId{Path: path},
+	}
+	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
+	defer cancelFn()
+	resp, respErr := pc.DBService.RemovePath(ctx, m)
+	dashErr := pc.handleStatusErrors("RemovePath", resp, respErr, true)
+	if dashErr != nil {
+		return dashErr
+	}
+	pc.log("DashborgCloudClient removed path %s\n", path)
+	return nil
+}
+
+func (pc *DashCloudClient) fileInfo(path string, dirOpts *dash.DirOpts) ([]*dash.FileInfo, error) {
+	if !pc.IsConnected() {
+		return nil, NotConnectedErr
+	}
+	m := &dashproto.FileInfoMessage{
+		Ts:   dashutil.Ts(),
+		Path: &dashproto.PathId{Path: path},
+	}
+	if dirOpts != nil {
+		jsonStr, err := dashutil.MarshalJson(dirOpts)
+		if err != nil {
+			return nil, dasherr.JsonMarshalErr("DirOpts", err)
+		}
+		m.DirOptsJson = jsonStr
+	}
+	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
+	defer cancelFn()
+	resp, respErr := pc.DBService.FileInfo(ctx, m)
+	dashErr := pc.handleStatusErrors("FileInfo", resp, respErr, false)
+	if dashErr != nil {
+		return nil, dashErr
+	}
+	if resp.FileInfoJson == "" {
+		return nil, nil
+	}
+	var rtn []*dash.FileInfo
+	err := json.Unmarshal([]byte(resp.FileInfoJson), &rtn)
+	if err != nil {
+		return nil, dasherr.JsonUnmarshalErr("FileInfoJson", err)
+	}
+	return rtn, nil
+}
+
 func (pc *DashCloudClient) ConnectAppRuntime(app dash.AppRuntime) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
@@ -638,7 +690,7 @@ func (pc *DashCloudClient) InternalApi() *InternalApi {
 // same StreamId.  An error will be returned if a stream with this StreamId has already started.
 // Unlike StartStream StreamId must be specified ("" will return an error).
 // Caller is responsible for calling req.Done() when the stream is finished.
-func (pc *DashCloudClient) startBareStream(appName string, streamOpts dash.StreamOpts) (*dash.Request, error) {
+func (pc *DashCloudClient) startBareStream(appName string, streamOpts dash.StreamOpts) (*dash.AppRequest, error) {
 	if !pc.IsConnected() {
 		return nil, NotConnectedErr
 	}
@@ -1141,7 +1193,7 @@ func (pc *DashCloudClient) setRawPath(path string, r io.Reader, fileOpts *dash.F
 
 	m := &dashproto.SetPathMessage{
 		Ts:           dashutil.Ts(),
-		Path:         path,
+		Path:         &dashproto.PathId{Path: path},
 		HasBody:      (r != nil),
 		FileOptsJson: optsJson,
 	}

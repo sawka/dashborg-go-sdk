@@ -40,7 +40,14 @@ type RawRequestData struct {
 	AuthDataJson string
 }
 
-type Request struct {
+type Request interface {
+	Context() context.Context
+	AuthData() *AuthAtom
+	RequestInfo() RequestInfo
+	RawData() RawRequestData
+}
+
+type AppRequest struct {
 	lock      *sync.Mutex     // synchronizes RRActions
 	ctx       context.Context // gRPC context / streaming context
 	info      RequestInfo
@@ -55,30 +62,30 @@ type Request struct {
 	infoMsgs  []string              // debugging information
 }
 
-func (req *Request) canSetData(path string) bool {
+func (req *AppRequest) canSetData(path string) bool {
 	if path == RtnSetDataPath && req.info.RequestType == requestTypeData {
 		return true
 	}
 	return req.info.RequestType == requestTypeHandler || req.info.RequestType == requestTypeStream || req.info.RequestType == requestTypeInit
 }
 
-func (req *Request) canSetHtml() bool {
+func (req *AppRequest) canSetHtml() bool {
 	return req.info.RequestType == requestTypeHandler || req.info.RequestType == requestTypeHtml
 }
 
-func (req *Request) RequestInfo() RequestInfo {
+func (req *AppRequest) RequestInfo() RequestInfo {
 	return req.info
 }
 
-func (req *Request) Context() context.Context {
+func (req *AppRequest) Context() context.Context {
 	return req.ctx
 }
 
-func (req *Request) AuthData() *AuthAtom {
+func (req *AppRequest) AuthData() *AuthAtom {
 	return req.authData
 }
 
-func (req *Request) UrlParams() url.Values {
+func (req *AppRequest) UrlParams() url.Values {
 	type UrlParamsState struct {
 		UrlParams map[string]string `json:"urlparams"`
 	}
@@ -94,7 +101,7 @@ func (req *Request) UrlParams() url.Values {
 	return values
 }
 
-func (req *Request) BindData(obj interface{}) error {
+func (req *AppRequest) BindData(obj interface{}) error {
 	if req.rawData.DataJson == "" {
 		return nil
 	}
@@ -102,7 +109,7 @@ func (req *Request) BindData(obj interface{}) error {
 	return err
 }
 
-func (req *Request) BindAppState(obj interface{}) error {
+func (req *AppRequest) BindAppState(obj interface{}) error {
 	if req.rawData.AppStateJson == "" {
 		return nil
 	}
@@ -110,17 +117,17 @@ func (req *Request) BindAppState(obj interface{}) error {
 	return err
 }
 
-func (req *Request) AppState() interface{} {
+func (req *AppRequest) AppState() interface{} {
 	return req.appState
 }
 
-func (req *Request) appendRR(rrAction *dashproto.RRAction) {
+func (req *AppRequest) appendRR(rrAction *dashproto.RRAction) {
 	req.lock.Lock()
 	defer req.lock.Unlock()
 	req.rrActions = append(req.rrActions, rrAction)
 }
 
-func (req *Request) clearActions() []*dashproto.RRAction {
+func (req *AppRequest) clearActions() []*dashproto.RRAction {
 	req.lock.Lock()
 	defer req.lock.Unlock()
 	rtn := req.rrActions
@@ -134,7 +141,7 @@ func (req *Request) clearActions() []*dashproto.RRAction {
 // Note that StartStream will flush any pending actions to the server.
 // If the stream already exists, the existing StreamOpts will not change (keeps the old NoServerCancel setting).
 // streamFn may be nil (useful if you are intending to attach to an existing stream created with StartBareStream).
-func (req *Request) StartStream(streamOpts StreamOpts, streamFn func(req *Request)) error {
+func (req *AppRequest) StartStream(streamOpts StreamOpts, streamFn func(req *AppRequest)) error {
 	if req.isDone {
 		return fmt.Errorf("Cannot call StartStream(), Request is already done")
 	}
@@ -179,7 +186,7 @@ func (req *Request) StartStream(streamOpts StreamOpts, streamFn func(req *Reques
 
 // SetBlobData sends blob data to the server.
 // Note that SetBlob will flush any pending actions to the server
-func (req *Request) SetBlob(path string, mimeType string, reader io.Reader) error {
+func (req *AppRequest) SetBlob(path string, mimeType string, reader io.Reader) error {
 	if req.isDone {
 		return fmt.Errorf("Cannot call SetBlob(), path=%s, Request is already done", path)
 	}
@@ -226,7 +233,7 @@ func (req *Request) SetBlob(path string, mimeType string, reader io.Reader) erro
 	return nil
 }
 
-func (req *Request) SetBlobFromFile(path string, mimeType string, fileName string) error {
+func (req *AppRequest) SetBlobFromFile(path string, mimeType string, fileName string) error {
 	fd, err := os.Open(fileName)
 	if err != nil {
 		return err
@@ -235,12 +242,12 @@ func (req *Request) SetBlobFromFile(path string, mimeType string, fileName strin
 	return req.SetBlob(path, mimeType, fd)
 }
 
-func (req *Request) reqInfoStr() string {
+func (req *AppRequest) reqInfoStr() string {
 	return fmt.Sprintf("%s://%s%s", req.info.RequestType, req.info.AppName, req.info.Path)
 }
 
 // SetData is used to return data to the client.  Will replace the contents of path with data.
-func (req *Request) DataOp(op string, path string, data interface{}) error {
+func (req *AppRequest) DataOp(op string, path string, data interface{}) error {
 	if req.isDone {
 		return fmt.Errorf("Cannot call SetData(), reqinfo=%s data-path=%s, Request is already done", req.reqInfoStr())
 	}
@@ -266,12 +273,12 @@ func (req *Request) DataOp(op string, path string, data interface{}) error {
 }
 
 // SetData is used to return data to the client.  Will replace the contents of path with data.
-func (req *Request) SetData(path string, data interface{}) error {
+func (req *AppRequest) SetData(path string, data interface{}) error {
 	return req.DataOp("set", path, data)
 }
 
 // SetHtml returns html to be rendered by the client.  Only valid for root handler requests (path = "/")
-func (req *Request) setHtml(html string) error {
+func (req *AppRequest) setHtml(html string) error {
 	if req.isDone {
 		return fmt.Errorf("Cannot call SetHtml(), Request is already done")
 	}
@@ -289,7 +296,7 @@ func (req *Request) setHtml(html string) error {
 }
 
 // Convience wrapper over SetHtml that returns the contents of a file.
-func (req *Request) setHtmlFromFile(fileName string) error {
+func (req *AppRequest) setHtmlFromFile(fileName string) error {
 	fd, err := os.Open(fileName)
 	if err != nil {
 		return err
@@ -304,7 +311,7 @@ func (req *Request) setHtmlFromFile(fileName string) error {
 
 // Call from a handler to force the client to invalidate and re-pull data that matches path.
 // Path is a regular expression. (e.g. use InvalidateData(".*") to invalidate all data).
-func (req *Request) InvalidateData(pathRegexp string) error {
+func (req *AppRequest) InvalidateData(pathRegexp string) error {
 	if req.isDone {
 		return fmt.Errorf("Cannot call InvalidateData(), path=%s, Request is already done", pathRegexp)
 	}
@@ -317,7 +324,7 @@ func (req *Request) InvalidateData(pathRegexp string) error {
 	return nil
 }
 
-func (req *Request) Flush() error {
+func (req *AppRequest) Flush() error {
 	if req.isDone {
 		return fmt.Errorf("Cannot Flush(), Request is already done")
 	}
@@ -334,7 +341,7 @@ func (req *Request) Flush() error {
 // Done() ends a request and sends the results back to the client.  It is automatically called after
 // a handler is run.  Only needs to be called explicitly if you'd like to return
 // your result earlier, or for bare stream requests.
-func (req *Request) Done() error {
+func (req *AppRequest) Done() error {
 	if req.isDone {
 		return nil
 	}
@@ -349,7 +356,7 @@ func (req *Request) Done() error {
 	return err
 }
 
-func (req *Request) setAuthData(aa *AuthAtom) {
+func (req *AppRequest) setAuthData(aa *AuthAtom) {
 	if aa == nil {
 		return
 	}
@@ -368,14 +375,14 @@ func (req *Request) setAuthData(aa *AuthAtom) {
 	req.appendRR(rr)
 }
 
-func (req *Request) isStream() bool {
+func (req *AppRequest) isStream() bool {
 	return req.info.RequestType == requestTypeStream
 }
 
-func (req *Request) RawData() RawRequestData {
+func (req *AppRequest) RawData() RawRequestData {
 	return req.rawData
 }
 
-func (req *Request) IsDone() bool {
+func (req *AppRequest) IsDone() bool {
 	return req.isDone
 }

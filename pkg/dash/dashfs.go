@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	FileTypeStatic  = "static"
-	FileTypeRuntime = "runtime"
-	FileTypeDir     = "dir"
+	FileTypeStatic = "static"
+	FileTypeLink   = "link"
+	FileTypeDir    = "dir"
 )
 
 type FileInfo struct {
@@ -38,6 +38,11 @@ type FileInfo struct {
 	TxId         string      `json:"txid,omitempty"`
 }
 
+type BlobReturn struct {
+	Reader   io.Reader
+	MimeType string
+}
+
 type FileOpts struct {
 	Sha256       string      `json:"sha256"`
 	Size         int64       `json:"size"`
@@ -56,7 +61,6 @@ type AppOpts struct {
 	AppVisType  string  `json:"appvistype"`
 	AppVisOrder float64 `json:"appvisorder"`
 	InitPath    string  `json:"initpath"`
-	ConnPath    string  `json:"connpath"`
 }
 
 type DirOpts struct {
@@ -71,16 +75,16 @@ type WatchOpts struct {
 }
 
 type DashFS interface {
-	SetRawPath(path string, r io.Reader, createOpts *FileOpts) error
-	SetJsonPath(path string, data interface{}, createOpts *FileOpts) error
-	SetPathFromFile(path string, fileName string, createOpts *FileOpts) error
+	SetRawPath(path string, r io.Reader, fileOpts *FileOpts) error
+	SetJsonPath(path string, data interface{}, fileOpts *FileOpts) error
+	SetPathFromFile(path string, fileName string, fileOpts *FileOpts) error
 	WatchFile(path string, fileName string, fileOpts *FileOpts, watchOpts *WatchOpts) error
 
 	// LinkPath(path string, fn interface{}, createOpts *FileOpts) error
-	// LinkRuntime(path string, runtime AppRuntime, createOpts *FileOpts) error
-	// RemovePath(path string) error
-	// FileInfo(path string) (*FileInfo, error)
-	// DirInfo(path string, dirOpts *DirOpts) (*FileInfo, []*FileInfo, error)
+	LinkRuntime(path string, runtime LinkRuntime, fileOpts *FileOpts) error
+	RemovePath(path string) error
+	FileInfo(path string) (*FileInfo, error)
+	DirInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error)
 
 	// TxStart() (DashFS, error)
 	// TxCommit() error
@@ -241,5 +245,39 @@ func (fs *fsImpl) WatchFile(path string, fileName string, fileOpts *FileOpts, wa
 			}
 		}
 	}()
+	return nil
+}
+
+func (fs *fsImpl) RemovePath(path string) error {
+	return fs.api.RemovePath(path)
+}
+
+func (fs *fsImpl) FileInfo(path string) (*FileInfo, error) {
+	rtn, err := fs.api.FileInfo(path, nil)
+	if err != nil {
+		return nil, err
+	}
+	if len(rtn) == 0 {
+		return nil, nil
+	}
+	return rtn[0], nil
+}
+
+func (fs *fsImpl) DirInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error) {
+	if dirOpts == nil {
+		dirOpts = &DirOpts{}
+	}
+	return fs.api.FileInfo(path, dirOpts)
+}
+
+func (fs *fsImpl) LinkRuntime(path string, rt LinkRuntime, fileOpts *FileOpts) error {
+	if fileOpts == nil {
+		fileOpts = &FileOpts{}
+	}
+	fileOpts.FileType = FileTypeLink
+	return fs.api.SetRawPath(path, nil, fileOpts)
+}
+
+func (fs *fsImpl) LinkHandler(path string, fn interface{}, fileOpts *FileOpts) error {
 	return nil
 }

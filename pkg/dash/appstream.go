@@ -142,7 +142,7 @@ func (pc *appClient) connectStream(appName string, streamOpts StreamOpts, feClie
 // returns (stream-req, stream-reqid, error)
 // if stream-req is nil, then the stream already exists with reqid = stream-reqid.
 // if stream-req is not nil, then this is a new stream (stream-reqid == stream-req.reqid)
-func (pc *appClient) StartStream(appName string, streamOpts StreamOpts, feClientId string) (*Request, string, error) {
+func (pc *appClient) StartStream(appName string, streamOpts StreamOpts, feClientId string) (*AppRequest, string, error) {
 	if streamOpts.StreamId == "" {
 		streamOpts.StreamId = uuid.New().String()
 	}
@@ -175,7 +175,7 @@ func (pc *appClient) StartStream(appName string, streamOpts StreamOpts, feClient
 	if !shouldStart {
 		return nil, sc.ReqId, nil
 	}
-	streamReq := &Request{
+	streamReq := &AppRequest{
 		info: RequestInfo{
 			StartTime:   time.Now(),
 			ReqId:       sc.ReqId,
