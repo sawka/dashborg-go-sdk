@@ -6,6 +6,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/sawka/dashborg-go-sdk/pkg/dasherr"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
@@ -13,8 +14,15 @@ type handlerType struct {
 	HandlerFn func(req *AppRequest) (interface{}, error)
 }
 
+type linkHandlerFn func(req Request) (interface{}, error)
+
 type LinkRuntime interface {
 	RunHandler(req Request) (interface{}, error)
+}
+
+type LinkRuntimeImpl struct {
+	lock     *sync.Mutex
+	handlers map[string]linkHandlerFn
 }
 
 type AppRuntime interface {
@@ -142,4 +150,36 @@ func (app *AppRuntimeImpl) htmlHandler(req *AppRequest) (interface{}, error) {
 	}
 	req.setHtml(htmlStr)
 	return nil, nil
+}
+
+func MakeLinkRuntime() *LinkRuntimeImpl {
+	rtn := &LinkRuntimeImpl{
+		lock:     &sync.Mutex{},
+		handlers: make(map[string]linkHandlerFn),
+	}
+	return rtn
+}
+
+func (linkrt *LinkRuntimeImpl) setHandler(name string, fn linkHandlerFn) {
+	linkrt.lock.Lock()
+	defer linkrt.lock.Unlock()
+	linkrt.handlers[name] = fn
+}
+
+func (linkrt *LinkRuntimeImpl) RunHandler(req Request) (interface{}, error) {
+	info := req.RequestInfo()
+	if info.RequestType != requestTypePath {
+		return nil, dasherr.ValidateErr(fmt.Errorf("Invalid RequestType for linked runtime"))
+	}
+	if info.PathFrag == "" {
+		return nil, dasherr.ValidateErr(fmt.Errorf("Invalid Request, no PathFrag set for linked runtime"))
+	}
+	pathFrag := info.PathFrag
+	linkrt.lock.Lock()
+	linkfn, ok := linkrt.handlers[pathFrag]
+	linkrt.lock.Unlock()
+	if !ok {
+		return nil, dasherr.ErrWithCode(dasherr.ErrCodeNoHandler, fmt.Errorf("No handler found for %s:%s", info.Path, info.PathFrag))
+	}
+	return linkfn(req)
 }

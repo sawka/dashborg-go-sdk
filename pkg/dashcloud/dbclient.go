@@ -618,7 +618,7 @@ func (pc *DashCloudClient) backendPush(appName string, path string, data interfa
 	m := &dashproto.BackendPushMessage{
 		Ts:    dashutil.Ts(),
 		AppId: &dashproto.AppId{AppName: appName},
-		Path:  path,
+		Path:  &dashproto.PathId{Path: path},
 	}
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
@@ -661,7 +661,7 @@ func (pc *DashCloudClient) callDataHandler(appName string, path string, data int
 	m := &dashproto.CallDataHandlerMessage{
 		Ts:       dashutil.Ts(),
 		AppId:    &dashproto.AppId{AppName: appName},
-		Path:     path,
+		Path:     &dashproto.PathId{Path: path},
 		JsonData: jsonData,
 	}
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)

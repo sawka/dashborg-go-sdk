@@ -1,6 +1,6 @@
 package dash
 
-const ClientVersion = "go-0.6.1"
+const ClientVersion = "go-0.6.2"
 
 const (
 	RoleSuper  = "*"

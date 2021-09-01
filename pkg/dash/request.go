@@ -29,7 +29,9 @@ type RequestInfo struct {
 	StartTime   time.Time
 	ReqId       string // unique request id
 	RequestType string // "data", "handler", or "stream"
+	PathNs      string
 	Path        string // handler or data path
+	PathFrag    string
 	AppName     string // app name
 	FeClientId  string // unique id for client
 }
@@ -45,6 +47,7 @@ type Request interface {
 	AuthData() *AuthAtom
 	RequestInfo() RequestInfo
 	RawData() RawRequestData
+	BindData(obj interface{}) error
 }
 
 type AppRequest struct {

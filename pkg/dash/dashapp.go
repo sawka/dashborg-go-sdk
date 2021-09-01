@@ -26,6 +26,7 @@ const (
 	requestTypeAuth    = "auth"
 	requestTypeStream  = "stream"
 	requestTypeHandler = "handler"
+	requestTypePath    = "path"
 )
 
 const (

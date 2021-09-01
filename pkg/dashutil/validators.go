@@ -24,6 +24,8 @@ const (
 	HandlerPathMax   = 100
 	DataPathMax      = 200
 	PathMax          = 100
+	PathFragMax      = 30
+	FullPathMax      = 100
 	TagMax           = 50
 	RoleMax          = 12
 	RoleListMax      = 50
@@ -42,14 +44,16 @@ var (
 	appNameRe        = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_.-]*$")
 	procNameRe       = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
 	uuidRe           = regexp.MustCompile("^[a-fA-F0-9-]{36}$")
-	handlerPathRe    = regexp.MustCompile("^/\\@?[a-zA-Z0-9_-][a-zA-Z0-9_/-]*$")
-	fileDisplayRe    = regexp.MustCompile("^\\@[a-zA-Z0-9_-]+$")
+	handlerPathRe    = regexp.MustCompile("^/@?[a-zA-Z0-9_-][a-zA-Z0-9_/-]*$")
+	fileDisplayRe    = regexp.MustCompile("^@[a-zA-Z0-9_-]+$")
 	base64Re         = regexp.MustCompile("^[a-zA-Z0-9/+=]+$")
 	hexRe            = regexp.MustCompile("^[a-f0-9]+$")
 	imageMimeTypeRe  = regexp.MustCompile("^image/[a-z0-9.-]+$")
 	mimeTypeRe       = regexp.MustCompile("^[a-z0-9.-]+/[a-z0-9.-]+$")
 	simpleFileNameRe = regexp.MustCompile("^[a-zA-Z0-9._-]+$")
 	pathRe           = regexp.MustCompile("^/[a-zA-Z0-9._/-]*$")
+	pathFragRe       = regexp.MustCompile("^@?[a-zA-Z][a-zA-Z0-9_-]*")
+	fullPathRe       = regexp.MustCompile("^/[a-zA-Z0-9._/-]*(?:[:]@?[a-zA-Z][a-zA-Z0-9_-]*)?")
 	tagRe            = regexp.MustCompile("^[a-zA-Z0-9._:/-]+$")
 	roleRe           = regexp.MustCompile("^(\\*|[a-z][a-z0-9-]+)$")
 	extBlobKeyRe     = regexp.MustCompile("^(?:([a-z][a-z0-9]*):)?([0-9a-zA-Z/_.-]+)$")
@@ -132,6 +136,20 @@ func IsPathValid(path string) bool {
 		return false
 	}
 	return pathRe.MatchString(path)
+}
+
+func IsFullPathValid(path string) bool {
+	if len(path) > FullPathMax {
+		return false
+	}
+	return fullPathRe.MatchString(path)
+}
+
+func IsPathFragValid(pathFrag string) bool {
+	if len(pathFrag) > PathFragMax {
+		return false
+	}
+	return pathFragRe.MatchString(pathFrag)
 }
 
 func IsPublicKeyValid(publicKey string) bool {

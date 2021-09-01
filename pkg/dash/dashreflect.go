@@ -76,22 +76,28 @@ func ca_unmarshalMulti(hType reflect.Type, args []reflect.Value, argNum int, jso
 // * *Request
 // * AppStateType (if specified in App)
 // * data-array args
-func (apprt *AppRuntimeImpl) makeCallArgs(hType reflect.Type, req *AppRequest) ([]reflect.Value, error) {
+func makeCallArgs(hType reflect.Type, req Request, appReq bool, stateType reflect.Type) ([]reflect.Value, error) {
 	rtn := make([]reflect.Value, hType.NumIn())
 	if hType.NumIn() == 0 {
 		return rtn, nil
 	}
 	argNum := 0
-	if hType.In(argNum) == appReqType || hType.In(argNum) == reqType {
+	if hType.In(argNum) == appReqType {
+		if !appReq {
+			return nil, fmt.Errorf("LinkRuntime functions must use dash.Request, not *dash.AppRequest")
+		}
+		rtn[argNum] = reflect.ValueOf(req)
+		argNum++
+	} else if hType.In(argNum) == reqType {
 		rtn[argNum] = reflect.ValueOf(req)
 		argNum++
 	}
 	if argNum == hType.NumIn() {
 		return rtn, nil
 	}
-	stateType := apprt.appStateType
+	rawData := req.RawData()
 	if stateType != nil && stateType == hType.In(argNum) {
-		stateV, err := unmarshalToType(req.rawData.AppStateJson, stateType)
+		stateV, err := unmarshalToType(rawData.AppStateJson, stateType)
 		if err != nil {
 			return nil, fmt.Errorf("Cannot unmarshal appStateJson to type:%v err:%v", hType.In(1), err)
 		}
@@ -106,12 +112,12 @@ func (apprt *AppRuntimeImpl) makeCallArgs(hType reflect.Type, req *AppRequest) (
 	if dataInterface == nil {
 		ca_unmarshalNil(hType, rtn, argNum)
 	} else if reflect.ValueOf(dataInterface).Kind() == reflect.Slice {
-		err := ca_unmarshalMulti(hType, rtn, argNum, req.rawData.DataJson)
+		err := ca_unmarshalMulti(hType, rtn, argNum, rawData.DataJson)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		err := ca_unmarshalSingle(hType, rtn, argNum, req.rawData.DataJson)
+		err := ca_unmarshalSingle(hType, rtn, argNum, rawData.DataJson)
 		if err != nil {
 			return nil, err
 		}
@@ -163,40 +169,67 @@ func (apprt *AppRuntimeImpl) Handler(path string, handlerFn interface{}) error {
 		return fmt.Errorf("handlerFn must be a func")
 	}
 	if hType.NumOut() != 0 && !checkOutput(hType, errType) && !checkOutput(hType, interfaceType) && !checkOutput(hType, interfaceType, errType) {
-		return fmt.Errorf("Dashborg Panel Handler must return (interface{}, error) or error")
+		return fmt.Errorf("Invalid handlerFn return, must return void, error, interface{}, or (interface{}, error)")
 	}
 	hVal := reflect.ValueOf(handlerFn)
 	hfn := func(req *AppRequest) (interface{}, error) {
-		args, err := apprt.makeCallArgs(hType, req)
+		args, err := makeCallArgs(hType, req, true, apprt.appStateType)
 		if err != nil {
 			return nil, err
 		}
 		rtnVals := hVal.Call(args)
-		if len(rtnVals) == 0 {
-			return nil, nil
-		} else if len(rtnVals) == 1 {
-			if rtnVals[0].IsNil() {
-				return nil, nil
-			}
-			if checkOutput(hType, errType) {
-				if rtnVals[0].IsNil() {
-					return nil, nil
-				}
-				return nil, rtnVals[0].Interface().(error)
-			} else {
-				return rtnVals[0].Interface(), nil
-			}
-
-		} else {
-			// (interface{}, error)
-			var errRtn error
-			if !rtnVals[1].IsNil() {
-				errRtn = rtnVals[1].Interface().(error)
-			}
-			return rtnVals[0].Interface(), errRtn
-		}
-
+		return convertRtnVals(hType, rtnVals)
 	}
 	apprt.setHandler(path, handlerType{HandlerFn: hfn})
 	return nil
+}
+
+func (linkrt *LinkRuntimeImpl) Handler(name string, handlerFn interface{}) error {
+	if !dashutil.IsPathFragValid(name) {
+		return fmt.Errorf("Invalid handler name")
+	}
+	hType := reflect.TypeOf(handlerFn)
+	if hType.Kind() != reflect.Func {
+		return fmt.Errorf("handlerFn must be a func")
+	}
+	if hType.NumOut() != 0 && !checkOutput(hType, errType) && !checkOutput(hType, interfaceType) && !checkOutput(hType, interfaceType, errType) {
+		return fmt.Errorf("Invalid handlerFn return, must return void, error, interface{}, or (interface{}, error)")
+	}
+	hVal := reflect.ValueOf(handlerFn)
+	hfn := func(req Request) (interface{}, error) {
+		args, err := makeCallArgs(hType, req, false, nil)
+		if err != nil {
+			return nil, err
+		}
+		rtnVals := hVal.Call(args)
+		return convertRtnVals(hType, rtnVals)
+	}
+	linkrt.setHandler(name, hfn)
+	return nil
+}
+
+func convertRtnVals(hType reflect.Type, rtnVals []reflect.Value) (interface{}, error) {
+	if len(rtnVals) == 0 {
+		return nil, nil
+	} else if len(rtnVals) == 1 {
+		if rtnVals[0].IsNil() {
+			return nil, nil
+		}
+		if checkOutput(hType, errType) {
+			if rtnVals[0].IsNil() {
+				return nil, nil
+			}
+			return nil, rtnVals[0].Interface().(error)
+		} else {
+			return rtnVals[0].Interface(), nil
+		}
+
+	} else {
+		// (interface{}, error)
+		var errRtn error
+		if !rtnVals[1].IsNil() {
+			errRtn = rtnVals[1].Interface().(error)
+		}
+		return rtnVals[0].Interface(), errRtn
+	}
 }
