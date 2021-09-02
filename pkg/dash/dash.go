@@ -3,6 +3,11 @@ package dash
 const ClientVersion = "go-0.6.2"
 
 const (
+	MimeTypeDashborgHtml = "text/x-dashborg-html"
+	MimeTypeJson         = "application/json"
+)
+
+const (
 	RoleSuper  = "*"
 	RolePublic = "public"
 	RoleUser   = "user"

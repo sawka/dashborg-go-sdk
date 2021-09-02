@@ -2,7 +2,6 @@ package dash
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -52,7 +51,7 @@ type InternalApi interface {
 	ListBlobs(appName string, appVersion string) ([]BlobData, error)
 	SendResponseProtoRpc(m *dashproto.SendResponseMessage) (int, error)
 	StartStreamProtoRpc(m *dashproto.StartStreamMessage) (string, error)
-	SetRawPath(path string, r io.Reader, fileOpts *FileOpts) error
+	SetRawPath(path string, r io.Reader, fileOpts *FileOpts, rt interface{}) error
 	RemovePath(path string) error
 	FileInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error)
 }
@@ -97,6 +96,7 @@ func (pc *appClient) SendRequestResponse(req *AppRequest, done bool) (int, error
 		ReqId:        req.info.ReqId,
 		RequestType:  req.info.RequestType,
 		AppId:        &dashproto.AppId{AppName: req.info.AppName},
+		Path:         &dashproto.PathId{PathNs: req.info.PathNs, Path: req.info.Path, PathFrag: req.info.PathFrag},
 		FeClientId:   req.info.FeClientId,
 		ResponseDone: done,
 	}
@@ -115,6 +115,7 @@ func (pc *appClient) sendErrResponse(reqMsg *dashproto.RequestMessage, errMsg st
 		ReqId:        reqMsg.ReqId,
 		RequestType:  reqMsg.RequestType,
 		AppId:        reqMsg.AppId,
+		Path:         reqMsg.Path,
 		FeClientId:   reqMsg.FeClientId,
 		ResponseDone: true,
 		Err:          errMsg,
@@ -127,65 +128,16 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 		go pc.sendErrResponse(reqMsg, "Wrong AppName")
 		return
 	}
-
-	if reqMsg.Status != nil {
-		dashErr := dasherr.FromRtnStatus("RequestStream", reqMsg.Status)
-		if dashErr != nil {
-			pc.logV("DashborgAppClient %v\n", dashErr)
-		}
-		return
+	if reqMsg.RequestType == "streamclose" {
+		pc.stream_serverStop(reqMsg.ReqId)
+		return // no response for streamclose
 	}
-
-	preq := &AppRequest{
-		info: RequestInfo{
-			StartTime:   time.Now(),
-			ReqId:       reqMsg.ReqId,
-			RequestType: reqMsg.RequestType,
-			AppName:     reqMsg.AppId.AppName,
-			PathNs:      reqMsg.Path.PathNs,
-			Path:        reqMsg.Path.Path,
-			PathFrag:    reqMsg.Path.PathFrag,
-			FeClientId:  reqMsg.FeClientId,
-		},
-		ctx:       ctx,
-		lock:      &sync.Mutex{},
-		appClient: pc,
-		api:       pc.Api,
-	}
-	if !dashutil.IsRequestTypeValid(reqMsg.RequestType) {
-		preq.err = fmt.Errorf("Invalid RequestMessage.RequestType [%s]", reqMsg.RequestType)
+	preq := MakeAppRequest(ctx, reqMsg, pc.Api)
+	preq.appClient = pc
+	if preq.GetError() != nil {
 		preq.Done()
 		return
 	}
-	if reqMsg.RequestType == "streamclose" {
-		pc.stream_serverStop(preq.info.ReqId)
-		return // no response for streamclose
-	}
-	preq.rawData.DataJson = reqMsg.JsonData
-	if reqMsg.AppStateData != "" {
-		var pstate interface{}
-		err := json.Unmarshal([]byte(reqMsg.AppStateData), &pstate)
-		if err != nil {
-			preq.err = fmt.Errorf("Cannot unmarshal AppStateData: %v", err)
-			preq.Done()
-			return
-		}
-		preq.appState = pstate
-		preq.rawData.AppStateJson = reqMsg.AppStateData
-	}
-
-	if reqMsg.AuthData != "" {
-		var authData AuthAtom
-		err := json.Unmarshal([]byte(reqMsg.AuthData), &authData)
-		if err != nil {
-			preq.err = fmt.Errorf("Cannot unmarshal authData: %v", err)
-			preq.Done()
-			return
-		}
-		preq.authData = &authData
-		preq.rawData.AuthDataJson = reqMsg.AuthData
-	}
-
 	defer func() {
 		if panicErr := recover(); panicErr != nil {
 			log.Printf("Dashborg PANIC in Handler %s:%s | %v\n", reqMsg.RequestType, reqMsg.Path, panicErr)
@@ -202,7 +154,7 @@ func (pc *appClient) DispatchRequest(ctx context.Context, reqMsg *dashproto.Requ
 	if dataResult != nil {
 		jsonData, err := dashutil.MarshalJson(dataResult)
 		if err != nil {
-			preq.err = dasherr.JsonMarshalErr("handler-return-value", err)
+			preq.err = dasherr.JsonMarshalErr("HandlerReturnValue", err)
 			return
 		}
 		rrAction := &dashproto.RRAction{

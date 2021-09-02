@@ -30,13 +30,7 @@ const (
 )
 
 const (
-	handlerPathInit = "/@init"
-	handlerPathHtml = "/@html"
-)
-
-const (
 	OptionInitHandler   = "inithandler"
-	OptionHtml          = "html"
 	OptionAuth          = "auth"
 	OptionOfflineMode   = "offlinemode"
 	OptionTitle         = "title"
@@ -47,10 +41,6 @@ const (
 	VisTypeHidden        = "hidden"  // always hide
 	VisTypeDefault       = "default" // shown if user has permission
 	VisTypeAlwaysVisible = "visible" // always show
-
-	HtmlTypeStatic               = "static"
-	HtmlTypeDynamicWhenConnected = "dynamic-when-connected"
-	HtmlTypeDynamic              = "dynamic"
 
 	InitHandlerRequired              = "required"
 	InitHandlerRequiredWhenConnected = "required-when-connected"
@@ -63,13 +53,13 @@ const (
 // AppConfig is passed as JSON to the container.  this struct
 // helps with marshaling/unmarshaling the structure.
 type AppConfig struct {
-	AppName            string                      `json:"appname"`
-	AppVersion         string                      `json:"appversion,omitempty"` // uuid
-	UpdatedTs          int64                       `json:"updatedts"`            // set by container
-	ProcRunId          string                      `json:"procrunid"`            // set by container
-	ClientVersion      string                      `json:"clientversion"`
-	Options            map[string]GenericAppOption `json:"options"`
-	ClearExistingBlobs bool                        `json:"clearexistingblobs,omitempty"`
+	AppName       string                      `json:"appname"`
+	AppVersion    string                      `json:"appversion,omitempty"` // uuid
+	UpdatedTs     int64                       `json:"updatedts"`            // set by container
+	ProcRunId     string                      `json:"procrunid"`            // set by container
+	ClientVersion string                      `json:"clientversion"`
+	Options       map[string]GenericAppOption `json:"options"`
+	HtmlPath      string                      `json:"htmlpath"`
 }
 
 type AppId struct {
@@ -307,46 +297,42 @@ func (app *App) SetAppTitle(title string) {
 	}
 }
 
-func (app *App) Blobs() BlobManager {
-	return makeAppBlobManager(app, app.api)
-}
-
 func (app *App) SetHtml(htmlStr string) error {
 	bytesReader := bytes.NewReader([]byte(htmlStr))
-	blobData, err := BlobDataFromReadSeeker(rootHtmlKey, htmlMimeType, bytesReader)
+	fileOpts := &FileOpts{MimeType: MimeTypeDashborgHtml, MkDirs: true}
+	fileOpts.AllowedRoles = app.getAuthOpt().AllowedRoles
+	err := UpdateFileOptsFromReadSeeker(bytesReader, fileOpts)
 	if err != nil {
 		return err
 	}
-	err = app.Blobs().SetRawBlobData(blobData, bytesReader)
+	htmlPath := fmt.Sprintf("/@app/%s/html", app.AppName)
+	dashfs := &fsImpl{app.api}
+	err = dashfs.SetRawPath(htmlPath, bytesReader, fileOpts)
 	if err != nil {
 		return err
 	}
-	app.RawOptionSet(OptionHtml, GenericAppOption{Type: HtmlTypeStatic})
+	app.appConfig.HtmlPath = htmlPath
 	return nil
 }
 
 func (app *App) SetHtmlFromFile(fileName string) error {
-	htmlValue := fileValue(fileName, true)
-	htmlIf, err := htmlValue.GetValue()
+	dashfs := &fsImpl{app.api}
+	htmlPath := fmt.Sprintf("/@app/%s/html", app.AppName)
+	fileOpts := &FileOpts{MimeType: MimeTypeDashborgHtml, MkDirs: true}
+	err := dashfs.WatchFile(htmlPath, fileName, fileOpts, nil)
 	if err != nil {
 		return err
 	}
-	htmlStr, err := dashutil.ConvertToString(htmlIf)
-	if err != nil {
-		return err
-	}
-	bytesReader := bytes.NewReader([]byte(htmlStr))
-	blobData, err := BlobDataFromReadSeeker(rootHtmlKey, htmlMimeType, bytesReader)
-	if err != nil {
-		return err
-	}
-	err = app.Blobs().SetRawBlobData(blobData, bytesReader)
-	if err != nil {
-		return err
-	}
-	app.appRuntime.html = htmlValue
-	app.RawOptionSet(OptionHtml, GenericAppOption{Type: HtmlTypeDynamicWhenConnected})
+	app.appConfig.HtmlPath = htmlPath
 	return nil
+}
+
+func (app *App) SetHtmlPath(path string) {
+	app.appConfig.HtmlPath = path
+}
+
+func (app *App) SetHtmlFromRuntime() {
+	app.appConfig.HtmlPath = fmt.Sprintf("/@app/%s/runtime:@html")
 }
 
 // initType is either InitHandlerRequired, InitHandlerRequiredWhenConnected, or InitHandlerNone

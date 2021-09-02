@@ -38,6 +38,7 @@ message SendResponseMessage {
     string ReqId = 2;
     string RequestType = 3;
     AppId AppId = 4;
+    PathId Path = 9;
     string FeClientId = 5;
     bool ResponseDone = 6;
     repeated RRAction Actions = 7;

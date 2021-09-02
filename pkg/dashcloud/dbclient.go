@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,6 +30,9 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 )
+
+// must be divisible by 3 (for base64 encoding)
+const blobReadSize = 3 * 340 * 1024
 
 const grpcServerPath = "/grpc-server"
 const mbConst = 1000000
@@ -74,6 +78,7 @@ type DashCloudClient struct {
 	DBService dashproto.DashborgServiceClient
 	ConnId    *atomic.Value
 	AppMap    map[string]*AppStruct
+	LinkRtMap map[string]dash.LinkRuntime
 	DoneCh    chan bool
 	PermErr   bool
 	ExitErr   error
@@ -88,6 +93,7 @@ func makeCloudClient(config *Config) *DashCloudClient {
 		Config:    config,
 		ConnId:    &atomic.Value{},
 		AppMap:    make(map[string]*AppStruct),
+		LinkRtMap: make(map[string]dash.LinkRuntime),
 		DoneCh:    make(chan bool),
 	}
 	rtn.ConnId.Store("")
@@ -366,6 +372,12 @@ func (pc *DashCloudClient) showAppLink(appName string) {
 	}
 }
 
+func (pc *DashCloudClient) connectLinkRuntime(path string, rt dash.LinkRuntime) {
+	pc.Lock.Lock()
+	defer pc.Lock.Unlock()
+	pc.LinkRtMap[path] = rt
+}
+
 func (pc *DashCloudClient) ConnectApp(app *dash.App) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
@@ -537,15 +549,17 @@ func (pc *DashCloudClient) sendErrResponse(reqMsg *dashproto.RequestMessage, err
 		ReqId:        reqMsg.ReqId,
 		RequestType:  reqMsg.RequestType,
 		AppId:        reqMsg.AppId,
+		Path:         reqMsg.Path,
 		FeClientId:   reqMsg.FeClientId,
 		ResponseDone: true,
 		Err:          errMsg,
 	}
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
-	_, err := pc.DBService.SendResponse(ctx, m)
-	if err != nil {
-		pc.logV("Error sending Error Response: %v\n", err)
+	resp, respErr := pc.DBService.SendResponse(ctx, m)
+	dashErr := pc.handleStatusErrors("RemoveApp", resp, respErr, false)
+	if dashErr != nil {
+		pc.logV("Error sending Error Response: %v\n", dashErr)
 	}
 }
 
@@ -582,7 +596,7 @@ func (pc *DashCloudClient) runRequestStream() (bool, dasherr.ErrCode) {
 				break
 			}
 		}
-		pc.logV("Dashborg gRPC got request %s://%s%s\n", reqMsg.RequestType, reqMsg.AppId.AppName, reqMsg.Path)
+		pc.logV("Dashborg gRPC got request %s\n", requestMsgStr(reqMsg))
 		go func() {
 			atomic.AddInt64(&reqCounter, 1)
 			timeoutMs := reqMsg.TimeoutMs
@@ -591,24 +605,87 @@ func (pc *DashCloudClient) runRequestStream() (bool, dasherr.ErrCode) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
 			defer cancel()
-
-			if reqMsg.AppId == nil || !dashutil.IsAppNameValid(reqMsg.AppId.AppName) {
-				pc.sendErrResponse(reqMsg, "Bad Request")
+			if reqMsg.Path == nil {
+				pc.sendErrResponse(reqMsg, "Bad Request - No Path")
 				return
 			}
-			appName := reqMsg.AppId.AppName
-			pc.Lock.Lock()
-			appClient := pc.AppMap[appName]
-			pc.Lock.Unlock()
-			if appClient == nil {
-				pc.sendErrResponse(reqMsg, "No App Found")
-				return
+			if reqMsg.RequestType == "path" {
+				pc.Lock.Lock()
+				linkRuntime := pc.LinkRtMap[reqMsg.Path.Path]
+				pc.Lock.Unlock()
+				if linkRuntime == nil {
+					pc.sendErrResponse(reqMsg, "No Linked Runtime")
+				}
+				pc.dispatchLinkRtRequest(ctx, linkRuntime, reqMsg)
+			} else {
+				if reqMsg.AppId == nil || !dashutil.IsAppNameValid(reqMsg.AppId.AppName) {
+					pc.sendErrResponse(reqMsg, "Bad Request")
+					return
+				}
+				appName := reqMsg.AppId.AppName
+				pc.Lock.Lock()
+				appClient := pc.AppMap[appName]
+				pc.Lock.Unlock()
+				if appClient == nil {
+					pc.sendErrResponse(reqMsg, "No App Found")
+					return
+				}
+				appClient.AppClient.DispatchRequest(ctx, reqMsg)
 			}
-			appClient.AppClient.DispatchRequest(ctx, reqMsg)
 		}()
 	}
 	elapsed := time.Since(startTime)
 	return (elapsed >= 5*time.Second), endingErrCode
+}
+
+func (pc *DashCloudClient) sendPathResponse(preq *dash.AppRequest, rtnVal interface{}) {
+	if preq.IsDone() {
+		return
+	}
+	m := &dashproto.SendResponseMessage{
+		Ts:          dashutil.Ts(),
+		ReqId:       preq.RequestInfo().ReqId,
+		RequestType: preq.RequestInfo().RequestType,
+		Path: &dashproto.PathId{
+			PathNs:   preq.RequestInfo().PathNs,
+			Path:     preq.RequestInfo().Path,
+			PathFrag: preq.RequestInfo().PathFrag,
+		},
+		FeClientId:   preq.RequestInfo().FeClientId,
+		ResponseDone: true,
+	}
+	rtnErr := preq.GetError()
+	if rtnErr != nil {
+		m.Err = rtnErr.Error()
+	} else if rtnVal != nil {
+		rra, err := rtnValToRRA(rtnVal)
+		if err != nil {
+			m.Err = err.Error()
+		} else {
+			m.Actions = rra
+		}
+	}
+	pc.sendResponseProtoRpc(m)
+}
+
+func (pc *DashCloudClient) dispatchLinkRtRequest(ctx context.Context, rt dash.LinkRuntime, reqMsg *dashproto.RequestMessage) {
+	var rtnVal interface{}
+	preq := dash.MakeAppRequest(ctx, reqMsg, pc.InternalApi())
+	defer func() {
+		if panicErr := recover(); panicErr != nil {
+			log.Printf("Dashborg PANIC in Handler %s | %v\n", requestMsgStr(reqMsg), panicErr)
+			preq.SetError(fmt.Errorf("PANIC in handler %v", panicErr))
+			debug.PrintStack()
+		}
+		pc.sendPathResponse(preq, rtnVal)
+	}()
+	dataResult, err := rt.RunHandler(preq)
+	if err != nil {
+		preq.SetError(err)
+		return
+	}
+	rtnVal = dataResult
+	return
 }
 
 func (pc *DashCloudClient) backendPush(appName string, path string, data interface{}) error {
@@ -1079,6 +1156,7 @@ func (pc *DashCloudClient) sendResponseProtoRpc(m *dashproto.SendResponseMessage
 	resp, respErr := pc.DBService.SendResponse(ctx, m)
 	dashErr := pc.handleStatusErrors("SendResponse", resp, respErr, false)
 	if dashErr != nil {
+		pc.logV("Error sending response: %v\n", dashErr)
 		return 0, dashErr
 	}
 	return int(resp.NumStreamClients), nil
@@ -1159,7 +1237,7 @@ func validateFileOpts(opts *dash.FileOpts) error {
 	return nil
 }
 
-func (pc *DashCloudClient) setRawPath(path string, r io.Reader, fileOpts *dash.FileOpts) error {
+func (pc *DashCloudClient) setRawPath(path string, r io.Reader, fileOpts *dash.FileOpts, rt interface{}) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
@@ -1178,6 +1256,13 @@ func (pc *DashCloudClient) setRawPath(path string, r io.Reader, fileOpts *dash.F
 	}
 	if fileOpts.FileType != dash.FileTypeStatic && r != nil {
 		return dasherr.ValidateErr(fmt.Errorf("SetRawPath no reader allowed except for file-type:static"))
+	}
+	var ok bool
+	var linkRt dash.LinkRuntime
+	if fileOpts.FileType == dash.FileTypeRuntimeLink {
+		if linkRt, ok = rt.(dash.LinkRuntime); !ok {
+			return dasherr.ValidateErr(fmt.Errorf("FileType is LinkRuntime, but no dash.LinkRuntime provided"))
+		}
 	}
 	optsJson, err := dashutil.MarshalJson(fileOpts)
 	if err != nil {
@@ -1207,6 +1292,9 @@ func (pc *DashCloudClient) setRawPath(path string, r io.Reader, fileOpts *dash.F
 		return dashErr
 	}
 	if metaResp.BlobFound || !m.HasBody {
+		if fileOpts.FileType == dash.FileTypeRuntimeLink {
+			pc.connectLinkRuntime(path, linkRt)
+		}
 		return nil
 	}
 	maxBytes := maxBlobBytes
@@ -1275,4 +1363,77 @@ func (pc *DashCloudClient) setRawPath(path string, r io.Reader, fileOpts *dash.F
 
 func (pc *DashCloudClient) DashFS() dash.DashFS {
 	return dash.MakeDashFS(pc.InternalApi())
+}
+
+func requestMsgStr(reqMsg *dashproto.RequestMessage) string {
+	if reqMsg.Path == nil {
+		return fmt.Sprintf("%s://[NO-PATH]", reqMsg.RequestType)
+	}
+	if reqMsg.AppId != nil {
+		return fmt.Sprintf("%s://%s%s", reqMsg.AppId, reqMsg.RequestType, reqMsg.AppId.AppName, reqMsg.Path)
+	}
+	if reqMsg.Path.PathFrag == "" {
+		return fmt.Sprintf("%s:/%s", reqMsg.RequestType, reqMsg.Path.Path)
+	}
+	return fmt.Sprintf("%s:/%s:%s", reqMsg.RequestType, reqMsg.Path.Path, reqMsg.Path.PathFrag)
+}
+
+func rtnValToRRA(rtnVal interface{}) ([]*dashproto.RRAction, error) {
+	fmt.Printf("rtnValToRRA %T\n", rtnVal)
+	if blobRtn, ok := rtnVal.(dash.BlobReturn); ok {
+		return blobToRRA(blobRtn.MimeType, blobRtn.Reader)
+	}
+	if blobRtn, ok := rtnVal.(*dash.BlobReturn); ok {
+		return blobToRRA(blobRtn.MimeType, blobRtn.Reader)
+	}
+	jsonData, err := dashutil.MarshalJson(rtnVal)
+	if err != nil {
+		return nil, dasherr.JsonMarshalErr("HandlerReturnValue", err)
+	}
+	rrAction := &dashproto.RRAction{
+		Ts:         dashutil.Ts(),
+		ActionType: "setdata",
+		Selector:   dash.RtnSetDataPath,
+		JsonData:   jsonData,
+	}
+	return []*dashproto.RRAction{rrAction}, nil
+}
+
+// convert to streaming
+func blobToRRA(mimeType string, reader io.Reader) ([]*dashproto.RRAction, error) {
+	if !dashutil.IsMimeTypeValid(mimeType) {
+		return nil, fmt.Errorf("Invalid Mime-Type passed to SetBlobData mime-type=%s", mimeType)
+	}
+	first := true
+	var rra []*dashproto.RRAction
+	for {
+		buffer := make([]byte, blobReadSize)
+		n, err := io.ReadFull(reader, buffer)
+		if err == io.EOF {
+			break
+		}
+		if (err == nil || err == io.ErrUnexpectedEOF) && n > 0 {
+			// write
+			rrAction := &dashproto.RRAction{
+				Ts:        dashutil.Ts(),
+				Selector:  dash.RtnSetDataPath,
+				BlobBytes: buffer[0:n],
+			}
+			if first {
+				rrAction.ActionType = "blob"
+				rrAction.BlobMimeType = mimeType
+				first = false
+			} else {
+				rrAction.ActionType = "blobext"
+			}
+			rra = append(rra, rrAction)
+		}
+		if err == io.ErrUnexpectedEOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return rra, nil
 }

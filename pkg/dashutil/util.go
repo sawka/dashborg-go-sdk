@@ -216,3 +216,11 @@ func Sha256Base64(barr []byte) string {
 	hashValStr := base64.StdEncoding.EncodeToString(hashVal[:])
 	return hashValStr
 }
+
+func ParseFullPath(fullPath string) (string, string, string, error) {
+	match := fullPathRe.FindStringSubmatch(fullPath)
+	if match == nil {
+		return "", "", "", fmt.Errorf("Invalid FullPath")
+	}
+	return "", match[1], match[2], nil
+}

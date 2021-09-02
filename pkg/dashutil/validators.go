@@ -53,7 +53,7 @@ var (
 	simpleFileNameRe = regexp.MustCompile("^[a-zA-Z0-9._-]+$")
 	pathRe           = regexp.MustCompile("^/[a-zA-Z0-9._/-]*$")
 	pathFragRe       = regexp.MustCompile("^@?[a-zA-Z][a-zA-Z0-9_-]*")
-	fullPathRe       = regexp.MustCompile("^/[a-zA-Z0-9._/-]*(?:[:]@?[a-zA-Z][a-zA-Z0-9_-]*)?")
+	fullPathRe       = regexp.MustCompile("^(/[a-zA-Z0-9._/-]*)(?:[:](@?[a-zA-Z][a-zA-Z0-9_-]*))?")
 	tagRe            = regexp.MustCompile("^[a-zA-Z0-9._:/-]+$")
 	roleRe           = regexp.MustCompile("^(\\*|[a-z][a-z0-9-]+)$")
 	extBlobKeyRe     = regexp.MustCompile("^(?:([a-z][a-z0-9]*):)?([0-9a-zA-Z/_.-]+)$")
@@ -70,10 +70,10 @@ var (
 	passwordRe = regexp.MustCompile("^[a-zA-Z0-9]+$")
 )
 
-var ValidRequestType = map[string]bool{"data": true, "handler": true, "stream": true, "auth": true, "html": true, "init": true}
+var ValidRequestType = map[string]bool{"data": true, "handler": true, "stream": true, "auth": true, "html": true, "init": true, "path": true}
 var ValidActionType = map[string]bool{"setdata": true, "event": true, "invalidate": true, "html": true, "panelauth": true, "panelauthchallenge": true, "error": true, "blob": true, "blobext": true, "streamopen": true, "backendpush": true}
 var ValidBlobNs = map[string]bool{"app": true, "html": true}
-var ValidFileType = map[string]bool{"static": true, "dir": true, "runtime": true}
+var ValidFileType = map[string]bool{"static": true, "dir": true, "rt-link": true, "rt-app-link": true}
 
 func IsZoneNameValid(zoneName string) bool {
 	if len(zoneName) > ZoneNameMax {

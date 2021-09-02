@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sawka/dashborg-go-sdk/pkg/dasherr"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
@@ -388,4 +389,60 @@ func (req *AppRequest) RawData() RawRequestData {
 
 func (req *AppRequest) IsDone() bool {
 	return req.isDone
+}
+
+func MakeAppRequest(ctx context.Context, reqMsg *dashproto.RequestMessage, api InternalApi) *AppRequest {
+	preq := &AppRequest{
+		info: RequestInfo{
+			StartTime:   time.Now(),
+			ReqId:       reqMsg.ReqId,
+			RequestType: reqMsg.RequestType,
+			PathNs:      reqMsg.Path.PathNs,
+			Path:        reqMsg.Path.Path,
+			PathFrag:    reqMsg.Path.PathFrag,
+			FeClientId:  reqMsg.FeClientId,
+		},
+		rawData: RawRequestData{
+			DataJson:     reqMsg.JsonData,
+			AuthDataJson: reqMsg.AuthData,
+			AppStateJson: reqMsg.AppStateData,
+		},
+		ctx:  ctx,
+		lock: &sync.Mutex{},
+		api:  api,
+	}
+	if reqMsg.AppId != nil {
+		preq.info.AppName = reqMsg.AppId.AppName
+	}
+	if !dashutil.IsRequestTypeValid(reqMsg.RequestType) {
+		preq.err = fmt.Errorf("Invalid RequestMessage.RequestType [%s]", reqMsg.RequestType)
+		return preq
+	}
+	if reqMsg.AuthData != "" {
+		var authData AuthAtom
+		err := json.Unmarshal([]byte(reqMsg.AuthData), &authData)
+		if err != nil {
+			preq.err = dasherr.JsonUnmarshalErr("AuthData", err)
+			return preq
+		}
+		preq.authData = &authData
+	}
+	if reqMsg.AppStateData != "" {
+		var pstate interface{}
+		err := json.Unmarshal([]byte(reqMsg.AppStateData), &pstate)
+		if err != nil {
+			preq.err = fmt.Errorf("Cannot unmarshal AppStateData: %v", err)
+			return preq
+		}
+		preq.appState = pstate
+	}
+	return preq
+}
+
+func (req *AppRequest) GetError() error {
+	return req.err
+}
+
+func (req *AppRequest) SetError(err error) {
+	req.err = err
 }

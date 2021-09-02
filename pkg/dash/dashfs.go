@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	FileTypeStatic = "static"
-	FileTypeLink   = "link"
-	FileTypeDir    = "dir"
+	FileTypeStatic         = "static"
+	FileTypeRuntimeLink    = "rt-link"
+	FileTypeAppRuntimeLink = "rt-app-link"
+	FileTypeDir            = "dir"
 )
 
 type FileInfo struct {
@@ -64,9 +65,9 @@ type AppOpts struct {
 }
 
 type DirOpts struct {
-	RoleName   string `json:"rolename"`
-	ShowHidden bool   `json:"showhidden"`
-	Recursive  bool   `json:"recursive"`
+	RoleList   []string `json:"rolelist"`
+	ShowHidden bool     `json:"showhidden"`
+	Recursive  bool     `json:"recursive"`
 }
 
 type WatchOpts struct {
@@ -103,7 +104,7 @@ type fsImpl struct {
 }
 
 func (fs *fsImpl) SetRawPath(path string, r io.Reader, fileOpts *FileOpts) error {
-	return fs.api.SetRawPath(path, r, fileOpts)
+	return fs.api.SetRawPath(path, r, fileOpts, nil)
 }
 
 func (fs *fsImpl) SetJsonPath(path string, data interface{}, fileOpts *FileOpts) error {
@@ -122,7 +123,7 @@ func (fs *fsImpl) SetJsonPath(path string, data interface{}, fileOpts *FileOpts)
 	if err != nil {
 		return err
 	}
-	fileOpts.MimeType = "application/json"
+	fileOpts.MimeType = MimeTypeJson
 	return fs.SetRawPath(path, reader, fileOpts)
 }
 
@@ -186,7 +187,7 @@ func (fs *fsImpl) WatchFile(path string, fileName string, fileOpts *FileOpts, wa
 		fileOpts = &FileOpts{}
 	}
 	if watchOpts == nil {
-		watchOpts = &WatchOpts{}
+		watchOpts = &WatchOpts{ThrottleTime: time.Second}
 	}
 	err = fs.SetPathFromFile(path, fileName, fileOpts)
 	if err != nil {
@@ -274,8 +275,16 @@ func (fs *fsImpl) LinkRuntime(path string, rt LinkRuntime, fileOpts *FileOpts) e
 	if fileOpts == nil {
 		fileOpts = &FileOpts{}
 	}
-	fileOpts.FileType = FileTypeLink
-	return fs.api.SetRawPath(path, nil, fileOpts)
+	fileOpts.FileType = FileTypeRuntimeLink
+	return fs.api.SetRawPath(path, nil, fileOpts, rt)
+}
+
+func (fs *fsImpl) linkAppRuntime(path string, apprt AppRuntime, fileOpts *FileOpts) error {
+	if fileOpts == nil {
+		fileOpts = &FileOpts{}
+	}
+	fileOpts.FileType = FileTypeAppRuntimeLink
+	return fs.api.SetRawPath(path, nil, fileOpts, apprt)
 }
 
 func (fs *fsImpl) LinkHandler(path string, fn interface{}, fileOpts *FileOpts) error {

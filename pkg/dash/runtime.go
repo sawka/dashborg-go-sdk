@@ -10,6 +10,12 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
+const (
+	pathFragDefault = "@default"
+	pathFragInit    = "@init"
+	pathFragHtml    = "@html"
+)
+
 type handlerType struct {
 	HandlerFn func(req *AppRequest) (interface{}, error)
 }
@@ -34,7 +40,6 @@ type AppRuntimeImpl struct {
 	appName      string
 	lock         *sync.Mutex
 	appStateType reflect.Type
-	html         valueType
 	handlers     map[string]handlerType
 	middlewares  []middlewareType
 }
@@ -48,7 +53,6 @@ func MakeAppRuntime(appName string) *AppRuntimeImpl {
 		lock:    &sync.Mutex{},
 	}
 	rtn.handlers = make(map[string]handlerType)
-	rtn.handlers[handlerPathHtml] = handlerType{HandlerFn: rtn.htmlHandler}
 	return rtn
 }
 
@@ -131,28 +135,15 @@ func (apprt *AppRuntimeImpl) SetRawHandler(path string, handlerFn func(req *AppR
 	return nil
 }
 
-func (apprt *AppRuntimeImpl) SetInitHandler(handlerFn func(req *AppRequest) error) error {
-	apprt.setHandler(handlerPathInit, handlerType{HandlerFn: wrapHandler(handlerFn)})
-	return nil
+func (apprt *AppRuntimeImpl) SetInitHandler(handlerFn interface{}) error {
+	return apprt.Handler(pathFragInit, handlerFn)
 }
 
-func (app *AppRuntimeImpl) htmlHandler(req *AppRequest) (interface{}, error) {
-	if app.html == nil {
-		return nil, nil
-	}
-	htmlValueIf, err := app.html.GetValue()
-	if err != nil {
-		return nil, err
-	}
-	htmlStr, err := dashutil.ConvertToString(htmlValueIf)
-	if err != nil {
-		return nil, err
-	}
-	req.setHtml(htmlStr)
-	return nil, nil
+func (apprt *AppRuntimeImpl) SetHtmlHandler(handlerFn interface{}) error {
+	return apprt.Handler(pathFragHtml, handlerFn)
 }
 
-func MakeLinkRuntime() *LinkRuntimeImpl {
+func MakeRuntime() *LinkRuntimeImpl {
 	rtn := &LinkRuntimeImpl{
 		lock:     &sync.Mutex{},
 		handlers: make(map[string]linkHandlerFn),
@@ -171,10 +162,11 @@ func (linkrt *LinkRuntimeImpl) RunHandler(req Request) (interface{}, error) {
 	if info.RequestType != requestTypePath {
 		return nil, dasherr.ValidateErr(fmt.Errorf("Invalid RequestType for linked runtime"))
 	}
-	if info.PathFrag == "" {
-		return nil, dasherr.ValidateErr(fmt.Errorf("Invalid Request, no PathFrag set for linked runtime"))
-	}
 	pathFrag := info.PathFrag
+	if pathFrag == "" {
+		return nil, dasherr.ValidateErr(fmt.Errorf("PathFrag cannot be empty for linked request"))
+	}
+
 	linkrt.lock.Lock()
 	linkfn, ok := linkrt.handlers[pathFrag]
 	linkrt.lock.Unlock()
