@@ -280,6 +280,11 @@ func (app *App) SetAllowedRoles(roles ...string) {
 	app.appConfig.Options[OptionAuth] = authOpt
 }
 
+func (app *App) GetAllowedRoles() []string {
+	authOpt := app.getAuthOpt()
+	return authOpt.AllowedRoles
+}
+
 // SetAppVisibility controls whether the app shows in the UI's app-switcher (see VisType constants)
 // Apps will be sorted by displayOrder (and then AppTitle).  displayOrder of 0 (the default) will
 // sort to the end of the list, not the beginning
@@ -305,7 +310,7 @@ func (app *App) SetHtml(htmlStr string) error {
 	if err != nil {
 		return err
 	}
-	htmlPath := fmt.Sprintf("/@app/%s/html", app.AppName)
+	htmlPath := fmt.Sprintf("/@app/%s/html", app.AppName())
 	dashfs := &fsImpl{app.api}
 	err = dashfs.SetRawPath(htmlPath, bytesReader, fileOpts)
 	if err != nil {
@@ -317,7 +322,7 @@ func (app *App) SetHtml(htmlStr string) error {
 
 func (app *App) SetHtmlFromFile(fileName string) error {
 	dashfs := &fsImpl{app.api}
-	htmlPath := fmt.Sprintf("/@app/%s/html", app.AppName)
+	htmlPath := fmt.Sprintf("/@app/%s/html", app.AppName())
 	fileOpts := &FileOpts{MimeType: MimeTypeDashborgHtml, MkDirs: true}
 	err := dashfs.WatchFile(htmlPath, fileName, fileOpts, nil)
 	if err != nil {
@@ -332,7 +337,7 @@ func (app *App) SetHtmlPath(path string) {
 }
 
 func (app *App) SetHtmlFromRuntime() {
-	app.appConfig.HtmlPath = fmt.Sprintf("/@app/%s/runtime:@html")
+	app.appConfig.HtmlPath = fmt.Sprintf("/@app/%s/runtime:@html", app.AppName())
 }
 
 // initType is either InitHandlerRequired, InitHandlerRequiredWhenConnected, or InitHandlerNone

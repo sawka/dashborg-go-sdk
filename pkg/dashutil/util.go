@@ -222,5 +222,5 @@ func ParseFullPath(fullPath string) (string, string, string, error) {
 	if match == nil {
 		return "", "", "", fmt.Errorf("Invalid FullPath")
 	}
-	return "", match[1], match[2], nil
+	return match[1], match[2], match[3], nil
 }

@@ -79,6 +79,7 @@ type DashCloudClient struct {
 	ConnId    *atomic.Value
 	AppMap    map[string]*AppStruct
 	LinkRtMap map[string]dash.LinkRuntime
+	AppRtMap  map[string]dash.AppRuntime
 	DoneCh    chan bool
 	PermErr   bool
 	ExitErr   error
@@ -94,6 +95,7 @@ func makeCloudClient(config *Config) *DashCloudClient {
 		ConnId:    &atomic.Value{},
 		AppMap:    make(map[string]*AppStruct),
 		LinkRtMap: make(map[string]dash.LinkRuntime),
+		AppRtMap:  make(map[string]dash.AppRuntime),
 		DoneCh:    make(chan bool),
 	}
 	rtn.ConnId.Store("")
@@ -148,7 +150,7 @@ func (pc *DashCloudClient) startClient() error {
 	}
 	err := pc.connectGrpc()
 	if err != nil {
-		pc.logV("Dashborg ERROR connecting gRPC client: %v\n", err)
+		pc.logV("DashborgCloudClient ERROR connecting gRPC client: %v\n", err)
 	}
 	if pc.Config.Verbose {
 		pc.log("Dashborg Initialized CloudClient AccId:%s Zone:%s ProcName:%s ProcRunId:%s\n", pc.Config.AccId, pc.Config.ZoneName, pc.Config.ProcName, pc.ProcRunId)
@@ -184,13 +186,13 @@ func (pc *DashCloudClient) ctxWithMd(timeout time.Duration) (context.Context, co
 
 func (pc *DashCloudClient) externalShutdown() {
 	if pc.Conn == nil {
-		pc.logV("Dashborg ERROR shutting down, gRPC connection is not initialized\n")
+		pc.logV("DashborgCloudClient ERROR shutting down, gRPC connection is not initialized\n")
 		return
 	}
 	pc.setExitError(fmt.Errorf("ShutdownCh channel closed"))
 	err := pc.Conn.Close()
 	if err != nil {
-		pc.logV("Dashborg ERROR closing gRPC connection: %v\n", err)
+		pc.logV("DashborgCloudClient ERROR closing gRPC connection: %v\n", err)
 	}
 }
 
@@ -372,10 +374,23 @@ func (pc *DashCloudClient) showAppLink(appName string) {
 	}
 }
 
+func (pc *DashCloudClient) unlinkRuntime(path string) {
+	pc.Lock.Lock()
+	defer pc.Lock.Unlock()
+	delete(pc.LinkRtMap, path)
+	delete(pc.AppRtMap, path)
+}
+
 func (pc *DashCloudClient) connectLinkRuntime(path string, rt dash.LinkRuntime) {
 	pc.Lock.Lock()
 	defer pc.Lock.Unlock()
 	pc.LinkRtMap[path] = rt
+}
+
+func (pc *DashCloudClient) connectAppRuntime(path string, rt dash.AppRuntime) {
+	pc.Lock.Lock()
+	defer pc.Lock.Unlock()
+	pc.AppRtMap[path] = rt
 }
 
 func (pc *DashCloudClient) ConnectApp(app *dash.App) error {
@@ -391,6 +406,12 @@ func (pc *DashCloudClient) ConnectApp(app *dash.App) error {
 	}
 	clientConfig := dash.AppClientConfig{
 		Verbose: pc.Config.Verbose,
+	}
+	appRtPath := fmt.Sprintf("/@app/%s/runtime", appName)
+	rtFileOpts := &dash.FileOpts{FileType: dash.FileTypeAppRuntimeLink, AllowedRoles: app.GetAllowedRoles()}
+	setPathErr := pc.setRawPath(appRtPath, nil, rtFileOpts, app.Runtime())
+	if setPathErr != nil {
+		return setPathErr
 	}
 	appClient := dash.MakeAppClient(pc.InternalApi(), app.Runtime(), clientConfig, pc.ConnId)
 	pc.Lock.Lock()
@@ -554,10 +575,11 @@ func (pc *DashCloudClient) sendErrResponse(reqMsg *dashproto.RequestMessage, err
 		ResponseDone: true,
 		Err:          errMsg,
 	}
+	fmt.Printf("senderrresponse [%s], appid:[%#v]\n", errMsg, reqMsg.AppId)
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
 	resp, respErr := pc.DBService.SendResponse(ctx, m)
-	dashErr := pc.handleStatusErrors("RemoveApp", resp, respErr, false)
+	dashErr := pc.handleStatusErrors("SendResponse", resp, respErr, false)
 	if dashErr != nil {
 		pc.logV("Error sending Error Response: %v\n", dashErr)
 	}
@@ -610,14 +632,33 @@ func (pc *DashCloudClient) runRequestStream() (bool, dasherr.ErrCode) {
 				return
 			}
 			if reqMsg.RequestType == "path" {
+				var runtimeVal interface{}
+				fullPath := pathWithNs(reqMsg.Path, false)
 				pc.Lock.Lock()
-				linkRuntime := pc.LinkRtMap[reqMsg.Path.Path]
-				pc.Lock.Unlock()
-				if linkRuntime == nil {
-					pc.sendErrResponse(reqMsg, "No Linked Runtime")
+				if reqMsg.AppRequest {
+					runtimeVal = pc.AppRtMap[fullPath]
 				}
-				pc.dispatchLinkRtRequest(ctx, linkRuntime, reqMsg)
+				if runtimeVal == nil {
+					runtimeVal = pc.LinkRtMap[fullPath]
+				}
+				pc.Lock.Unlock()
+				if runtimeVal == nil {
+					pc.sendErrResponse(reqMsg, "No Linked Runtime")
+					return
+				}
+				pc.dispatchRtRequest(ctx, runtimeVal, reqMsg)
+				return
 			} else {
+				pc.Lock.Lock()
+				appRuntime := pc.AppRtMap[reqMsg.Path.Path]
+				pc.Lock.Unlock()
+				if appRuntime == nil {
+					pc.sendErrResponse(reqMsg, "No Linked AppRuntime")
+					return
+				}
+				pc.dispatchAppRtRequest(ctx, appRuntime, reqMsg)
+				return
+
 				if reqMsg.AppId == nil || !dashutil.IsAppNameValid(reqMsg.AppId.AppName) {
 					pc.sendErrResponse(reqMsg, "Bad Request")
 					return
@@ -638,7 +679,7 @@ func (pc *DashCloudClient) runRequestStream() (bool, dasherr.ErrCode) {
 	return (elapsed >= 5*time.Second), endingErrCode
 }
 
-func (pc *DashCloudClient) sendPathResponse(preq *dash.AppRequest, rtnVal interface{}) {
+func (pc *DashCloudClient) sendPathResponse(preq *dash.AppRequest, rtnVal interface{}, appReq bool) {
 	if preq.IsDone() {
 		return
 	}
@@ -654,21 +695,64 @@ func (pc *DashCloudClient) sendPathResponse(preq *dash.AppRequest, rtnVal interf
 		FeClientId:   preq.RequestInfo().FeClientId,
 		ResponseDone: true,
 	}
+	if preq.RequestInfo().AppName != "" {
+		m.AppId = &dashproto.AppId{AppName: preq.RequestInfo().AppName}
+	}
+
+	defer pc.sendResponseProtoRpc(m)
+	rtnErr := preq.GetError()
+	if rtnErr != nil {
+		m.Err = rtnErr.Error()
+		return
+	}
+	var rtnValRRA []*dashproto.RRAction
+	if rtnVal != nil {
+		var err error
+		rtnValRRA, err = rtnValToRRA(rtnVal)
+		if err != nil {
+			m.Err = err.Error()
+			return
+		}
+	}
+	if appReq {
+		m.Actions = preq.GetRRA()
+	}
+	m.Actions = append(m.Actions, rtnValRRA...)
+	return
+}
+
+func (pc *DashCloudClient) sendAppResponse(preq *dash.AppRequest, rtnVal interface{}) {
+	if preq.IsDone() {
+		return
+	}
+	m := &dashproto.SendResponseMessage{
+		Ts:          dashutil.Ts(),
+		ReqId:       preq.RequestInfo().ReqId,
+		AppId:       &dashproto.AppId{AppName: preq.RequestInfo().AppName},
+		RequestType: preq.RequestInfo().RequestType,
+		Path: &dashproto.PathId{
+			PathNs:   preq.RequestInfo().PathNs,
+			Path:     preq.RequestInfo().Path,
+			PathFrag: preq.RequestInfo().PathFrag,
+		},
+		FeClientId:   preq.RequestInfo().FeClientId,
+		ResponseDone: true,
+	}
 	rtnErr := preq.GetError()
 	if rtnErr != nil {
 		m.Err = rtnErr.Error()
 	} else if rtnVal != nil {
-		rra, err := rtnValToRRA(rtnVal)
+		rtnValRRA, err := rtnValToRRA(rtnVal)
 		if err != nil {
 			m.Err = err.Error()
 		} else {
-			m.Actions = rra
+			m.Actions = append(preq.GetRRA(), rtnValRRA...)
 		}
 	}
 	pc.sendResponseProtoRpc(m)
 }
 
-func (pc *DashCloudClient) dispatchLinkRtRequest(ctx context.Context, rt dash.LinkRuntime, reqMsg *dashproto.RequestMessage) {
+func (pc *DashCloudClient) dispatchRtRequest(ctx context.Context, rt interface{}, reqMsg *dashproto.RequestMessage) {
 	var rtnVal interface{}
 	preq := dash.MakeAppRequest(ctx, reqMsg, pc.InternalApi())
 	defer func() {
@@ -677,7 +761,35 @@ func (pc *DashCloudClient) dispatchLinkRtRequest(ctx context.Context, rt dash.Li
 			preq.SetError(fmt.Errorf("PANIC in handler %v", panicErr))
 			debug.PrintStack()
 		}
-		pc.sendPathResponse(preq, rtnVal)
+		pc.sendPathResponse(preq, rtnVal, reqMsg.AppRequest)
+	}()
+	var dataResult interface{}
+	var err error
+	if linkrt, ok := rt.(dash.LinkRuntime); ok {
+		dataResult, err = linkrt.RunHandler(preq)
+	} else if apprt, ok := rt.(dash.AppRuntime); ok {
+		dataResult, err = apprt.RunHandler(preq)
+	} else {
+		err = fmt.Errorf("Invalid Runtime Type")
+	}
+	if err != nil {
+		preq.SetError(err)
+		return
+	}
+	rtnVal = dataResult
+	return
+}
+
+func (pc *DashCloudClient) dispatchAppRtRequest(ctx context.Context, rt dash.AppRuntime, reqMsg *dashproto.RequestMessage) {
+	var rtnVal interface{}
+	preq := dash.MakeAppRequest(ctx, reqMsg, pc.InternalApi())
+	defer func() {
+		if panicErr := recover(); panicErr != nil {
+			log.Printf("Dashborg PANIC in Handler %s | %v\n", requestMsgStr(reqMsg), panicErr)
+			preq.SetError(fmt.Errorf("PANIC in handler %v", panicErr))
+			debug.PrintStack()
+		}
+		pc.sendAppResponse(preq, rtnVal)
 	}()
 	dataResult, err := rt.RunHandler(preq)
 	if err != nil {
@@ -1237,20 +1349,39 @@ func validateFileOpts(opts *dash.FileOpts) error {
 	return nil
 }
 
-func (pc *DashCloudClient) setRawPath(path string, r io.Reader, fileOpts *dash.FileOpts, rt interface{}) error {
+func (pc *DashCloudClient) setRawPath(fullPath string, r io.Reader, fileOpts *dash.FileOpts, rt interface{}) error {
+	err := pc.setRawPathWrap(fullPath, r, fileOpts, rt)
+	if err != nil {
+		pc.logV("Dashborg SetPath ERROR %s => %s | %v\n", fullPath, shortFileOptsStr(fileOpts), err)
+		return err
+	}
+	pc.logV("Dashborg SetPath %s => %s\n", fullPath, shortFileOptsStr(fileOpts))
+	return nil
+}
+
+func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts *dash.FileOpts, rt interface{}) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
 	if fileOpts == nil {
 		return dasherr.ValidateErr(fmt.Errorf("SetRawPath cannot receive nil *FileOpts"))
 	}
-	if !dashutil.IsPathValid(path) {
-		return dasherr.ValidateErr(fmt.Errorf("Invalid Path"))
+	if !dashutil.IsFullPathValid(fullPath) {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid Path '%s'", fullPath))
+	}
+	var err error
+	pathId := &dashproto.PathId{}
+	pathId.PathNs, pathId.Path, pathId.PathFrag, err = dashutil.ParseFullPath(fullPath)
+	if err != nil {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid Path '%s'", fullPath))
+	}
+	if pathId.PathFrag != "" {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid Path '%s', SetPath does not allow fragment", fullPath))
 	}
 	if len(fileOpts.AllowedRoles) == 0 {
 		fileOpts.AllowedRoles = []string{dash.RoleUser}
 	}
-	err := validateFileOpts(fileOpts)
+	err = validateFileOpts(fileOpts)
 	if err != nil {
 		return err
 	}
@@ -1259,9 +1390,15 @@ func (pc *DashCloudClient) setRawPath(path string, r io.Reader, fileOpts *dash.F
 	}
 	var ok bool
 	var linkRt dash.LinkRuntime
+	var appLinkRt dash.AppRuntime
 	if fileOpts.FileType == dash.FileTypeRuntimeLink {
 		if linkRt, ok = rt.(dash.LinkRuntime); !ok {
 			return dasherr.ValidateErr(fmt.Errorf("FileType is LinkRuntime, but no dash.LinkRuntime provided"))
+		}
+	}
+	if fileOpts.FileType == dash.FileTypeAppRuntimeLink {
+		if appLinkRt, ok = rt.(dash.AppRuntime); !ok {
+			return dasherr.ValidateErr(fmt.Errorf("FileType is AppLinkRuntime, but no dash.AppRuntime provided"))
 		}
 	}
 	optsJson, err := dashutil.MarshalJson(fileOpts)
@@ -1278,7 +1415,7 @@ func (pc *DashCloudClient) setRawPath(path string, r io.Reader, fileOpts *dash.F
 
 	m := &dashproto.SetPathMessage{
 		Ts:           dashutil.Ts(),
-		Path:         &dashproto.PathId{Path: path},
+		Path:         pathId,
 		HasBody:      (r != nil),
 		FileOptsJson: optsJson,
 	}
@@ -1293,7 +1430,10 @@ func (pc *DashCloudClient) setRawPath(path string, r io.Reader, fileOpts *dash.F
 	}
 	if metaResp.BlobFound || !m.HasBody {
 		if fileOpts.FileType == dash.FileTypeRuntimeLink {
-			pc.connectLinkRuntime(path, linkRt)
+			pc.connectLinkRuntime(fullPath, linkRt)
+		}
+		if fileOpts.FileType == dash.FileTypeAppRuntimeLink {
+			pc.connectAppRuntime(fullPath, appLinkRt)
 		}
 		return nil
 	}
@@ -1367,15 +1507,27 @@ func (pc *DashCloudClient) DashFS() dash.DashFS {
 
 func requestMsgStr(reqMsg *dashproto.RequestMessage) string {
 	if reqMsg.Path == nil {
-		return fmt.Sprintf("%s://[NO-PATH]", reqMsg.RequestType)
+		return fmt.Sprintf("%s://[no-path]", reqMsg.RequestType)
 	}
 	if reqMsg.AppId != nil {
-		return fmt.Sprintf("%s://%s%s", reqMsg.AppId, reqMsg.RequestType, reqMsg.AppId.AppName, reqMsg.Path)
+		return fmt.Sprintf("%s://%s%s", reqMsg.RequestType, reqMsg.AppId.AppName, pathStr(reqMsg.Path))
 	}
-	if reqMsg.Path.PathFrag == "" {
-		return fmt.Sprintf("%s:/%s", reqMsg.RequestType, reqMsg.Path.Path)
+	return fmt.Sprintf("%s:/%s", reqMsg.RequestType, pathStr(reqMsg.Path))
+}
+
+func pathStr(path *dashproto.PathId) string {
+	if path == nil || path.Path == "" {
+		return "[no-path]"
 	}
-	return fmt.Sprintf("%s:/%s:%s", reqMsg.RequestType, reqMsg.Path.Path, reqMsg.Path.PathFrag)
+	nsStr := ""
+	if path.PathNs != "" {
+		nsStr = "/@" + path.PathNs
+	}
+	fragStr := ""
+	if path.PathFrag != "" {
+		fragStr = ":" + path.PathFrag
+	}
+	return fmt.Sprintf("%s%s%s", nsStr, path.Path, fragStr)
 }
 
 func rtnValToRRA(rtnVal interface{}) ([]*dashproto.RRAction, error) {
@@ -1436,4 +1588,34 @@ func blobToRRA(mimeType string, reader io.Reader) ([]*dashproto.RRAction, error)
 		}
 	}
 	return rra, nil
+}
+
+func shortFileOptsStr(fileOpts *dash.FileOpts) string {
+	if fileOpts == nil {
+		return "[null]"
+	}
+	mimeType := ""
+	if fileOpts.MimeType != "" {
+		mimeType = ":" + fileOpts.MimeType
+	}
+	return fmt.Sprintf("%s%s", fileOpts.FileType, mimeType)
+}
+
+func pathWithNs(p *dashproto.PathId, includeFrag bool) string {
+	if p == nil {
+		return "[no-path]"
+	}
+	pathNs := ""
+	if p.PathNs != "" {
+		pathNs = "/@" + p.PathNs
+	}
+	if includeFrag {
+		pathFrag := ""
+		if p.PathFrag != "" {
+			pathFrag = ":" + p.PathFrag
+		}
+		return fmt.Sprintf("%s%s%s", pathNs, p.Path, pathFrag)
+	} else {
+		return fmt.Sprintf("%s%s", pathNs, p.Path)
+	}
 }

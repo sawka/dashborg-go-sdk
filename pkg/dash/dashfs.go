@@ -62,6 +62,7 @@ type AppOpts struct {
 	AppVisType  string  `json:"appvistype"`
 	AppVisOrder float64 `json:"appvisorder"`
 	InitPath    string  `json:"initpath"`
+	OfflineMode string  `json:"offlinemode"`
 }
 
 type DirOpts struct {

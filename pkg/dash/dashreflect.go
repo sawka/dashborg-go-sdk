@@ -160,9 +160,9 @@ type CallHandlerOpts struct {
 // If request Data is not an array, it will be converted to a single element array, if request Data is null
 // it will be converted to a zero-element array.  The handler will throw an error if the Data or AppState
 // values cannot be converted to their respective go types (using json.Unmarshal).
-func (apprt *AppRuntimeImpl) Handler(path string, handlerFn interface{}) error {
-	if !dashutil.IsHandlerPathValid(path) {
-		return fmt.Errorf("Invalid handler path")
+func (apprt *AppRuntimeImpl) Handler(name string, handlerFn interface{}) error {
+	if !dashutil.IsPathFragValid(name) {
+		return fmt.Errorf("Invalid handler name")
 	}
 	hType := reflect.TypeOf(handlerFn)
 	if hType.Kind() != reflect.Func {
@@ -180,7 +180,7 @@ func (apprt *AppRuntimeImpl) Handler(path string, handlerFn interface{}) error {
 		rtnVals := hVal.Call(args)
 		return convertRtnVals(hType, rtnVals)
 	}
-	apprt.setHandler(path, handlerType{HandlerFn: hfn})
+	apprt.setHandler(name, handlerType{HandlerFn: hfn})
 	return nil
 }
 

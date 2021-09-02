@@ -79,6 +79,7 @@ message RequestMessage {
     RtnStatus Status = 13;     // only used for server-side errors
     int64 TimeoutMs = 14;
     bool IsBackendCall = 15;
+    bool AppRequest = 16;
 }
 
 message ConnectClientMessage {

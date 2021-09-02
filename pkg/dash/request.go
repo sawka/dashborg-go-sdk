@@ -66,13 +66,6 @@ type AppRequest struct {
 	infoMsgs  []string              // debugging information
 }
 
-func (req *AppRequest) canSetData(path string) bool {
-	if path == RtnSetDataPath && req.info.RequestType == requestTypeData {
-		return true
-	}
-	return req.info.RequestType == requestTypeHandler || req.info.RequestType == requestTypeStream || req.info.RequestType == requestTypeInit
-}
-
 func (req *AppRequest) canSetHtml() bool {
 	return req.info.RequestType == requestTypeHandler || req.info.RequestType == requestTypeHtml
 }
@@ -194,9 +187,6 @@ func (req *AppRequest) SetBlob(path string, mimeType string, reader io.Reader) e
 	if req.isDone {
 		return fmt.Errorf("Cannot call SetBlob(), path=%s, Request is already done", path)
 	}
-	if !req.canSetData(path) {
-		return fmt.Errorf("Cannot call SetData(), reqinfo=%s data-path=%s reqtype=%s, for non-handler/stream request", req.reqInfoStr(), path, req.info.RequestType)
-	}
 	if !dashutil.IsMimeTypeValid(mimeType) {
 		return fmt.Errorf("Invalid Mime-Type passed to SetBlobData mime-type=%s", mimeType)
 	}
@@ -222,10 +212,6 @@ func (req *AppRequest) SetBlob(path string, mimeType string, reader io.Reader) e
 				rrAction.ActionType = "blobext"
 			}
 			req.appendRR(rrAction)
-			flushErr := req.Flush()
-			if flushErr != nil {
-				return flushErr
-			}
 		}
 		if err == io.ErrUnexpectedEOF {
 			break
@@ -254,9 +240,6 @@ func (req *AppRequest) reqInfoStr() string {
 func (req *AppRequest) DataOp(op string, path string, data interface{}) error {
 	if req.isDone {
 		return fmt.Errorf("Cannot call SetData(), reqinfo=%s data-path=%s, Request is already done", req.reqInfoStr())
-	}
-	if !req.canSetData(path) {
-		return fmt.Errorf("Cannot call SetData(), reqinfo=%s data-path=%s reqtype=%s, for non-handler/stream request", req.reqInfoStr(), path, req.info.RequestType)
 	}
 	jsonData, err := dashutil.MarshalJson(data)
 	if err != nil {
@@ -437,6 +420,11 @@ func MakeAppRequest(ctx context.Context, reqMsg *dashproto.RequestMessage, api I
 		preq.appState = pstate
 	}
 	return preq
+}
+
+// internal use for testing and dashcloud (API subject to change)
+func (req *AppRequest) GetRRA() []*dashproto.RRAction {
+	return req.rrActions
 }
 
 func (req *AppRequest) GetError() error {

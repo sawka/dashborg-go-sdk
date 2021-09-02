@@ -63,13 +63,16 @@ func (app *AppRuntimeImpl) setHandler(path string, handler handlerType) {
 }
 
 func (apprt *AppRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) {
-	path := req.info.Path
+	pathFrag := req.info.PathFrag
+	if pathFrag == "" {
+		return nil, dasherr.ValidateErr(fmt.Errorf("PathFrag cannot be empty for linked request"))
+	}
 	apprt.lock.Lock()
-	hval, ok := apprt.handlers[path]
+	hval, ok := apprt.handlers[pathFrag]
 	mws := apprt.middlewares
 	apprt.lock.Unlock()
 	if !ok {
-		return nil, fmt.Errorf("No handler found for %s:%s", req.info.AppName, req.info.Path)
+		return nil, fmt.Errorf("No handler found for /@app/%s/runtime:%s", apprt.appName, req.info.PathFrag)
 	}
 	rtn, err := mwHelper(req, hval, mws, 0)
 	if err != nil {
@@ -127,11 +130,11 @@ func (apprt *AppRuntimeImpl) RemoveMiddleware(name string) {
 	apprt.middlewares = mws
 }
 
-func (apprt *AppRuntimeImpl) SetRawHandler(path string, handlerFn func(req *AppRequest) (interface{}, error)) error {
-	if !dashutil.IsHandlerPathValid(path) {
-		return fmt.Errorf("Invalid handler path")
+func (apprt *AppRuntimeImpl) SetRawHandler(handlerName string, handlerFn func(req *AppRequest) (interface{}, error)) error {
+	if !dashutil.IsPathFragValid(handlerName) {
+		return fmt.Errorf("Invalid handler name")
 	}
-	apprt.setHandler(path, handlerType{HandlerFn: handlerFn})
+	apprt.setHandler(handlerName, handlerType{HandlerFn: handlerFn})
 	return nil
 }
 
@@ -166,7 +169,6 @@ func (linkrt *LinkRuntimeImpl) RunHandler(req Request) (interface{}, error) {
 	if pathFrag == "" {
 		return nil, dasherr.ValidateErr(fmt.Errorf("PathFrag cannot be empty for linked request"))
 	}
-
 	linkrt.lock.Lock()
 	linkfn, ok := linkrt.handlers[pathFrag]
 	linkrt.lock.Unlock()
