@@ -18,22 +18,6 @@ func (rpc *InternalApi) SendResponseProtoRpc(m *dashproto.SendResponseMessage) (
 	return rpc.client.sendResponseProtoRpc(m)
 }
 
-func (rpc *InternalApi) StartStreamProtoRpc(m *dashproto.StartStreamMessage) (string, error) {
-	return rpc.client.startStreamProtoRpc(m)
-}
-
-func (rpc *InternalApi) RemoveBlob(acfg dash.AppConfig, blob dash.BlobData) error {
-	return rpc.client.removeBlob(acfg, blob)
-}
-
-func (rpc *InternalApi) SetBlobData(acfg dash.AppConfig, blobData dash.BlobData, r io.Reader) error {
-	return rpc.client.setBlobData(acfg, blobData, r)
-}
-
-func (rpc *InternalApi) StartBareStream(appName string, streamOpts dash.StreamOpts) (*dash.AppRequest, error) {
-	return rpc.client.startBareStream(appName, streamOpts)
-}
-
 func (rpc *InternalApi) CallDataHandler(appName string, path string, data interface{}) (interface{}, error) {
 	return rpc.client.callDataHandler(appName, path, data)
 }
@@ -42,12 +26,8 @@ func (rpc *InternalApi) BackendPush(appName string, path string, data interface{
 	return rpc.client.backendPush(appName, path, data)
 }
 
-func (rpc *InternalApi) ListBlobs(appName string, appVersion string) ([]dash.BlobData, error) {
-	return rpc.client.listBlobs(appName, appVersion)
-}
-
-func (rpc *InternalApi) SetRawPath(path string, r io.Reader, fileOpts *dash.FileOpts, rt interface{}) error {
-	return rpc.client.setRawPath(path, r, fileOpts, rt)
+func (rpc *InternalApi) SetRawPath(path string, r io.Reader, fileOpts *dash.FileOpts, linkRt dash.LinkRuntime) error {
+	return rpc.client.setRawPath(path, r, fileOpts, linkRt)
 }
 
 func (rpc *InternalApi) RemovePath(path string) error {

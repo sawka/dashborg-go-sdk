@@ -54,11 +54,6 @@ const (
 
 var NotConnectedErr = dasherr.ErrWithCodeStr(dasherr.ErrCodeNotConnected, "DashborgCloudClient is not Connected")
 
-type AppStruct struct {
-	AppClient dash.AppClient
-	App       dash.AppRuntime
-}
-
 type accInfoType struct {
 	AccType         string  `json:"acctype"`
 	AccName         string  `json:"accname"`
@@ -77,9 +72,7 @@ type DashCloudClient struct {
 	Conn      *grpc.ClientConn
 	DBService dashproto.DashborgServiceClient
 	ConnId    *atomic.Value
-	AppMap    map[string]*AppStruct
 	LinkRtMap map[string]dash.LinkRuntime
-	AppRtMap  map[string]dash.AppRuntime
 	DoneCh    chan bool
 	PermErr   bool
 	ExitErr   error
@@ -93,9 +86,7 @@ func makeCloudClient(config *Config) *DashCloudClient {
 		ProcRunId: uuid.New().String(),
 		Config:    config,
 		ConnId:    &atomic.Value{},
-		AppMap:    make(map[string]*AppStruct),
 		LinkRtMap: make(map[string]dash.LinkRuntime),
-		AppRtMap:  make(map[string]dash.AppRuntime),
 		DoneCh:    make(chan bool),
 	}
 	rtn.ConnId.Store("")
@@ -264,20 +255,9 @@ func (pc *DashCloudClient) sendConnectClientMessage(isReconnect bool) error {
 		if pc.Config.Verbose {
 			pc.log("DashborgCloudClient ReConnected, AccId:%s Zone:%s ConnId:%s\n", pc.Config.AccId, pc.Config.ZoneName, resp.ConnId)
 		}
-		pc.reconnectApps()
 		pc.reconnectLinks()
 	}
 	return nil
-}
-
-func (pc *DashCloudClient) getAppNames() []string {
-	pc.Lock.Lock()
-	defer pc.Lock.Unlock()
-	var appNames []string
-	for appName, _ := range pc.AppMap {
-		appNames = append(appNames, appName)
-	}
-	return appNames
 }
 
 func (pc *DashCloudClient) getLinkPaths() []string {
@@ -287,22 +267,7 @@ func (pc *DashCloudClient) getLinkPaths() []string {
 	for path, _ := range pc.LinkRtMap {
 		paths = append(paths, path)
 	}
-	for path, _ := range pc.AppRtMap {
-		paths = append(paths, path)
-	}
 	return paths
-}
-
-func (pc *DashCloudClient) reconnectApps() {
-	appNames := pc.getAppNames()
-	for _, appName := range appNames {
-		err := pc.baseWriteApp(appName, true, nil, fmt.Sprintf("ReconnectApp(%s)", appName))
-		if err != nil {
-			pc.log("DashborgCloudClient %v\n", err)
-		} else {
-			pc.logV("DashborgCloudClient reconnected app:%s\n", appName)
-		}
-	}
 }
 
 func (pc *DashCloudClient) reconnectLink(path string) error {
@@ -423,7 +388,8 @@ func (pc *DashCloudClient) showAppLink(appName string) {
 	if pc.Config.NoShowJWT || !accInfo.AccJWTEnabled {
 		pc.log("DashborgCloudClient App Link [%s]: %s\n", appName, pc.appLink(appName))
 	} else {
-		appLink, err := pc.MakeJWTAppLink(appName, pc.Config.JWTDuration, pc.Config.JWTUserId, pc.Config.JWTRole)
+		jwtOpts := pc.Config.copyJWTOpts()
+		appLink, err := pc.MakeJWTAppLink(appName, &jwtOpts)
 		if err != nil {
 			pc.log("DashborgCloudClient App Link [%s] Error: %v\n", appName, err)
 		} else {
@@ -436,19 +402,12 @@ func (pc *DashCloudClient) unlinkRuntime(path string) {
 	pc.Lock.Lock()
 	defer pc.Lock.Unlock()
 	delete(pc.LinkRtMap, path)
-	delete(pc.AppRtMap, path)
 }
 
 func (pc *DashCloudClient) connectLinkRuntime(path string, rt dash.LinkRuntime) {
 	pc.Lock.Lock()
 	defer pc.Lock.Unlock()
 	pc.LinkRtMap[path] = rt
-}
-
-func (pc *DashCloudClient) connectAppRuntime(path string, rt dash.AppRuntime) {
-	pc.Lock.Lock()
-	defer pc.Lock.Unlock()
-	pc.AppRtMap[path] = rt
 }
 
 func (pc *DashCloudClient) ConnectApp(app *dash.App) error {
@@ -462,19 +421,12 @@ func (pc *DashCloudClient) ConnectApp(app *dash.App) error {
 		pc.log("DashborgCloudClient %v\n", dashErr)
 		return dashErr
 	}
-	clientConfig := dash.AppClientConfig{
-		Verbose: pc.Config.Verbose,
-	}
 	appRtPath := fmt.Sprintf("/@app/%s/runtime", appName)
 	rtFileOpts := &dash.FileOpts{FileType: dash.FileTypeAppRuntimeLink, AllowedRoles: app.GetAllowedRoles()}
 	setPathErr := pc.setRawPath(appRtPath, nil, rtFileOpts, app.Runtime())
 	if setPathErr != nil {
 		return setPathErr
 	}
-	appClient := dash.MakeAppClient(pc.InternalApi(), app.Runtime(), clientConfig, pc.ConnId)
-	pc.Lock.Lock()
-	pc.AppMap[appName] = &AppStruct{App: app.Runtime(), AppClient: appClient}
-	pc.Lock.Unlock()
 	pc.showAppLink(appName)
 	if dashErr != nil {
 		pc.log("DashborgCloudClient %v\n", dashErr)
@@ -560,31 +512,6 @@ func (pc *DashCloudClient) fileInfo(path string, dirOpts *dash.DirOpts) ([]*dash
 		return nil, dasherr.JsonUnmarshalErr("FileInfoJson", err)
 	}
 	return rtn, nil
-}
-
-func (pc *DashCloudClient) ConnectAppRuntime(app dash.AppRuntime) error {
-	if !pc.IsConnected() {
-		return NotConnectedErr
-	}
-	appName := app.AppName()
-	dashErr := pc.baseWriteApp(appName, true, nil, fmt.Sprintf("ConnectAppRuntime(%s)", appName))
-	if dashErr != nil && !dasherr.CanRetry(dashErr) {
-		pc.log("DashborgCloudClient %v\n", dashErr)
-		return dashErr
-	}
-	clientConfig := dash.AppClientConfig{
-		Verbose: pc.Config.Verbose,
-	}
-	appClient := dash.MakeAppClient(pc.InternalApi(), app, clientConfig, pc.ConnId)
-	pc.Lock.Lock()
-	pc.AppMap[appName] = &AppStruct{App: app, AppClient: appClient}
-	pc.Lock.Unlock()
-	pc.showAppLink(appName)
-	if dashErr != nil {
-		pc.log("DashborgCloudClient %v\n", dashErr)
-		return dashErr
-	}
-	return nil
 }
 
 func (pc *DashCloudClient) runRequestStreamLoop() {
@@ -697,15 +624,9 @@ func (pc *DashCloudClient) runRequestStream() (bool, dasherr.ErrCode) {
 				return
 			}
 			if reqMsg.RequestType == "path" {
-				var runtimeVal interface{}
 				fullPath := pathWithNs(reqMsg.Path, false)
 				pc.Lock.Lock()
-				if reqMsg.AppRequest {
-					runtimeVal = pc.AppRtMap[fullPath]
-				}
-				if runtimeVal == nil {
-					runtimeVal = pc.LinkRtMap[fullPath]
-				}
+				runtimeVal := pc.LinkRtMap[fullPath]
 				pc.Lock.Unlock()
 				if runtimeVal == nil {
 					pc.sendErrResponse(reqMsg, "No Linked Runtime")
@@ -714,29 +635,8 @@ func (pc *DashCloudClient) runRequestStream() (bool, dasherr.ErrCode) {
 				pc.dispatchRtRequest(ctx, runtimeVal, reqMsg)
 				return
 			} else {
-				pc.Lock.Lock()
-				appRuntime := pc.AppRtMap[reqMsg.Path.Path]
-				pc.Lock.Unlock()
-				if appRuntime == nil {
-					pc.sendErrResponse(reqMsg, "No Linked AppRuntime")
-					return
-				}
-				pc.dispatchAppRtRequest(ctx, appRuntime, reqMsg)
+				pc.sendErrResponse(reqMsg, fmt.Sprintf("Invalid RequestType '%s'", reqMsg.RequestType))
 				return
-
-				if reqMsg.AppId == nil || !dashutil.IsAppNameValid(reqMsg.AppId.AppName) {
-					pc.sendErrResponse(reqMsg, "Bad Request")
-					return
-				}
-				appName := reqMsg.AppId.AppName
-				pc.Lock.Lock()
-				appClient := pc.AppMap[appName]
-				pc.Lock.Unlock()
-				if appClient == nil {
-					pc.sendErrResponse(reqMsg, "No App Found")
-					return
-				}
-				appClient.AppClient.DispatchRequest(ctx, reqMsg)
 			}
 		}()
 	}
@@ -817,7 +717,7 @@ func (pc *DashCloudClient) sendAppResponse(preq *dash.AppRequest, rtnVal interfa
 	pc.sendResponseProtoRpc(m)
 }
 
-func (pc *DashCloudClient) dispatchRtRequest(ctx context.Context, rt interface{}, reqMsg *dashproto.RequestMessage) {
+func (pc *DashCloudClient) dispatchRtRequest(ctx context.Context, linkrt dash.LinkRuntime, reqMsg *dashproto.RequestMessage) {
 	var rtnVal interface{}
 	preq := dash.MakeAppRequest(ctx, reqMsg, pc.InternalApi())
 	defer func() {
@@ -828,35 +728,7 @@ func (pc *DashCloudClient) dispatchRtRequest(ctx context.Context, rt interface{}
 		}
 		pc.sendPathResponse(preq, rtnVal, reqMsg.AppRequest)
 	}()
-	var dataResult interface{}
-	var err error
-	if linkrt, ok := rt.(dash.LinkRuntime); ok {
-		dataResult, err = linkrt.RunHandler(preq)
-	} else if apprt, ok := rt.(dash.AppRuntime); ok {
-		dataResult, err = apprt.RunHandler(preq)
-	} else {
-		err = fmt.Errorf("Invalid Runtime Type")
-	}
-	if err != nil {
-		preq.SetError(err)
-		return
-	}
-	rtnVal = dataResult
-	return
-}
-
-func (pc *DashCloudClient) dispatchAppRtRequest(ctx context.Context, rt dash.AppRuntime, reqMsg *dashproto.RequestMessage) {
-	var rtnVal interface{}
-	preq := dash.MakeAppRequest(ctx, reqMsg, pc.InternalApi())
-	defer func() {
-		if panicErr := recover(); panicErr != nil {
-			log.Printf("Dashborg PANIC in Handler %s | %v\n", requestMsgStr(reqMsg), panicErr)
-			preq.SetError(fmt.Errorf("PANIC in handler %v", panicErr))
-			debug.PrintStack()
-		}
-		pc.sendAppResponse(preq, rtnVal)
-	}()
-	dataResult, err := rt.RunHandler(preq)
+	dataResult, err := linkrt.RunHandler(preq)
 	if err != nil {
 		preq.SetError(err)
 		return
@@ -888,7 +760,7 @@ func (pc *DashCloudClient) backendPush(appName string, path string, data interfa
 	return nil
 }
 
-func (pc *DashCloudClient) ReflectZone() (*ReflectZoneType, error) {
+func (pc *DashCloudClient) reflectZone() (*ReflectZoneType, error) {
 	if !pc.IsConnected() {
 		return nil, NotConnectedErr
 	}
@@ -945,25 +817,6 @@ func (pc *DashCloudClient) callDataHandler(appName string, path string, data int
 
 func (pc *DashCloudClient) InternalApi() *InternalApi {
 	return &InternalApi{client: pc}
-}
-
-// Bare streams start with no connected clients.  ControlPath is ignored, and NoServerCancel must be set to true.
-// A future request can attach to the stream by calling req.StartStream() and passing the
-// same StreamId.  An error will be returned if a stream with this StreamId has already started.
-// Unlike StartStream StreamId must be specified ("" will return an error).
-// Caller is responsible for calling req.Done() when the stream is finished.
-func (pc *DashCloudClient) startBareStream(appName string, streamOpts dash.StreamOpts) (*dash.AppRequest, error) {
-	if !pc.IsConnected() {
-		return nil, NotConnectedErr
-	}
-	pc.Lock.Lock()
-	app := pc.AppMap[appName]
-	pc.Lock.Unlock()
-	if app == nil {
-		return nil, fmt.Errorf("No active app[%s] found for StartBareStream", appName)
-	}
-	streamReq, _, err := app.AppClient.StartStream(appName, streamOpts, "")
-	return streamReq, err
 }
 
 // returns the reason for shutdown (GetExitError())
@@ -1040,158 +893,6 @@ func (pc *DashCloudClient) WriteApp(app *dash.App) error {
 	return nil
 }
 
-func (pc *DashCloudClient) removeBlob(acfg dash.AppConfig, blob dash.BlobData) error {
-	blobJson, err := dashutil.MarshalJson(blob)
-	if err != nil {
-		return dasherr.JsonMarshalErr("BlobData", err)
-	}
-	m := &dashproto.RemoveBlobMessage{
-		Ts:           dashutil.Ts(),
-		AppId:        &dashproto.AppId{AppName: acfg.AppName, AppVersion: acfg.AppVersion},
-		BlobDataJson: blobJson,
-	}
-	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
-	defer cancelFn()
-	resp, respErr := pc.DBService.RemoveBlob(ctx, m)
-	dashErr := pc.handleStatusErrors("RemoveBlob", resp, respErr, true)
-	if dashErr != nil {
-		return dashErr
-	}
-	return nil
-}
-
-// blobData must have BlobNs, BlobKey, MimeType, Size, and Sha256 set.
-// It is possible to pass a nil io.Reader.  The call will succeed if there is already a blob with the
-// same SHA-256 (it will linked to this app).  If a matching blob is not found, SetBlobData will return
-// an error when trying to read from the nil Reader.
-func (pc *DashCloudClient) setBlobData(acfg dash.AppConfig, blobData dash.BlobData, r io.Reader) error {
-	if !pc.IsConnected() {
-		return NotConnectedErr
-	}
-	if !dashutil.IsSha256Base64HashValid(blobData.Sha256) {
-		return dasherr.ValidateErr(fmt.Errorf("Invalid SHA-256 hash value passed to SetBlobData, must be a base64 encoded SHA-256 hash (44 characters), see dashutil.Sha256Base64()"))
-	}
-	if !dashutil.IsMimeTypeValid(blobData.MimeType) {
-		return dasherr.ValidateErr(fmt.Errorf("Invalid MimeType passed to SetBlobData"))
-	}
-	if blobData.Size <= 0 {
-		return dasherr.ValidateErr(fmt.Errorf("Invalid Size passed to SetBlobData (cannot be 0)"))
-	}
-	if !dashutil.IsBlobNsValid(blobData.BlobNs) {
-		return dasherr.ValidateErr(fmt.Errorf("Invalid BlobNs passed to SetBlobData"))
-	}
-	if !dashutil.IsBlobKeyValid(blobData.BlobKey) {
-		return dasherr.ValidateErr(fmt.Errorf("Invalid BlobKey passed to SetBlobData"))
-	}
-	if blobData.BlobNs == "html" {
-		if float64(blobData.Size) > pc.AccInfo.HtmlSizeLimitMB*mbConst {
-			err := dasherr.LimitErr("Cannot upload BLOB", "HtmlSizeMB", pc.AccInfo.HtmlSizeLimitMB)
-			pc.explainLimit(pc.AccInfo.AccType, err.Error())
-			return err
-		}
-	} else {
-		if float64(blobData.Size) > pc.AccInfo.BlobSizeLimitMB*mbConst {
-			err := dasherr.LimitErr("Cannot upload BLOB", "AppBlobs.MaxSizeMB", pc.AccInfo.BlobSizeLimitMB)
-			pc.explainLimit(pc.AccInfo.AccType, err.Error())
-			return err
-		}
-	}
-	blobJson, err := dashutil.MarshalJson(blobData)
-	if err != nil {
-		return dasherr.JsonMarshalErr("BlobData", err)
-	}
-	ctx, cancelFn := pc.ctxWithMd(streamGrpcTimeout)
-	defer cancelFn()
-	bclient, err := pc.DBService.SetBlob(ctx)
-	if err != nil {
-		return err
-	}
-	defer pc.drainBlobStream(bclient)
-
-	m := &dashproto.SetBlobMessage{
-		Ts:           dashutil.Ts(),
-		AppId:        &dashproto.AppId{AppName: acfg.AppName, AppVersion: acfg.AppVersion},
-		BlobDataJson: blobJson,
-	}
-	err = bclient.Send(m)
-	if err != nil {
-		return err
-	}
-	metaResp, respErr := bclient.Recv()
-	dashErr := pc.handleStatusErrors("SetBlob", metaResp, respErr, true)
-	if dashErr != nil {
-		return dashErr
-	}
-	if metaResp.BlobFound {
-		return nil
-	}
-	maxBytes := maxBlobBytes
-	if int64(maxBytes) > blobData.Size {
-		maxBytes = int(blobData.Size)
-	}
-	readBuf := make([]byte, maxBytes)
-	var lastErr error
-	var totalRead int64
-	for {
-		if r == nil {
-			lastErr = dasherr.ValidateErr(fmt.Errorf("Nil Reader passed to SetBlobData"))
-		}
-		bytesRead, readErr := io.ReadFull(r, readBuf)
-		if bytesRead == 0 && readErr == io.EOF {
-			break
-		}
-		if readErr != nil && readErr != io.ErrUnexpectedEOF {
-			lastErr = readErr
-			break
-		}
-		totalRead += int64(bytesRead)
-		if totalRead > blobData.Size {
-			break
-		}
-		m := &dashproto.SetBlobMessage{
-			Ts:           dashutil.Ts(),
-			BlobBytesKey: metaResp.BlobBytesKey,
-			BlobBytes:    readBuf[0:bytesRead],
-		}
-		clientErr := bclient.Send(m)
-		if clientErr != nil {
-			return clientErr
-		}
-		if readErr == io.ErrUnexpectedEOF {
-			break
-		}
-	}
-	if lastErr != nil || totalRead != blobData.Size {
-		m := &dashproto.SetBlobMessage{
-			Ts:        dashutil.Ts(),
-			ClientErr: true,
-		}
-		err := bclient.Send(m)
-		if err != nil {
-			return err
-		}
-	}
-	if lastErr != nil {
-		return lastErr
-	}
-	if totalRead > blobData.Size {
-		return dasherr.ValidateErr(fmt.Errorf("Invalid BlobData.Size, does not match io.Reader.  Reader has more bytes."))
-	}
-	if totalRead < blobData.Size {
-		return dasherr.ValidateErr(fmt.Errorf("Invalid BlobData.Size, does not match io.Reader.  Reader has less bytes. (%d vs %d)", blobData.Size, totalRead))
-	}
-	err = bclient.CloseSend()
-	if err != nil {
-		return err
-	}
-	resp, respErr := bclient.Recv()
-	dashErr = pc.handleStatusErrors("SetBlobData", resp, respErr, false)
-	if dashErr != nil {
-		return dashErr
-	}
-	return nil
-}
-
 func (pc *DashCloudClient) setExitError(err error) {
 	pc.Lock.Lock()
 	defer pc.Lock.Unlock()
@@ -1227,26 +928,18 @@ func (pc *DashCloudClient) IsConnected() bool {
 	return true
 }
 
-func (pc *DashCloudClient) MakeJWTAppLink(appName string, validTime time.Duration, userId string, roleName string) (string, error) {
-	if validTime == 0 {
-		validTime = 24 * time.Hour
+func (pc *DashCloudClient) MakeJWTAppLink(appName string, jwtOptsPtr *JWTOpts) (string, error) {
+	var jwtOpts JWTOpts
+	if jwtOptsPtr != nil {
+		jwtOpts = *jwtOptsPtr
+	} else {
+		jwtOpts = pc.Config.copyJWTOpts()
 	}
-	if roleName == "" {
-		roleName = "user"
+	err := jwtOpts.ValidateAndSetDefaults()
+	if err != nil {
+		return "", err
 	}
-	if userId == "" {
-		userId = "jwt-user"
-	}
-	if !dashutil.IsRoleValid(roleName) {
-		return "", dasherr.ValidateErr(fmt.Errorf("Invalid RoleName"))
-	}
-	if !dashutil.IsUserIdValid(userId) {
-		return "", dasherr.ValidateErr(fmt.Errorf("Invalid UserId"))
-	}
-	if validTime > 24*time.Hour {
-		return "", dasherr.ValidateErr(fmt.Errorf("Maximum validTime for JWT tokens is 24-hours"))
-	}
-	jwtToken, err := pc.Config.MakeAccountJWT(validTime, userId, roleName)
+	jwtToken, err := pc.Config.MakeAccountJWT(jwtOpts)
 	if err != nil {
 		return "", err
 	}
@@ -1254,8 +947,8 @@ func (pc *DashCloudClient) MakeJWTAppLink(appName string, validTime time.Duratio
 	return fmt.Sprintf("%s?jwt=%s", link, jwtToken), nil
 }
 
-func (pc *DashCloudClient) MustMakeJWTAppLink(appName string, validTime time.Duration, userId string, roleName string) string {
-	rtn, err := pc.MakeJWTAppLink(appName, validTime, userId, roleName)
+func (pc *DashCloudClient) MustMakeJWTAppLink(appName string, jwtOptsPtr *JWTOpts) string {
+	rtn, err := pc.MakeJWTAppLink(appName, jwtOptsPtr)
 	if err != nil {
 		panic(err)
 	}
@@ -1288,49 +981,6 @@ func (pc *DashCloudClient) appLink(appName string) string {
 	return accHost + path
 }
 
-// StartStreamProtoRpc is for use by the Dashborg AppClient, not to be called by end user.
-func (pc *DashCloudClient) startStreamProtoRpc(m *dashproto.StartStreamMessage) (string, error) {
-	if !pc.IsConnected() {
-		return "", NotConnectedErr
-	}
-	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
-	defer cancelFn()
-	resp, respErr := pc.DBService.StartStream(ctx, m)
-	dashErr := pc.handleStatusErrors("StartStream", resp, respErr, false)
-	if dashErr != nil {
-		pc.logV("DashborgCloudClient %v\n", dashErr)
-		return "", dashErr
-	}
-	if m.ExistingReqId != "" && m.ExistingReqId != resp.ReqId {
-		return "", fmt.Errorf("Dashborg startStream returned reqid:%s does not match existing reqid:%s", resp.ReqId, m.ExistingReqId)
-	}
-	return resp.ReqId, nil
-}
-
-func (pc *DashCloudClient) listBlobs(appName string, appVersion string) ([]dash.BlobData, error) {
-	if !pc.IsConnected() {
-		return nil, NotConnectedErr
-	}
-	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
-	defer cancelFn()
-	m := &dashproto.ListBlobsMessage{
-		Ts:    dashutil.Ts(),
-		AppId: &dashproto.AppId{AppName: appName, AppVersion: appVersion},
-	}
-	resp, respErr := pc.DBService.ListBlobs(ctx, m)
-	dashErr := pc.handleStatusErrors("ListBlobs", resp, respErr, false)
-	if dashErr != nil {
-		pc.logV("DashborgCloudClient %v\n", dashErr)
-		return nil, dashErr
-	}
-	var rtn []dash.BlobData
-	err := json.Unmarshal([]byte(resp.BlobDataJson), &rtn)
-	if err != nil {
-		return nil, dasherr.JsonMarshalErr("BlobData", err)
-	}
-	return rtn, nil
-}
-
 // SendResponseProtoRpc is for internal use by the Dashborg AppClient, not to be called by the end user.
 func (pc *DashCloudClient) sendResponseProtoRpc(m *dashproto.SendResponseMessage) (int, error) {
 	if !pc.IsConnected() {
@@ -1358,23 +1008,6 @@ func (pc *DashCloudClient) log(fmtStr string, args ...interface{}) {
 		pc.Config.Logger.Printf(fmtStr, args...)
 	} else {
 		log.Printf(fmtStr, args...)
-	}
-}
-
-func (pc *DashCloudClient) drainBlobStream(bclient dashproto.DashborgService_SetBlobClient) {
-	bclient.CloseSend()
-	for {
-		_, err := bclient.Recv()
-		if err == nil {
-			continue
-		}
-		if err == io.EOF {
-			return
-		}
-		if err != nil {
-			pc.logV("drainBlobStream error: %v\n", err)
-			return
-		}
 	}
 }
 
@@ -1422,8 +1055,8 @@ func validateFileOpts(opts *dash.FileOpts) error {
 	return nil
 }
 
-func (pc *DashCloudClient) setRawPath(fullPath string, r io.Reader, fileOpts *dash.FileOpts, rt interface{}) error {
-	err := pc.setRawPathWrap(fullPath, r, fileOpts, rt)
+func (pc *DashCloudClient) setRawPath(fullPath string, r io.Reader, fileOpts *dash.FileOpts, linkRt dash.LinkRuntime) error {
+	err := pc.setRawPathWrap(fullPath, r, fileOpts, linkRt)
 	if err != nil {
 		pc.logV("Dashborg SetPath ERROR %s => %s | %v\n", fullPath, shortFileOptsStr(fileOpts), err)
 		return err
@@ -1432,7 +1065,7 @@ func (pc *DashCloudClient) setRawPath(fullPath string, r io.Reader, fileOpts *da
 	return nil
 }
 
-func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts *dash.FileOpts, rt interface{}) error {
+func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts *dash.FileOpts, linkRt dash.LinkRuntime) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
@@ -1457,20 +1090,13 @@ func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts
 		return err
 	}
 	if fileOpts.FileType != dash.FileTypeStatic && r != nil {
-		return dasherr.ValidateErr(fmt.Errorf("SetRawPath no reader allowed except for file-type:static"))
+		return dasherr.ValidateErr(fmt.Errorf("SetRawPath no io.Reader allowed except for file-type:static"))
 	}
-	var ok bool
-	var linkRt dash.LinkRuntime
-	var appLinkRt dash.AppRuntime
-	if fileOpts.FileType == dash.FileTypeRuntimeLink {
-		if linkRt, ok = rt.(dash.LinkRuntime); !ok {
-			return dasherr.ValidateErr(fmt.Errorf("FileType is LinkRuntime, but no dash.LinkRuntime provided"))
-		}
+	if fileOpts.IsLinkType() && linkRt == nil {
+		return dasherr.ValidateErr(fmt.Errorf("FileType is %s, but no dash.LinkRuntime provided", fileOpts.FileType))
 	}
-	if fileOpts.FileType == dash.FileTypeAppRuntimeLink {
-		if appLinkRt, ok = rt.(dash.AppRuntime); !ok {
-			return dasherr.ValidateErr(fmt.Errorf("FileType is AppLinkRuntime, but no dash.AppRuntime provided"))
-		}
+	if !fileOpts.IsLinkType() && linkRt != nil {
+		return dasherr.ValidateErr(fmt.Errorf("FileType is %s, no dash.LinkRuntime allowed", fileOpts.FileType))
 	}
 	optsJson, err := dashutil.MarshalJson(fileOpts)
 	if err != nil {
@@ -1500,11 +1126,8 @@ func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts
 		return dashErr
 	}
 	if metaResp.BlobFound || !m.HasBody {
-		if fileOpts.FileType == dash.FileTypeRuntimeLink {
+		if fileOpts.IsLinkType() {
 			pc.connectLinkRuntime(fullPath, linkRt)
-		}
-		if fileOpts.FileType == dash.FileTypeAppRuntimeLink {
-			pc.connectAppRuntime(fullPath, appLinkRt)
 		}
 		return nil
 	}

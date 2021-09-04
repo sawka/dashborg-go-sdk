@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/url"
 	"os"
-	"runtime/debug"
 	"sync"
 	"time"
 
@@ -37,6 +35,18 @@ type RequestInfo struct {
 	FeClientId  string // unique id for client
 }
 
+func (info RequestInfo) FullPath() string {
+	pathNs := ""
+	if info.PathNs != "" {
+		pathNs = "/@" + info.PathNs
+	}
+	pathFrag := ""
+	if info.PathFrag != "" {
+		pathFrag = ":" + info.PathFrag
+	}
+	return fmt.Sprintf("%s%s%s", pathNs, info.Path, pathFrag)
+}
+
 type RawRequestData struct {
 	DataJson     string
 	AppStateJson string
@@ -56,7 +66,6 @@ type AppRequest struct {
 	ctx       context.Context // gRPC context / streaming context
 	info      RequestInfo
 	rawData   RawRequestData
-	appClient *appClient
 	api       InternalApi
 	appState  interface{}           // json-unmarshaled app state for this request
 	authData  *AuthAtom             // authentication tokens associated with this request
@@ -130,55 +139,6 @@ func (req *AppRequest) clearActions() []*dashproto.RRAction {
 	rtn := req.rrActions
 	req.rrActions = nil
 	return rtn
-}
-
-// StartStream creates a new streaming request that can send data to the original request's client.
-// streamId is used to control whether a new stream will be created or if the client will attach to
-// an existing stream.  The streamFn gets passed a context that is used for cancelation.
-// Note that StartStream will flush any pending actions to the server.
-// If the stream already exists, the existing StreamOpts will not change (keeps the old NoServerCancel setting).
-// streamFn may be nil (useful if you are intending to attach to an existing stream created with StartBareStream).
-func (req *AppRequest) StartStream(streamOpts StreamOpts, streamFn func(req *AppRequest)) error {
-	if req.isDone {
-		return fmt.Errorf("Cannot call StartStream(), Request is already done")
-	}
-	if req.isStream() {
-		return fmt.Errorf("Cannot call StartStream(), Request is already streaming")
-	}
-	if !dashutil.IsUUIDValid(req.info.FeClientId) {
-		return fmt.Errorf("No FeClientId, client does not support streaming")
-	}
-	streamReq, streamReqId, err := req.appClient.StartStream(req.info.AppName, streamOpts, req.info.FeClientId)
-	if err != nil {
-		return err
-	}
-	data := map[string]interface{}{
-		"reqid":       streamReqId,
-		"controlpath": streamOpts.ControlPath,
-	}
-	jsonData, _ := dashutil.MarshalJson(data)
-	rrAction := &dashproto.RRAction{
-		Ts:         dashutil.Ts(),
-		ActionType: "streamopen",
-		JsonData:   jsonData,
-	}
-	req.appendRR(rrAction)
-	req.Flush() // TODO flush error
-	if streamReq != nil {
-		go func() {
-			defer func() {
-				if panicErr := recover(); panicErr != nil {
-					log.Printf("PANIC streamFn %v\n", panicErr)
-					log.Printf("%s\n", string(debug.Stack()))
-				}
-				streamReq.Done()
-			}()
-			if streamFn != nil {
-				streamFn(streamReq)
-			}
-		}()
-	}
-	return nil
 }
 
 // SetBlobData sends blob data to the server.
@@ -309,38 +269,6 @@ func (req *AppRequest) InvalidateData(pathRegexp string) error {
 	}
 	req.appendRR(rrAction)
 	return nil
-}
-
-func (req *AppRequest) Flush() error {
-	if req.isDone {
-		return fmt.Errorf("Cannot Flush(), Request is already done")
-	}
-	numStreamClients, err := req.appClient.SendRequestResponse(req, false)
-	if req.isStream() && err != nil {
-		req.appClient.logV("Dashborg Flush() stream error %v\n", err)
-		req.appClient.stream_serverStop(req.info.ReqId)
-	} else if req.isStream() && numStreamClients == 0 {
-		req.appClient.stream_handleZeroClients(req.info.ReqId)
-	}
-	return err
-}
-
-// Done() ends a request and sends the results back to the client.  It is automatically called after
-// a handler is run.  Only needs to be called explicitly if you'd like to return
-// your result earlier, or for bare stream requests.
-func (req *AppRequest) Done() error {
-	if req.isDone {
-		return nil
-	}
-	req.isDone = true
-	_, err := req.appClient.SendRequestResponse(req, true)
-	if err != nil {
-		req.appClient.logV("Dashborg ERROR sending handler response: %v\n", err)
-	}
-	if req.isStream() {
-		req.appClient.stream_clientStop(req.info.ReqId)
-	}
-	return err
 }
 
 func (req *AppRequest) setAuthData(aa *AuthAtom) {

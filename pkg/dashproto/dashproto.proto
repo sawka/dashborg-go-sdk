@@ -50,19 +50,6 @@ message SendResponseResponse {
     int32 NumStreamClients = 2;
 }
 
-message SendResponseBlobMessage {
-    int64 Ts = 1;
-    string ReqId = 2;
-    string FeClientId = 3;
-    bool ResponseDone = 4;
-    string BlobMimeType = 5;
-    bytes BlobBytes = 6;
-}
-
-message SendResponseBlobResponse {
-    RtnStatus Status = 1;
-}
-
 message RequestMessage {
     int64 Ts = 1;
     string AccId = 2;
@@ -169,21 +156,6 @@ message WriteAppResponse {
     map<string,string> OptionWarnings = 2;
 }
 
-message SetBlobMessage {
-    int64 Ts = 1;
-    AppId AppId = 2;
-    string BlobDataJson = 3;
-    string BlobBytesKey = 4;
-    bytes BlobBytes = 5;
-    bool ClientErr = 6;
-}
-
-message SetBlobResponse {
-    RtnStatus Status = 1;
-    bool BlobFound = 2;
-    string BlobBytesKey = 3;
-}
-
 message RemoveAppMessage {
     int64 Ts = 1;
     AppId AppId = 2;
@@ -191,26 +163,6 @@ message RemoveAppMessage {
 
 message RemoveAppResponse {
     RtnStatus Status = 1;
-}
-
-message RemoveBlobMessage {
-    int64 Ts = 1;
-    AppId AppId = 2;
-    string BlobDataJson = 3;
-}
-
-message RemoveBlobResponse {
-    RtnStatus Status = 1;
-}
-
-message ListBlobsMessage {
-    int64 Ts = 1;
-    AppId AppId = 2;
-}
-
-message ListBlobsResponse {
-    RtnStatus Status = 1;
-    string BlobDataJson = 2;
 }
 
 message SetPathMessage {
@@ -263,18 +215,12 @@ service DashborgService {
     rpc ConnectClient(ConnectClientMessage) returns (ConnectClientResponse) {}
     rpc ReflectZone(ReflectZoneMessage) returns (ReflectZoneResponse) {}
     rpc CallDataHandler(CallDataHandlerMessage) returns (CallDataHandlerResponse) {}
+    rpc BackendPush(BackendPushMessage) returns (BackendPushResponse) {}
     
     rpc RequestStream(RequestStreamMessage) returns (stream RequestMessage) {} // backwards
     rpc SendResponse(SendResponseMessage) returns (SendResponseResponse) {}
-    rpc StartStream(StartStreamMessage) returns (StartStreamResponse) {}
-    rpc BackendPush(BackendPushMessage) returns (BackendPushResponse) {}
-    rpc SendResponseBlob(stream SendResponseBlobMessage) returns (SendResponseBlobResponse) {}
-
-    rpc ListBlobs(ListBlobsMessage) returns (ListBlobsResponse) {}
     rpc OpenApp(OpenAppMessage) returns (OpenAppResponse) {}
     rpc WriteApp(WriteAppMessage) returns (WriteAppResponse) {}
-    rpc SetBlob(stream SetBlobMessage) returns (stream SetBlobResponse) {}
-    rpc RemoveBlob(RemoveBlobMessage) returns (RemoveBlobResponse) {}
     rpc RemoveApp(RemoveAppMessage) returns (RemoveAppResponse) {}
 
     rpc SetPath(stream SetPathMessage) returns (stream SetPathResponse) {}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/sawka/dashborg-go-sdk/pkg/dasherr"
+	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 )
 
 const (
@@ -57,6 +58,10 @@ type FileOpts struct {
 	Hidden       bool        `json:"hidden,omitempty"`
 }
 
+func (opts *FileOpts) IsLinkType() bool {
+	return opts.FileType == FileTypeRuntimeLink || opts.FileType == FileTypeAppRuntimeLink
+}
+
 type AppOpts struct {
 	AppTitle    string  `json:"apptitle"`
 	AppVisType  string  `json:"appvistype"`
@@ -81,16 +86,21 @@ type DashFS interface {
 	SetJsonPath(path string, data interface{}, fileOpts *FileOpts) error
 	SetPathFromFile(path string, fileName string, fileOpts *FileOpts) error
 	WatchFile(path string, fileName string, fileOpts *FileOpts, watchOpts *WatchOpts) error
-
-	// LinkPath(path string, fn interface{}, createOpts *FileOpts) error
 	LinkRuntime(path string, runtime LinkRuntime, fileOpts *FileOpts) error
 	RemovePath(path string) error
 	FileInfo(path string) (*FileInfo, error)
 	DirInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error)
-
 	// TxStart() (DashFS, error)
 	// TxCommit() error
 	// TxRollback() error
+}
+
+// internal callbacks into DashCloud package.  Not for use by end-user, API subject to change.
+type InternalApi interface {
+	SendResponseProtoRpc(m *dashproto.SendResponseMessage) (int, error)
+	SetRawPath(path string, r io.Reader, fileOpts *FileOpts, rt LinkRuntime) error
+	RemovePath(path string) error
+	FileInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error)
 }
 
 type AppFS interface {
@@ -280,7 +290,7 @@ func (fs *fsImpl) LinkRuntime(path string, rt LinkRuntime, fileOpts *FileOpts) e
 	return fs.api.SetRawPath(path, nil, fileOpts, rt)
 }
 
-func (fs *fsImpl) linkAppRuntime(path string, apprt AppRuntime, fileOpts *FileOpts) error {
+func (fs *fsImpl) linkAppRuntime(path string, apprt LinkRuntime, fileOpts *FileOpts) error {
 	if fileOpts == nil {
 		fileOpts = &FileOpts{}
 	}

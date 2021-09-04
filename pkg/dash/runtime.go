@@ -23,7 +23,7 @@ type handlerType struct {
 type linkHandlerFn func(req Request) (interface{}, error)
 
 type LinkRuntime interface {
-	RunHandler(req Request) (interface{}, error)
+	RunHandler(req *AppRequest) (interface{}, error)
 }
 
 type LinkRuntimeImpl struct {
@@ -31,13 +31,7 @@ type LinkRuntimeImpl struct {
 	handlers map[string]linkHandlerFn
 }
 
-type AppRuntime interface {
-	AppName() string
-	RunHandler(req *AppRequest) (interface{}, error)
-}
-
 type AppRuntimeImpl struct {
-	appName      string
 	lock         *sync.Mutex
 	appStateType reflect.Type
 	handlers     map[string]handlerType
@@ -49,8 +43,7 @@ type AppRuntimeImpl struct {
 // without calling OpenApp.
 func MakeAppRuntime(appName string) *AppRuntimeImpl {
 	rtn := &AppRuntimeImpl{
-		appName: appName,
-		lock:    &sync.Mutex{},
+		lock: &sync.Mutex{},
 	}
 	rtn.handlers = make(map[string]handlerType)
 	return rtn
@@ -72,7 +65,7 @@ func (apprt *AppRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) {
 	mws := apprt.middlewares
 	apprt.lock.Unlock()
 	if !ok {
-		return nil, fmt.Errorf("No handler found for /@app/%s/runtime:%s", apprt.appName, req.info.PathFrag)
+		return nil, fmt.Errorf("No handler found for %s", req.RequestInfo().FullPath())
 	}
 	rtn, err := mwHelper(req, hval, mws, 0)
 	if err != nil {
@@ -96,10 +89,6 @@ func mwHelper(outerReq *AppRequest, hval handlerType, mws []middlewareType, mwPo
 
 func (apprt *AppRuntimeImpl) SetAppStateType(appStateType reflect.Type) {
 	apprt.appStateType = appStateType
-}
-
-func (apprt *AppRuntimeImpl) AppName() string {
-	return apprt.appName
 }
 
 func (apprt *AppRuntimeImpl) AddRawMiddleware(name string, mwFunc MiddlewareFuncType, priority float64) {
@@ -152,6 +141,18 @@ func MakeRuntime() *LinkRuntimeImpl {
 		handlers: make(map[string]linkHandlerFn),
 	}
 	return rtn
+}
+
+func MakeSingleFnRuntime(handlerFn interface{}) (*LinkRuntimeImpl, error) {
+	rtn := &LinkRuntimeImpl{
+		lock:     &sync.Mutex{},
+		handlers: make(map[string]linkHandlerFn),
+	}
+	err := rtn.Handler(pathFragDefault, handlerFn)
+	if err != nil {
+		return nil, err
+	}
+	return rtn, nil
 }
 
 func (linkrt *LinkRuntimeImpl) setHandler(name string, fn linkHandlerFn) {
