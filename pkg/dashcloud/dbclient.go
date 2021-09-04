@@ -265,6 +265,7 @@ func (pc *DashCloudClient) sendConnectClientMessage(isReconnect bool) error {
 			pc.log("DashborgCloudClient ReConnected, AccId:%s Zone:%s ConnId:%s\n", pc.Config.AccId, pc.Config.ZoneName, resp.ConnId)
 		}
 		pc.reconnectApps()
+		pc.reconnectLinks()
 	}
 	return nil
 }
@@ -279,6 +280,19 @@ func (pc *DashCloudClient) getAppNames() []string {
 	return appNames
 }
 
+func (pc *DashCloudClient) getLinkPaths() []string {
+	pc.Lock.Lock()
+	defer pc.Lock.Unlock()
+	var paths []string
+	for path, _ := range pc.LinkRtMap {
+		paths = append(paths, path)
+	}
+	for path, _ := range pc.AppRtMap {
+		paths = append(paths, path)
+	}
+	return paths
+}
+
 func (pc *DashCloudClient) reconnectApps() {
 	appNames := pc.getAppNames()
 	for _, appName := range appNames {
@@ -287,6 +301,50 @@ func (pc *DashCloudClient) reconnectApps() {
 			pc.log("DashborgCloudClient %v\n", err)
 		} else {
 			pc.logV("DashborgCloudClient reconnected app:%s\n", appName)
+		}
+	}
+}
+
+func (pc *DashCloudClient) reconnectLink(path string) error {
+	if !pc.IsConnected() {
+		return NotConnectedErr
+	}
+	pathId, err := parsePathToPathId(path)
+	if err != nil {
+		return err
+	}
+	m := &dashproto.ConnectLinkMessage{
+		Ts:   dashutil.Ts(),
+		Path: pathId,
+	}
+	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
+	defer cancelFn()
+	resp, respErr := pc.DBService.ConnectLink(ctx, m)
+	dashErr := pc.handleStatusErrors(fmt.Sprintf("ConnectLink(%s)", path), resp, respErr, false)
+	if dashErr != nil {
+		return dashErr
+	}
+	return nil
+}
+
+func parsePathToPathId(path string) (*dashproto.PathId, error) {
+	var err error
+	rtn := &dashproto.PathId{}
+	rtn.PathNs, rtn.Path, rtn.PathFrag, err = dashutil.ParseFullPath(path)
+	if err != nil {
+		return nil, dasherr.ValidateErr(err)
+	}
+	return rtn, nil
+}
+
+func (pc *DashCloudClient) reconnectLinks() {
+	linkPaths := pc.getLinkPaths()
+	for _, linkPath := range linkPaths {
+		err := pc.reconnectLink(linkPath)
+		if err != nil {
+			pc.log("DashborgCloudClient %v\n", err)
+		} else {
+			pc.logV("DashborgCloudClient reconnected link:%s\n", linkPath)
 		}
 	}
 }
@@ -436,7 +494,7 @@ func (pc *DashCloudClient) RemoveApp(appName string) error {
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
 	resp, respErr := pc.DBService.RemoveApp(ctx, m)
-	dashErr := pc.handleStatusErrors("RemoveApp", resp, respErr, true)
+	dashErr := pc.handleStatusErrors(fmt.Sprintf("RemoveApp(%s)", appName), resp, respErr, true)
 	if dashErr != nil {
 		return dashErr
 	}
@@ -448,14 +506,18 @@ func (pc *DashCloudClient) removePath(path string) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
+	pathId, err := parsePathToPathId(path)
+	if err != nil {
+		return err
+	}
 	m := &dashproto.RemovePathMessage{
 		Ts:   dashutil.Ts(),
-		Path: &dashproto.PathId{Path: path},
+		Path: pathId,
 	}
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
 	resp, respErr := pc.DBService.RemovePath(ctx, m)
-	dashErr := pc.handleStatusErrors("RemovePath", resp, respErr, true)
+	dashErr := pc.handleStatusErrors(fmt.Sprintf("RemovePath(%s)", path), resp, respErr, true)
 	if dashErr != nil {
 		return dashErr
 	}
@@ -467,9 +529,13 @@ func (pc *DashCloudClient) fileInfo(path string, dirOpts *dash.DirOpts) ([]*dash
 	if !pc.IsConnected() {
 		return nil, NotConnectedErr
 	}
+	pathId, err := parsePathToPathId(path)
+	if err != nil {
+		return nil, err
+	}
 	m := &dashproto.FileInfoMessage{
 		Ts:   dashutil.Ts(),
-		Path: &dashproto.PathId{Path: path},
+		Path: pathId,
 	}
 	if dirOpts != nil {
 		jsonStr, err := dashutil.MarshalJson(dirOpts)
@@ -481,7 +547,7 @@ func (pc *DashCloudClient) fileInfo(path string, dirOpts *dash.DirOpts) ([]*dash
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
 	resp, respErr := pc.DBService.FileInfo(ctx, m)
-	dashErr := pc.handleStatusErrors("FileInfo", resp, respErr, false)
+	dashErr := pc.handleStatusErrors(fmt.Sprintf("FileInfo(%s)", path), resp, respErr, false)
 	if dashErr != nil {
 		return nil, dashErr
 	}
@@ -489,7 +555,7 @@ func (pc *DashCloudClient) fileInfo(path string, dirOpts *dash.DirOpts) ([]*dash
 		return nil, nil
 	}
 	var rtn []*dash.FileInfo
-	err := json.Unmarshal([]byte(resp.FileInfoJson), &rtn)
+	err = json.Unmarshal([]byte(resp.FileInfoJson), &rtn)
 	if err != nil {
 		return nil, dasherr.JsonUnmarshalErr("FileInfoJson", err)
 	}
@@ -575,7 +641,6 @@ func (pc *DashCloudClient) sendErrResponse(reqMsg *dashproto.RequestMessage, err
 		ResponseDone: true,
 		Err:          errMsg,
 	}
-	fmt.Printf("senderrresponse [%s], appid:[%#v]\n", errMsg, reqMsg.AppId)
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
 	resp, respErr := pc.DBService.SendResponse(ctx, m)
@@ -804,10 +869,14 @@ func (pc *DashCloudClient) backendPush(appName string, path string, data interfa
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
+	pathId, err := parsePathToPathId(path)
+	if err != nil {
+		return err
+	}
 	m := &dashproto.BackendPushMessage{
 		Ts:    dashutil.Ts(),
 		AppId: &dashproto.AppId{AppName: appName},
-		Path:  &dashproto.PathId{Path: path},
+		Path:  pathId,
 	}
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
@@ -847,16 +916,20 @@ func (pc *DashCloudClient) callDataHandler(appName string, path string, data int
 	if err != nil {
 		return nil, err
 	}
+	pathId, err := parsePathToPathId(path)
+	if err != nil {
+		return nil, err
+	}
 	m := &dashproto.CallDataHandlerMessage{
 		Ts:       dashutil.Ts(),
 		AppId:    &dashproto.AppId{AppName: appName},
-		Path:     &dashproto.PathId{Path: path},
+		Path:     pathId,
 		JsonData: jsonData,
 	}
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
 	resp, respErr := pc.DBService.CallDataHandler(ctx, m)
-	dashErr := pc.handleStatusErrors("CallDataHandler", resp, respErr, false)
+	dashErr := pc.handleStatusErrors(fmt.Sprintf("CallDataHandler(%s)", path), resp, respErr, false)
 	if dashErr != nil {
 		return nil, dashErr
 	}
@@ -910,7 +983,7 @@ func (pc *DashCloudClient) OpenApp(appName string) (*dash.App, error) {
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
 	resp, respErr := pc.DBService.OpenApp(ctx, m)
-	dashErr := pc.handleStatusErrors("OpenApp", resp, respErr, true)
+	dashErr := pc.handleStatusErrors(fmt.Sprintf("OpenApp(%s)", appName), resp, respErr, true)
 	if dashErr != nil {
 		return nil, dashErr
 	}
@@ -1369,11 +1442,9 @@ func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts
 	if !dashutil.IsFullPathValid(fullPath) {
 		return dasherr.ValidateErr(fmt.Errorf("Invalid Path '%s'", fullPath))
 	}
-	var err error
-	pathId := &dashproto.PathId{}
-	pathId.PathNs, pathId.Path, pathId.PathFrag, err = dashutil.ParseFullPath(fullPath)
+	pathId, err := parsePathToPathId(fullPath)
 	if err != nil {
-		return dasherr.ValidateErr(fmt.Errorf("Invalid Path '%s'", fullPath))
+		return err
 	}
 	if pathId.PathFrag != "" {
 		return dasherr.ValidateErr(fmt.Errorf("Invalid Path '%s', SetPath does not allow fragment", fullPath))
@@ -1531,7 +1602,6 @@ func pathStr(path *dashproto.PathId) string {
 }
 
 func rtnValToRRA(rtnVal interface{}) ([]*dashproto.RRAction, error) {
-	fmt.Printf("rtnValToRRA %T\n", rtnVal)
 	if blobRtn, ok := rtnVal.(dash.BlobReturn); ok {
 		return blobToRRA(blobRtn.MimeType, blobRtn.Reader)
 	}

@@ -250,6 +250,15 @@ message FileInfoResponse {
     string FileInfoJson = 2;
 }
 
+message ConnectLinkMessage {
+    int64 Ts = 1;
+    PathId Path = 2;
+}
+
+message ConnectLinkResponse {
+    RtnStatus Status = 1;
+}
+
 service DashborgService {
     rpc ConnectClient(ConnectClientMessage) returns (ConnectClientResponse) {}
     rpc ReflectZone(ReflectZoneMessage) returns (ReflectZoneResponse) {}
@@ -271,5 +280,6 @@ service DashborgService {
     rpc SetPath(stream SetPathMessage) returns (stream SetPathResponse) {}
     rpc RemovePath(RemovePathMessage) returns (RemovePathResponse) {}
     rpc FileInfo(FileInfoMessage) returns (FileInfoResponse) {}
+    rpc ConnectLink(ConnectLinkMessage) returns (ConnectLinkResponse) {}
 }
 

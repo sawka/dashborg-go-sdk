@@ -4,6 +4,7 @@ const ClientVersion = "go-0.6.2"
 
 const (
 	MimeTypeDashborgHtml = "text/x-dashborg-html"
+	MimeTypeHtml         = "text/html"
 	MimeTypeJson         = "application/json"
 )
 
