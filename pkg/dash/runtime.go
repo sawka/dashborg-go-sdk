@@ -31,6 +31,7 @@ type LinkRuntime interface {
 type LinkRuntimeImpl struct {
 	lock     *sync.Mutex
 	handlers map[string]linkHandlerType
+	errs     []error
 }
 
 type AppRuntimeImpl struct {
@@ -38,6 +39,11 @@ type AppRuntimeImpl struct {
 	appStateType reflect.Type
 	handlers     map[string]appHandlerType
 	middlewares  []middlewareType
+	errs         []error
+}
+
+type HasErr interface {
+	Err() error
 }
 
 // Apps that are created using dashcloud.OpenApp() have their own built in runtime.
@@ -129,12 +135,12 @@ func (apprt *AppRuntimeImpl) SetRawHandler(handlerName string, handlerFn func(re
 	return nil
 }
 
-func (apprt *AppRuntimeImpl) SetInitHandler(handlerFn interface{}) error {
-	return apprt.Handler(pathFragInit, handlerFn)
+func (apprt *AppRuntimeImpl) SetInitHandler(handlerFn interface{}) {
+	apprt.Handler(pathFragInit, handlerFn)
 }
 
-func (apprt *AppRuntimeImpl) SetHtmlHandler(handlerFn interface{}) error {
-	return apprt.Handler(pathFragHtml, handlerFn)
+func (apprt *AppRuntimeImpl) SetHtmlHandler(handlerFn interface{}) {
+	apprt.Handler(pathFragHtml, handlerFn)
 }
 
 func MakeRuntime() *LinkRuntimeImpl {
@@ -145,16 +151,13 @@ func MakeRuntime() *LinkRuntimeImpl {
 	return rtn
 }
 
-func MakeSingleFnRuntime(handlerFn interface{}) (*LinkRuntimeImpl, error) {
+func MakeSingleFnRuntime(handlerFn interface{}) *LinkRuntimeImpl {
 	rtn := &LinkRuntimeImpl{
 		lock:     &sync.Mutex{},
 		handlers: make(map[string]linkHandlerType),
 	}
-	err := rtn.Handler(pathFragDefault, handlerFn)
-	if err != nil {
-		return nil, err
-	}
-	return rtn, nil
+	rtn.Handler(pathFragDefault, handlerFn)
+	return rtn
 }
 
 func (linkrt *LinkRuntimeImpl) setHandler(name string, fn linkHandlerType) {
@@ -187,4 +190,20 @@ func (linkrt *LinkRuntimeImpl) SetRawHandler(handlerName string, handlerFn func(
 	}
 	linkrt.setHandler(handlerName, linkHandlerType{HandlerFn: handlerFn})
 	return nil
+}
+
+func (apprt *AppRuntimeImpl) addError(err error) {
+	apprt.errs = append(apprt.errs, err)
+}
+
+func (apprt *AppRuntimeImpl) Err() error {
+	return dashutil.ConvertErrArray(apprt.errs)
+}
+
+func (linkrt *LinkRuntimeImpl) addError(err error) {
+	linkrt.errs = append(linkrt.errs, err)
+}
+
+func (linkrt *LinkRuntimeImpl) Err() error {
+	return dashutil.ConvertErrArray(linkrt.errs)
 }

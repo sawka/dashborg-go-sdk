@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -14,7 +13,6 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/sawka/dashborg-go-sdk/pkg/dasherr"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
-	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
 const (
@@ -83,17 +81,16 @@ type WatchOpts struct {
 }
 
 type DashFS interface {
-	SetRawPath(path string, r io.Reader, fileOpts *FileOpts) error
-
+	SetRawPath(path string, r io.Reader, fileOpts *FileOpts, runtime LinkRuntime) error
 	SetStaticPath(path string, r io.ReadSeeker, fileOpts *FileOpts) error
 	SetJsonPath(path string, data interface{}, fileOpts *FileOpts) error
 	SetPathFromFile(path string, fileName string, fileOpts *FileOpts) error
 	WatchFile(path string, fileName string, fileOpts *FileOpts, watchOpts *WatchOpts) error
 	LinkRuntime(path string, runtime LinkRuntime, fileOpts *FileOpts) error
+	LinkAppRuntime(path string, apprt LinkRuntime, fileOpts *FileOpts) error
 	RemovePath(path string) error
 	FileInfo(path string) (*FileInfo, error)
 	DirInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error)
-	WriteApp(app *App) error
 }
 
 // internal callbacks into DashCloud package.  Not for use by end-user, API subject to change.
@@ -110,8 +107,8 @@ type fsImpl struct {
 	api InternalApi
 }
 
-func (fs *fsImpl) SetRawPath(path string, r io.Reader, fileOpts *FileOpts) error {
-	return fs.api.SetRawPath(path, r, fileOpts, nil)
+func (fs *fsImpl) SetRawPath(path string, r io.Reader, fileOpts *FileOpts, runtime LinkRuntime) error {
+	return fs.api.SetRawPath(path, r, fileOpts, runtime)
 }
 
 func (fs *fsImpl) SetJsonPath(path string, data interface{}, fileOpts *FileOpts) error {
@@ -281,6 +278,12 @@ func (fs *fsImpl) DirInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error) {
 }
 
 func (fs *fsImpl) LinkRuntime(path string, rt LinkRuntime, fileOpts *FileOpts) error {
+	if hasErr, ok := rt.(HasErr); ok {
+		err := hasErr.Err()
+		if err != nil {
+			return err
+		}
+	}
 	if fileOpts == nil {
 		fileOpts = &FileOpts{}
 	}
@@ -288,58 +291,18 @@ func (fs *fsImpl) LinkRuntime(path string, rt LinkRuntime, fileOpts *FileOpts) e
 	return fs.api.SetRawPath(path, nil, fileOpts, rt)
 }
 
-func (fs *fsImpl) linkAppRuntime(path string, apprt LinkRuntime, fileOpts *FileOpts) error {
+func (fs *fsImpl) LinkAppRuntime(path string, apprt LinkRuntime, fileOpts *FileOpts) error {
+	if hasErr, ok := apprt.(HasErr); ok {
+		err := hasErr.Err()
+		if err != nil {
+			return err
+		}
+	}
 	if fileOpts == nil {
 		fileOpts = &FileOpts{}
 	}
 	fileOpts.FileType = FileTypeAppRuntimeLink
 	return fs.api.SetRawPath(path, nil, fileOpts, apprt)
-}
-
-func (fs *fsImpl) WriteApp(app *App) error {
-	_, _, _, err := dashutil.ParseFullPath(app.appPath, false)
-	if err != nil {
-		return dasherr.ValidateErr(fmt.Errorf("Invalid App Path: '%s': %v", app.appPath, err))
-	}
-	err = app.validateHtmlOpts()
-	if err != nil {
-		return dasherr.ValidateErr(err)
-	}
-	roles := app.appConfig.AllowedRoles
-	err = fs.SetJsonPath(app.appPath, app.appConfig, &FileOpts{MimeType: MimeTypeDashborgApp, AllowedRoles: roles})
-	if err != nil {
-		return err
-	}
-	htmlPath := app.getHtmlPath()
-	if app.htmlStr != "" {
-		htmlFileOpts := &FileOpts{MimeType: MimeTypeHtml, AllowedRoles: roles}
-		err = fs.SetStaticPath(htmlPath, bytes.NewReader([]byte(app.htmlStr)), htmlFileOpts)
-		if err != nil {
-			return err
-		}
-	} else if app.htmlFileName != "" {
-		if app.htmlFileWatchOpts == nil {
-			err = fs.SetPathFromFile(htmlPath, app.htmlFileName, &FileOpts{MimeType: MimeTypeHtml, AllowedRoles: roles})
-		} else {
-			err = fs.WatchFile(htmlPath, app.htmlFileName, &FileOpts{MimeType: MimeTypeHtml, AllowedRoles: roles}, app.htmlFileWatchOpts)
-		}
-		if err != nil {
-			return err
-		}
-	}
-	runtimePath := app.getRuntimePath()
-	if app.hasDefaultRuntimePath() {
-		err = fs.linkAppRuntime(runtimePath, app.appRuntime, &FileOpts{AllowedRoles: roles})
-		if err != nil {
-			return err
-		}
-	} else {
-		err = fs.linkAppRuntime(runtimePath, nil, &FileOpts{AllowedRoles: roles})
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (fs *fsImpl) SetStaticPath(path string, r io.ReadSeeker, fileOpts *FileOpts) error {

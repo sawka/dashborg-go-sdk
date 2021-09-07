@@ -18,18 +18,6 @@ func MakeClient(config *Config) (*DashCloudClient, error) {
 	return container, nil
 }
 
-type ReflectZoneType struct {
-	AccId    string                     `json:"accid"`
-	ZoneName string                     `json:"zonename"`
-	Procs    map[string]ReflectProcType `json:"procs"`
-	Apps     map[string]ReflectAppType  `json:"apps"`
-}
-
-type ReflectAppType struct {
-	AppName    string   `json:"appname"`
-	ProcRunIds []string `json:"procrunids"`
-}
-
 type ReflectProcType struct {
 	StartTs   int64             `json:"startts"`
 	ProcName  string            `json:"procname"`
@@ -38,12 +26,16 @@ type ReflectProcType struct {
 }
 
 type JWTOpts struct {
+	NoJwt    bool
 	ValidFor time.Duration
 	UserId   string
 	Role     string
 }
 
 func (jwtOpts *JWTOpts) ValidateAndSetDefaults() error {
+	if jwtOpts.NoJwt {
+		return nil
+	}
 	if jwtOpts.ValidFor < 0 {
 		return dasherr.ValidateErr(fmt.Errorf("Invalid ValidTime (negative)"))
 	}

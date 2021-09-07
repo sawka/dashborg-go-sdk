@@ -10,6 +10,7 @@ const (
 	ZoneAccessMax    = 50
 	ControlNameMax   = 30
 	AppNameMax       = 20
+	AppTitleMax      = 80
 	ProcNameMax      = 20
 	FileNameMax      = 80
 	EmailMax         = 80
@@ -55,7 +56,7 @@ var (
 	pathFragRe       = regexp.MustCompile("^@?[a-zA-Z_][a-zA-Z0-9_-]*$")
 	fullPathRe       = regexp.MustCompile("^(?:/@([a-zA-Z_][a-zA-Z0-9_]*))?(/[a-zA-Z0-9._/-]*)?(?:[:](@?[a-zA-Z][a-zA-Z0-9_-]*))?$")
 	tagRe            = regexp.MustCompile("^[a-zA-Z0-9._:/-]+$")
-	roleRe           = regexp.MustCompile("^(\\*|[a-z][a-z0-9-]+)$")
+	roleRe           = regexp.MustCompile("^(\\*|-|[a-z][a-z0-9-]+)$")
 	extBlobKeyRe     = regexp.MustCompile("^(?:([a-z][a-z0-9]*):)?([0-9a-zA-Z/_.-]+)$")
 	blobKeyRe        = regexp.MustCompile("^[0-9a-zA-Z/_.-]+$")
 	blobNsRe         = regexp.MustCompile("^[a-z][a-z0-9]*$")

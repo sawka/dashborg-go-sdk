@@ -9,8 +9,11 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 	"unicode"
+
+	"github.com/sawka/dashborg-go-sdk/pkg/dasherr"
 )
 
 var TimeoutErr = errors.New("TimeoutErr")
@@ -239,4 +242,44 @@ func ParseFullPath(fullPath string, allowFrag bool) (string, string, string, err
 		return "", "", "", fmt.Errorf("Path does not allow path-fragment")
 	}
 	return match[1], path, match[3], nil
+}
+
+type MultiErr struct {
+	Errs []error
+}
+
+func (merr MultiErr) Error() string {
+	errStrs := make([]string, len(merr.Errs))
+	for idx, err := range merr.Errs {
+		errStrs[idx] = err.Error()
+	}
+	return fmt.Sprintf("Multiple Errors (%d): [%s]", len(merr.Errs), strings.Join(errStrs, " | "))
+}
+
+func ConvertErrArray(errs []error) error {
+	if len(errs) == 0 {
+		return nil
+	}
+	if len(errs) == 1 {
+		return errs[0]
+	}
+	return MultiErr{Errs: errs}
+}
+
+// returns (appName, appPath, error)
+func ResolveAppNameOrPath(appNameOrPath string) (string, string, error) {
+	if appNameOrPath == "" {
+		return "", "", dasherr.ValidateErr(fmt.Errorf("AppName cannot be empty"))
+	}
+	if appNameOrPath[0] == '/' {
+		_, _, _, parseErr := ParseFullPath(appNameOrPath, false)
+		if parseErr != nil {
+			return "", "", dasherr.ValidateErr(fmt.Errorf("Bad Path '%s': %w", appNameOrPath, parseErr))
+		}
+		return appNameOrPath, appNameOrPath, nil
+	}
+	if !IsAppNameValid(appNameOrPath) {
+		return "", "", dasherr.ValidateErr(fmt.Errorf("Invalid AppName '%s'", appNameOrPath))
+	}
+	return appNameOrPath, fmt.Sprintf("/@app/%s", appNameOrPath), nil
 }

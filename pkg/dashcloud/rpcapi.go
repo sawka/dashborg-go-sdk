@@ -18,16 +18,12 @@ func (rpc *InternalApi) SendResponseProtoRpc(m *dashproto.SendResponseMessage) (
 	return rpc.client.sendResponseProtoRpc(m)
 }
 
-func (rpc *InternalApi) CallDataHandler(appName string, path string, data interface{}) (interface{}, error) {
-	return rpc.client.callDataHandler(appName, path, data)
-}
-
 func (rpc *InternalApi) BackendPush(appName string, path string, data interface{}) error {
 	return rpc.client.backendPush(appName, path, data)
 }
 
 func (rpc *InternalApi) SetRawPath(path string, r io.Reader, fileOpts *dash.FileOpts, linkRt dash.LinkRuntime) error {
-	return rpc.client.setRawPath(path, r, fileOpts, linkRt)
+	return rpc.client.SetRawPath(path, r, fileOpts, linkRt)
 }
 
 func (rpc *InternalApi) RemovePath(path string) error {
@@ -36,4 +32,8 @@ func (rpc *InternalApi) RemovePath(path string) error {
 
 func (rpc *InternalApi) FileInfo(path string, dirOpts *dash.DirOpts) ([]*dash.FileInfo, error) {
 	return rpc.client.fileInfo(path, dirOpts)
+}
+
+func (rpc *InternalApi) MakeUrl(appNameOrPath string, showJwt bool) (string, error) {
+	return rpc.client.MakeUrl(appNameOrPath, showJwt)
 }

@@ -2,8 +2,11 @@ package dash
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
+	"github.com/sawka/dashborg-go-sdk/pkg/dasherr"
+	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
 var notAuthorizedErr = fmt.Errorf("Not Authorized")
@@ -48,6 +51,12 @@ type AppConfig struct {
 	AppVersion string `json:"appversion,omitempty"` // uuid
 	UpdatedTs  int64  `json:"updatedts"`            // set by container
 	ProcRunId  string `json:"procrunid"`            // set by container
+
+	// helpers for WriteApp, if these are set, WriteApp will call the
+	// approritate SetPath functions to write the HTML to HtmlPath
+	HtmlStr           string     `json:"-"`
+	HtmlFileName      string     `json:"-"`
+	HtmlFileWatchOpts *WatchOpts `json:"-"`
 }
 
 type AppId struct {
@@ -102,21 +111,23 @@ type App struct {
 	appPath           string
 	appConfig         AppConfig
 	appRuntime        *AppRuntimeImpl
-	api               InternalApi
 	isNewApp          bool
 	htmlStr           string
 	htmlFileName      string
 	htmlFileWatchOpts *WatchOpts
+	htmlFromRuntime   bool
+	htmlExtPath       string
+	errs              []error
 }
 
 func (app *App) Runtime() *AppRuntimeImpl {
 	return app.appRuntime
 }
 
-func MakeApp(appName string, api InternalApi) *App {
+func MakeApp(appNameOrPath string) *App {
+	appName, appPath, appNameErr := dashutil.ResolveAppNameOrPath(appNameOrPath)
 	rtn := &App{
-		api:        api,
-		appPath:    fmt.Sprintf("/@app/%s", appName),
+		appPath:    appPath,
 		appRuntime: MakeAppRuntime(),
 		appConfig: AppConfig{
 			ClientVersion: ClientVersion,
@@ -125,6 +136,9 @@ func MakeApp(appName string, api InternalApi) *App {
 			AllowedRoles:  []string{RoleUser},
 		},
 		isNewApp: true,
+	}
+	if appNameErr != nil {
+		rtn.errs = append(rtn.errs, dasherr.ValidateErr(fmt.Errorf("MakeApp: %w", appNameErr)))
 	}
 	return rtn
 }
@@ -142,9 +156,8 @@ func (app *App) IsNew() bool {
 	return app.isNewApp
 }
 
-func MakeAppFromConfig(cfg AppConfig, api InternalApi) *App {
+func MakeAppFromConfig(cfg AppConfig) *App {
 	rtn := &App{
-		api:        api,
 		appRuntime: MakeAppRuntime(),
 		appConfig:  cfg,
 	}
@@ -152,8 +165,45 @@ func MakeAppFromConfig(cfg AppConfig, api InternalApi) *App {
 	return rtn
 }
 
-func (app *App) AppConfig() AppConfig {
-	return app.appConfig
+func (app *App) AppConfig() (AppConfig, error) {
+	if len(app.errs) > 0 {
+		return AppConfig{}, app.Err()
+	}
+	err := app.validateHtmlOpts()
+	if err != nil {
+		return AppConfig{}, err
+	}
+	app.appConfig.HtmlPath = app.getHtmlPath()
+	app.appConfig.RuntimePath = app.getRuntimePath()
+	app.appConfig.ClientVersion = ClientVersion
+	app.appConfig.HtmlStr = app.htmlStr
+	app.appConfig.HtmlFileName = app.htmlFileName
+	app.appConfig.HtmlFileWatchOpts = app.htmlFileWatchOpts
+	return app.appConfig, nil
+}
+
+func (config *AppConfig) Validate() error {
+	_, _, _, err := dashutil.ParseFullPath(config.HtmlPath, true)
+	if err != nil {
+		return dasherr.ValidateErr(err)
+	}
+	_, _, _, err = dashutil.ParseFullPath(config.RuntimePath, false)
+	if err != nil {
+		return dasherr.ValidateErr(err)
+	}
+	if !dashutil.IsClientVersionValid(config.ClientVersion) {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid ClientVersion"))
+	}
+	if !dashutil.IsRoleListValid(strings.Join(config.AllowedRoles, ",")) {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid AllowedRoles"))
+	}
+	if len(config.AppTitle) > 80 {
+		return dasherr.ValidateErr(fmt.Errorf("AppTitle too long"))
+	}
+	if len(config.AllowedRoles) == 0 {
+		return dasherr.ValidateErr(fmt.Errorf("AllowedRoles cannot be empty"))
+	}
+	return nil
 }
 
 func wrapHandler(handlerFn func(req *AppRequest) error) func(req *AppRequest) (interface{}, error) {
@@ -185,42 +235,45 @@ func (app *App) SetAppVisibility(visType string, visOrder float64) {
 	app.appConfig.AppVisOrder = visOrder
 }
 
-func (app *App) SetHtml(htmlStr string) error {
-	app.htmlStr = htmlStr
+func (app *App) clearHtml() {
+	app.htmlStr = ""
 	app.htmlFileName = ""
-	app.appConfig.HtmlPath = ""
-	return nil
-}
-
-func (app *App) SetHtmlFromFile(fileName string) error {
-	app.htmlStr = ""
-	app.htmlFileName = fileName
-	app.appConfig.HtmlPath = ""
 	app.htmlFileWatchOpts = nil
-	// maybe check file to see if it exists and is readable?
-	return nil
+	app.htmlFromRuntime = false
+	app.htmlExtPath = ""
+	app.appConfig.HtmlPath = ""
 }
 
-func (app *App) WatchHtmlFile(fileName string, watchOpts *WatchOpts) error {
-	app.htmlStr = ""
+func (app *App) SetHtml(htmlStr string) {
+	app.clearHtml()
+	app.htmlStr = htmlStr
+	return
+}
+
+func (app *App) SetHtmlFromFile(fileName string) {
+	app.clearHtml()
 	app.htmlFileName = fileName
-	app.appConfig.HtmlPath = ""
+	return
+}
+
+func (app *App) WatchHtmlFile(fileName string, watchOpts *WatchOpts) {
+	app.clearHtml()
+	app.htmlFileName = fileName
 	if watchOpts == nil {
 		watchOpts = &WatchOpts{}
 	}
 	app.htmlFileWatchOpts = watchOpts
-	// maybe check file to see if it exists and is readable?
-	return nil
+	return
 }
 
-func (app *App) SetExternalHtmlPath(path string) {
-	app.htmlStr = ""
-	app.htmlFileName = ""
-	app.appConfig.HtmlPath = path
+func (app *App) SetHtmlExternalPath(path string) {
+	app.clearHtml()
+	app.htmlExtPath = path
 }
 
 func (app *App) SetHtmlFromRuntime() {
-	app.appConfig.HtmlPath = fmt.Sprintf("/@app/%s/runtime:@html", app.AppName())
+	app.clearHtml()
+	app.htmlFromRuntime = true
 }
 
 // initType is either InitHandlerRequired, InitHandlerRequiredWhenConnected, or InitHandlerNone
@@ -233,19 +286,35 @@ func (app *App) AppName() string {
 }
 
 func (app *App) validateHtmlOpts() error {
-	if app.htmlStr != "" && app.htmlFileName != "" {
-		return fmt.Errorf("Cannot have static-html [len=%d] and an html file set [%s]", len(app.htmlStr), app.htmlFileName)
+	var htmlTypes []string
+	if app.htmlStr != "" {
+		htmlTypes = append(htmlTypes, fmt.Sprintf("static-html [len=%d]", len(app.htmlStr)))
 	}
-	if app.htmlStr != "" && app.appConfig.HtmlPath != "" {
-		return fmt.Errorf("Cannot have static-html [len=%d] and an external html path set [%s]", len(app.htmlStr), app.appConfig.HtmlPath)
+	if app.htmlFileName != "" {
+		htmlTypes = append(htmlTypes, fmt.Sprintf("html file [%s]", app.htmlFileName))
 	}
-	if app.htmlFileName != "" && app.appConfig.HtmlPath != "" {
-		return fmt.Errorf("Cannot have an html file [%s] and an external html path set [%s]", app.htmlFileName, app.appConfig.HtmlPath)
+	if app.htmlExtPath != "" {
+		htmlTypes = append(htmlTypes, fmt.Sprintf("html path [%s]", app.htmlExtPath))
+	}
+	if app.htmlFromRuntime {
+		htmlTypes = append(htmlTypes, fmt.Sprintf("html from runtime"))
+	}
+	if len(htmlTypes) >= 2 {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid App HTML configuration (multiple conflicting types): %s", strings.Join(htmlTypes, ", ")))
 	}
 	return nil
 }
 
 func (app *App) getHtmlPath() string {
+	if app.htmlStr != "" || app.htmlFileName != "" {
+		return fmt.Sprintf("%s/html", app.appPath)
+	}
+	if app.htmlFromRuntime {
+		return fmt.Sprintf("%s:@html", app.getRuntimePath())
+	}
+	if app.htmlExtPath != "" {
+		return app.htmlExtPath
+	}
 	if app.appConfig.HtmlPath != "" {
 		return app.appConfig.HtmlPath
 	}
@@ -259,6 +328,12 @@ func (app *App) getRuntimePath() string {
 	return fmt.Sprintf("%s/runtime", app.appPath)
 }
 
-func (app *App) hasDefaultRuntimePath() bool {
-	return app.getRuntimePath() == fmt.Sprintf("%s/runtime", app.appPath)
+func (app *App) Err() error {
+	var errs []error
+	errs = append(app.errs, app.appRuntime.errs...)
+	return dashutil.ConvertErrArray(errs)
+}
+
+func (acfg AppConfig) AppPath() string {
+	return fmt.Sprintf("/@app/%s", acfg.AppName)
 }

@@ -151,7 +151,7 @@ type CallHandlerOpts struct {
 	StateType reflect.Type
 }
 
-// HandlerEx registers a handler using reflection.
+// Handler registers a handler using reflection.
 // Return value must be return void, interface{}, error, or (interface{}, error).
 // First optional argument to the function is a *dash.AppRequest.
 // Second optional argument is the AppStateType (if one has been set in the app runtime).
@@ -160,7 +160,14 @@ type CallHandlerOpts struct {
 // If request Data is not an array, it will be converted to a single element array, if request Data is null
 // it will be converted to a zero-element array.  The handler will throw an error if the Data or AppState
 // values cannot be converted to their respective go types (using json.Unmarshal).
-func (apprt *AppRuntimeImpl) Handler(name string, handlerFn interface{}) error {
+func (apprt *AppRuntimeImpl) Handler(name string, handlerFn interface{}) {
+	err := apprt.handlerInternal(name, handlerFn)
+	if err != nil {
+		apprt.addError(fmt.Errorf("Error adding handler '%s': %w", name, err))
+	}
+}
+
+func (apprt *AppRuntimeImpl) handlerInternal(name string, handlerFn interface{}) error {
 	if !dashutil.IsPathFragValid(name) {
 		return fmt.Errorf("Invalid handler name")
 	}
@@ -184,7 +191,14 @@ func (apprt *AppRuntimeImpl) Handler(name string, handlerFn interface{}) error {
 	return nil
 }
 
-func (linkrt *LinkRuntimeImpl) Handler(name string, handlerFn interface{}) error {
+func (linkrt *LinkRuntimeImpl) Handler(name string, handlerFn interface{}) {
+	err := linkrt.handlerInternal(name, handlerFn)
+	if err != nil {
+		linkrt.addError(fmt.Errorf("Error adding handler '%s': %w", name, err))
+	}
+}
+
+func (linkrt *LinkRuntimeImpl) handlerInternal(name string, handlerFn interface{}) error {
 	if !dashutil.IsPathFragValid(name) {
 		return fmt.Errorf("Invalid handler name")
 	}

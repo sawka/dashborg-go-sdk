@@ -1,6 +1,7 @@
 package dashcloud
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -270,7 +271,7 @@ func (pc *DashCloudClient) getLinkPaths() []string {
 	return paths
 }
 
-func (pc *DashCloudClient) reconnectLink(path string) error {
+func (pc *DashCloudClient) connectLinkRpc(path string) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
@@ -305,7 +306,7 @@ func parsePathToPathId(path string, allowFrag bool) (*dashproto.PathId, error) {
 func (pc *DashCloudClient) reconnectLinks() {
 	linkPaths := pc.getLinkPaths()
 	for _, linkPath := range linkPaths {
-		err := pc.reconnectLink(linkPath)
+		err := pc.connectLinkRpc(linkPath)
 		if err != nil {
 			pc.log("DashborgCloudClient %v\n", err)
 		} else {
@@ -381,23 +382,6 @@ func (pc *DashCloudClient) connectGrpc() error {
 	return err
 }
 
-func (pc *DashCloudClient) showAppLink(appName string) {
-	pc.Lock.Lock()
-	accInfo := pc.AccInfo
-	pc.Lock.Unlock()
-	if pc.Config.NoShowJWT || !accInfo.AccJWTEnabled {
-		pc.log("DashborgCloudClient App Link [%s]: %s\n", appName, pc.appLink(appName))
-	} else {
-		jwtOpts := pc.Config.copyJWTOpts()
-		appLink, err := pc.MakeJWTAppLink(appName, &jwtOpts)
-		if err != nil {
-			pc.log("DashborgCloudClient App Link [%s] Error: %v\n", appName, err)
-		} else {
-			pc.log("DashborgCloudClient App Link [%s]: %s\n", appName, appLink)
-		}
-	}
-}
-
 func (pc *DashCloudClient) unlinkRuntime(path string) {
 	pc.Lock.Lock()
 	defer pc.Lock.Unlock()
@@ -410,47 +394,26 @@ func (pc *DashCloudClient) connectLinkRuntime(path string, rt dash.LinkRuntime) 
 	pc.LinkRtMap[path] = rt
 }
 
-func (pc *DashCloudClient) ConnectApp(app *dash.App) error {
+func (pc *DashCloudClient) RemoveApp(appNameOrPath string) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
-	appName := app.AppName()
-	appConfig := app.AppConfig()
-	dashErr := pc.baseWriteApp(app.AppName(), true, &appConfig, fmt.Sprintf("ConnectApp(%s)", app.AppName()))
-	if dashErr != nil && !dasherr.CanRetry(dashErr) {
-		pc.log("DashborgCloudClient %v\n", dashErr)
-		return dashErr
+	_, appPath, err := dashutil.ResolveAppNameOrPath(appNameOrPath)
+	if err != nil {
+		return err
 	}
-	appRtPath := fmt.Sprintf("/@app/%s/runtime", appName)
-	rtFileOpts := &dash.FileOpts{FileType: dash.FileTypeAppRuntimeLink, AllowedRoles: app.GetAllowedRoles()}
-	setPathErr := pc.setRawPath(appRtPath, nil, rtFileOpts, app.Runtime())
-	if setPathErr != nil {
-		return setPathErr
+	err = pc.removePath(appPath)
+	if err != nil {
+		return err
 	}
-	pc.showAppLink(appName)
-	if dashErr != nil {
-		pc.log("DashborgCloudClient %v\n", dashErr)
-		return dashErr
+	err = pc.removePath(fmt.Sprintf("%s/runtime", appPath))
+	if err != nil {
+		return err
 	}
-	return nil
-}
-
-func (pc *DashCloudClient) RemoveApp(appName string) error {
-	if !pc.IsConnected() {
-		return NotConnectedErr
+	err = pc.removePath(fmt.Sprintf("%s/html", appPath))
+	if err != nil {
+		return err
 	}
-	m := &dashproto.RemoveAppMessage{
-		Ts:    dashutil.Ts(),
-		AppId: &dashproto.AppId{AppName: appName},
-	}
-	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
-	defer cancelFn()
-	resp, respErr := pc.DBService.RemoveApp(ctx, m)
-	dashErr := pc.handleStatusErrors(fmt.Sprintf("RemoveApp(%s)", appName), resp, respErr, true)
-	if dashErr != nil {
-		return dashErr
-	}
-	pc.log("DashborgCloudClient removed app %s\n", appName)
 	return nil
 }
 
@@ -760,61 +723,6 @@ func (pc *DashCloudClient) backendPush(appName string, path string, data interfa
 	return nil
 }
 
-func (pc *DashCloudClient) reflectZone() (*ReflectZoneType, error) {
-	if !pc.IsConnected() {
-		return nil, NotConnectedErr
-	}
-	m := &dashproto.ReflectZoneMessage{Ts: dashutil.Ts()}
-	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
-	defer cancelFn()
-	resp, respErr := pc.DBService.ReflectZone(ctx, m)
-	dashErr := pc.handleStatusErrors("ReflectZone", resp, respErr, false)
-	if dashErr != nil {
-		return nil, dashErr
-	}
-	var rtn ReflectZoneType
-	err := json.Unmarshal([]byte(resp.JsonData), &rtn)
-	if err != nil {
-		return nil, dasherr.JsonUnmarshalErr("ReflectZone", err)
-	}
-	return &rtn, nil
-}
-
-func (pc *DashCloudClient) callDataHandler(appName string, path string, data interface{}) (interface{}, error) {
-	if !pc.IsConnected() {
-		return nil, NotConnectedErr
-	}
-	jsonData, err := dashutil.MarshalJson(data)
-	if err != nil {
-		return nil, err
-	}
-	pathId, err := parsePathToPathId(path, true)
-	if err != nil {
-		return nil, err
-	}
-	m := &dashproto.CallDataHandlerMessage{
-		Ts:       dashutil.Ts(),
-		AppId:    &dashproto.AppId{AppName: appName},
-		Path:     pathId,
-		JsonData: jsonData,
-	}
-	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
-	defer cancelFn()
-	resp, respErr := pc.DBService.CallDataHandler(ctx, m)
-	dashErr := pc.handleStatusErrors(fmt.Sprintf("CallDataHandler(%s)", path), resp, respErr, false)
-	if dashErr != nil {
-		return nil, dashErr
-	}
-	var rtn interface{}
-	if resp.JsonData != "" {
-		err = json.Unmarshal([]byte(resp.JsonData), &rtn)
-		if err != nil {
-			return nil, dasherr.JsonUnmarshalErr("CallDataResponse", err)
-		}
-	}
-	return rtn, nil
-}
-
 func (pc *DashCloudClient) InternalApi() *InternalApi {
 	return &InternalApi{client: pc}
 }
@@ -823,74 +731,6 @@ func (pc *DashCloudClient) InternalApi() *InternalApi {
 func (pc *DashCloudClient) WaitForShutdown() error {
 	<-pc.DoneCh
 	return pc.GetExitError()
-}
-
-func (pc *DashCloudClient) OpenApp(appName string) (*dash.App, error) {
-	if !pc.IsConnected() {
-		return nil, NotConnectedErr
-	}
-	m := &dashproto.OpenAppMessage{
-		Ts:    dashutil.Ts(),
-		AppId: &dashproto.AppId{AppName: appName},
-	}
-	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
-	defer cancelFn()
-	resp, respErr := pc.DBService.OpenApp(ctx, m)
-	dashErr := pc.handleStatusErrors(fmt.Sprintf("OpenApp(%s)", appName), resp, respErr, true)
-	if dashErr != nil {
-		return nil, dashErr
-	}
-	if resp.AppConfigJson == "" {
-		return dash.MakeApp(appName, pc.InternalApi()), nil
-	}
-	var rtn dash.AppConfig
-	err := json.Unmarshal([]byte(resp.AppConfigJson), &rtn)
-	if err != nil {
-		return nil, dasherr.JsonUnmarshalErr("AppConfig", err)
-	}
-	return dash.MakeAppFromConfig(rtn, pc.InternalApi()), nil
-}
-
-func (pc *DashCloudClient) baseWriteApp(appName string, shouldConnect bool, acfg *dash.AppConfig, writeAppFnStr string) error {
-	if !pc.IsConnected() {
-		return NotConnectedErr
-	}
-	var jsonVal string
-	if acfg != nil {
-		var err error
-		jsonVal, err = dashutil.MarshalJson(acfg)
-		if err != nil {
-			return dasherr.JsonMarshalErr("AppConfig", err)
-		}
-	}
-	m := &dashproto.WriteAppMessage{
-		Ts:            dashutil.Ts(),
-		AppId:         &dashproto.AppId{AppName: appName},
-		AppConfigJson: jsonVal,
-		ConnectApp:    shouldConnect,
-	}
-	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
-	defer cancelFn()
-	resp, respErr := pc.DBService.WriteApp(ctx, m)
-	dashErr := pc.handleStatusErrors(writeAppFnStr, resp, respErr, false)
-	if dashErr != nil {
-		return dashErr
-	}
-	for name, warning := range resp.OptionWarnings {
-		pc.log("%s WARNING [%s]: %s\n", writeAppFnStr, name, warning)
-	}
-	return nil
-}
-
-func (pc *DashCloudClient) WriteApp(app *dash.App) error {
-	acfg := app.AppConfig()
-	dashErr := pc.baseWriteApp(app.AppName(), false, &acfg, fmt.Sprintf("WriteApp(%s)", acfg.AppName))
-	pc.showAppLink(app.AppName())
-	if dashErr != nil {
-		pc.log("DashborgCloudClient %v\n", dashErr)
-		return dashErr
-	}
-	return nil
 }
 
 func (pc *DashCloudClient) setExitError(err error) {
@@ -928,13 +768,36 @@ func (pc *DashCloudClient) IsConnected() bool {
 	return true
 }
 
-func (pc *DashCloudClient) MakeJWTAppLink(appName string, jwtOptsPtr *JWTOpts) (string, error) {
-	var jwtOpts JWTOpts
-	if jwtOptsPtr != nil {
-		jwtOpts = *jwtOptsPtr
-	} else {
-		jwtOpts = pc.Config.copyJWTOpts()
+func (pc *DashCloudClient) MakeUrl(pathOrApp string, includeJwt bool) (string, error) {
+	if pathOrApp == "" {
+		return "", fmt.Errorf("Invalid Path")
 	}
+	var appName string
+	if pathOrApp[0] == '/' {
+		pathNs, path, pathFrag, err := dashutil.ParseFullPath(pathOrApp, true)
+		if err != nil {
+			return "", err
+		}
+		if pathNs == "app" && pathFrag == "" && len(path) > 0 && dashutil.IsAppNameValid(path[1:]) {
+			appName = appName
+		}
+	} else {
+		if !dashutil.IsAppNameValid(pathOrApp) {
+			return "", fmt.Errorf("Invalid AppName")
+		}
+		appName = pathOrApp
+	}
+	var baseUrl string
+	if appName != "" {
+		baseUrl = pc.pathLink(appName)
+	} else {
+		baseUrl = pc.pathLink(pathOrApp)
+	}
+	if !includeJwt {
+		return baseUrl, nil
+	}
+
+	jwtOpts := pc.Config.copyJWTOpts()
 	err := jwtOpts.ValidateAndSetDefaults()
 	if err != nil {
 		return "", err
@@ -943,16 +806,7 @@ func (pc *DashCloudClient) MakeJWTAppLink(appName string, jwtOptsPtr *JWTOpts) (
 	if err != nil {
 		return "", err
 	}
-	link := pc.appLink(appName)
-	return fmt.Sprintf("%s?jwt=%s", link, jwtToken), nil
-}
-
-func (pc *DashCloudClient) MustMakeJWTAppLink(appName string, jwtOptsPtr *JWTOpts) string {
-	rtn, err := pc.MakeJWTAppLink(appName, jwtOptsPtr)
-	if err != nil {
-		panic(err)
-	}
-	return rtn
+	return fmt.Sprintf("%s?jwt=%s", baseUrl, jwtToken), nil
 }
 
 func (pc *DashCloudClient) getAccHost() string {
@@ -975,9 +829,17 @@ func (pc *DashCloudClient) getAccHost() string {
 	return fmt.Sprintf("https://acc-%s.%s", accId, consoleHostProd)
 }
 
-func (pc *DashCloudClient) appLink(appName string) string {
+func (pc *DashCloudClient) pathLink(pathOrApp string) string {
+	if pathOrApp == "" {
+		return "/"
+	}
+	var path string
 	accHost := pc.getAccHost()
-	path := dashutil.MakeAppPath(pc.Config.ZoneName, appName)
+	if pathOrApp[0] == '/' {
+		path = "/@fs" + pathOrApp
+	} else {
+		path = dashutil.MakeAppPath(pc.Config.ZoneName, pathOrApp)
+	}
 	return accHost + path
 }
 
@@ -1055,7 +917,7 @@ func validateFileOpts(opts *dash.FileOpts) error {
 	return nil
 }
 
-func (pc *DashCloudClient) setRawPath(fullPath string, r io.Reader, fileOpts *dash.FileOpts, linkRt dash.LinkRuntime) error {
+func (pc *DashCloudClient) SetRawPath(fullPath string, r io.Reader, fileOpts *dash.FileOpts, linkRt dash.LinkRuntime) error {
 	err := pc.setRawPathWrap(fullPath, r, fileOpts, linkRt)
 	if err != nil {
 		pc.logV("Dashborg SetPath ERROR %s => %s | %v\n", fullPath, shortFileOptsStr(fileOpts), err)
@@ -1306,4 +1168,69 @@ func pathWithNs(p *dashproto.PathId, includeFrag bool) string {
 	} else {
 		return fmt.Sprintf("%s%s", pathNs, p.Path)
 	}
+}
+
+func (pc *DashCloudClient) WriteApp(app *dash.App) error {
+	return pc.baseWriteApp(app, false)
+}
+
+func (pc *DashCloudClient) ConnectAppRuntime(app *dash.App) error {
+	appConfig, err := app.AppConfig()
+	if err != nil {
+		return err
+	}
+	if app.Runtime() == nil {
+		return dasherr.ValidateErr(fmt.Errorf("No AppRuntime to connect app.Runtime() is nil"))
+	}
+	runtimePath := appConfig.RuntimePath
+	err = pc.connectLinkRpc(appConfig.RuntimePath)
+	if err != nil {
+		return err
+	}
+	pc.connectLinkRuntime(runtimePath, app.Runtime())
+	return nil
+}
+
+func (pc *DashCloudClient) WriteAndConnectApp(app *dash.App) error {
+	return pc.baseWriteApp(app, true)
+}
+
+func (pc *DashCloudClient) baseWriteApp(app *dash.App, shouldConnect bool) error {
+	appConfig, err := app.AppConfig()
+	if err != nil {
+		return err
+	}
+	roles := appConfig.AllowedRoles
+	fs := pc.DashFS()
+	err = fs.SetJsonPath(appConfig.AppPath(), appConfig, &dash.FileOpts{MimeType: dash.MimeTypeDashborgApp, AllowedRoles: roles})
+	if err != nil {
+		return err
+	}
+	// test html for error earlier
+	htmlPath := appConfig.HtmlPath
+	htmlFileOpts := &dash.FileOpts{MimeType: dash.MimeTypeHtml, AllowedRoles: roles}
+	if appConfig.HtmlStr != "" {
+		err = fs.SetStaticPath(htmlPath, bytes.NewReader([]byte(appConfig.HtmlStr)), htmlFileOpts)
+	} else if appConfig.HtmlFileName != "" {
+		if appConfig.HtmlFileWatchOpts == nil {
+			err = fs.SetPathFromFile(htmlPath, appConfig.HtmlFileName, htmlFileOpts)
+		} else {
+			err = fs.WatchFile(htmlPath, appConfig.HtmlFileName, htmlFileOpts, appConfig.HtmlFileWatchOpts)
+		}
+	}
+	if err != nil {
+		return err
+	}
+	if shouldConnect {
+		runtimePath := appConfig.RuntimePath
+		err = fs.LinkAppRuntime(runtimePath, app.Runtime(), &dash.FileOpts{AllowedRoles: roles})
+		if err != nil {
+			return err
+		}
+	}
+	appLink, err := pc.MakeUrl(appConfig.AppName, !pc.Config.NoShowJWT)
+	if err == nil {
+		pc.log("Dashborg App Link [%s]: %s\n", appConfig.AppName, appLink)
+	}
+	return nil
 }
