@@ -1,13 +1,9 @@
 package dash
 
 import (
-	"bytes"
 	"fmt"
-	"io/ioutil"
-	"os"
 
 	"github.com/google/uuid"
-	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
 var notAuthorizedErr = fmt.Errorf("Not Authorized")
@@ -30,36 +26,28 @@ const (
 )
 
 const (
-	OptionInitHandler   = "inithandler"
-	OptionAuth          = "auth"
-	OptionOfflineMode   = "offlinemode"
-	OptionTitle         = "title"
-	OptionAppVisibility = "visibility"
-
-	AuthTypeZone = "zone"
-
 	VisTypeHidden        = "hidden"  // always hide
 	VisTypeDefault       = "default" // shown if user has permission
 	VisTypeAlwaysVisible = "visible" // always show
-
-	InitHandlerRequired              = "required"
-	InitHandlerRequiredWhenConnected = "required-when-connected"
-	InitHandlerNone                  = "none"
-
-	OfflineModeEnable  = "enable"
-	OfflineModeDisable = "disable"
 )
 
 // AppConfig is passed as JSON to the container.  this struct
 // helps with marshaling/unmarshaling the structure.
 type AppConfig struct {
-	AppName       string                      `json:"appname"`
-	AppVersion    string                      `json:"appversion,omitempty"` // uuid
-	UpdatedTs     int64                       `json:"updatedts"`            // set by container
-	ProcRunId     string                      `json:"procrunid"`            // set by container
-	ClientVersion string                      `json:"clientversion"`
-	Options       map[string]GenericAppOption `json:"options"`
-	HtmlPath      string                      `json:"htmlpath"`
+	AppName       string   `json:"appname"`
+	ClientVersion string   `json:"clientversion"`
+	AppTitle      string   `json:"apptitle"`
+	AppVisType    string   `json:"appvistype"`
+	AppVisOrder   float64  `json:"appvisorder"`
+	AllowedRoles  []string `json:"allowedroles"`
+	InitRequired  bool     `json:"initrequired"`
+	OfflineAccess bool     `json:"offlineaccess"`
+	HtmlPath      string   `json:"htmlpath,omitempty"`    // empty for ./html
+	RuntimePath   string   `json:"runtimepath,omitempty"` // empty for ./runtime
+
+	AppVersion string `json:"appversion,omitempty"` // uuid
+	UpdatedTs  int64  `json:"updatedts"`            // set by container
+	ProcRunId  string `json:"procrunid"`            // set by container
 }
 
 type AppId struct {
@@ -111,128 +99,53 @@ type ProcInfo struct {
 }
 
 type App struct {
-	appConfig  AppConfig
-	appRuntime *AppRuntimeImpl
-	api        InternalApi
-	isNewApp   bool
+	appPath           string
+	appConfig         AppConfig
+	appRuntime        *AppRuntimeImpl
+	api               InternalApi
+	isNewApp          bool
+	htmlStr           string
+	htmlFileName      string
+	htmlFileWatchOpts *WatchOpts
 }
 
 func (app *App) Runtime() *AppRuntimeImpl {
 	return app.appRuntime
 }
 
-type valueType interface {
-	IsDynamic() bool
-	GetValue() (interface{}, error)
-}
-
-type funcValueType struct {
-	Dyn     bool
-	ValueFn func() (string, error)
-}
-
-func fileValue(fileName string, isDynamic bool) valueType {
-	return funcValueType{
-		Dyn: isDynamic,
-		ValueFn: func() (string, error) {
-			fd, err := os.Open(fileName)
-			if err != nil {
-				return "", err
-			}
-			fileBytes, err := ioutil.ReadAll(fd)
-			if err != nil {
-				return "", err
-			}
-			return string(fileBytes), nil
-		},
-	}
-}
-
-func stringValue(val string) valueType {
-	return funcValueType{
-		Dyn: false,
-		ValueFn: func() (string, error) {
-			return val, nil
-		},
-	}
-}
-
-func interfaceValue(val interface{}) valueType {
-	return funcValueType{
-		Dyn: false,
-		ValueFn: func() (string, error) {
-			return dashutil.MarshalJson(val)
-		},
-	}
-}
-
-func funcValue(fn func() (interface{}, error), isDynamic bool) valueType {
-	return funcValueType{
-		Dyn: isDynamic,
-		ValueFn: func() (string, error) {
-			val, err := fn()
-			if err != nil {
-				return "", err
-			}
-			return dashutil.MarshalJson(val)
-		},
-	}
-}
-
-func (fv funcValueType) IsDynamic() bool {
-	return fv.Dyn
-}
-
-func (fv funcValueType) GetValue() (interface{}, error) {
-	return fv.ValueFn()
-}
-
-func defaultAuthOpt() GenericAppOption {
-	authOpt := GenericAppOption{
-		Type:         AuthTypeZone,
-		AllowedRoles: []string{"user"},
-	}
-	return authOpt
-}
-
 func MakeApp(appName string, api InternalApi) *App {
 	rtn := &App{
 		api:        api,
-		appRuntime: MakeAppRuntime(appName),
+		appPath:    fmt.Sprintf("/@app/%s", appName),
+		appRuntime: MakeAppRuntime(),
 		appConfig: AppConfig{
-			AppVersion: uuid.New().String(),
-			AppName:    appName,
+			ClientVersion: ClientVersion,
+			AppVersion:    uuid.New().String(),
+			AppName:       appName,
+			AllowedRoles:  []string{RoleUser},
 		},
 		isNewApp: true,
 	}
-	rtn.appConfig.Options = make(map[string]GenericAppOption)
-	authOpt := defaultAuthOpt()
-	rtn.appConfig.Options[OptionAuth] = authOpt
-	rtn.appConfig.Options[OptionOfflineMode] = GenericAppOption{Type: "allow"}
 	return rtn
 }
 
+func (app *App) SetExternalAppRuntimePath(runtimePath string) {
+	app.appConfig.RuntimePath = runtimePath
+}
+
 // offline mode type is either OfflineModeEnable or OfflineModeDisable
-func (app *App) SetOfflineModeType(offlineModeType string) {
-	app.appConfig.Options[OptionOfflineMode] = GenericAppOption{Type: offlineModeType}
+func (app *App) SetOfflineAccess(offlineAccess bool) {
+	app.appConfig.OfflineAccess = offlineAccess
 }
 
 func (app *App) IsNew() bool {
 	return app.isNewApp
 }
 
-// func (app *App) SetConnectOnly(connectOnly bool) {
-// 	app.connectOnlyMode = connectOnly
-// }
-
-// func (app *App) SetLiveUpdate(liveUpdate bool) {
-// 	app.liveUpdateMode = liveUpdate
-// }
-
 func MakeAppFromConfig(cfg AppConfig, api InternalApi) *App {
 	rtn := &App{
 		api:        api,
-		appRuntime: MakeAppRuntime(cfg.AppName),
+		appRuntime: MakeAppRuntime(),
 		appConfig:  cfg,
 	}
 	rtn.appConfig.AppVersion = uuid.New().String()
@@ -243,14 +156,6 @@ func (app *App) AppConfig() AppConfig {
 	return app.appConfig
 }
 
-func (app *App) RawOptionRemove(optName string) {
-	delete(app.appConfig.Options, optName)
-}
-
-func (app *App) RawOptionSet(optName string, opt GenericAppOption) {
-	app.appConfig.Options[optName] = opt
-}
-
 func wrapHandler(handlerFn func(req *AppRequest) error) func(req *AppRequest) (interface{}, error) {
 	wrappedHandlerFn := func(req *AppRequest) (interface{}, error) {
 		err := handlerFn(req)
@@ -259,80 +164,58 @@ func wrapHandler(handlerFn func(req *AppRequest) error) func(req *AppRequest) (i
 	return wrappedHandlerFn
 }
 
-func (app *App) getAuthOpt() GenericAppOption {
-	authOpt, ok := app.appConfig.Options[OptionAuth]
-	if !ok {
-		return defaultAuthOpt()
-	}
-	return authOpt
-}
-
-// authType must be AuthTypeZone
-func (app *App) SetAuthType(authType string) {
-	authOpt := app.getAuthOpt()
-	authOpt.Type = authType
-	app.appConfig.Options[OptionAuth] = authOpt
-}
-
 func (app *App) SetAllowedRoles(roles ...string) {
-	authOpt := app.getAuthOpt()
-	authOpt.AllowedRoles = roles
-	app.appConfig.Options[OptionAuth] = authOpt
+	app.appConfig.AllowedRoles = roles
 }
 
 func (app *App) GetAllowedRoles() []string {
-	authOpt := app.getAuthOpt()
-	return authOpt.AllowedRoles
+	return app.appConfig.AllowedRoles
+}
+
+func (app *App) SetAppTitle(title string) {
+	app.appConfig.AppTitle = title
 }
 
 // SetAppVisibility controls whether the app shows in the UI's app-switcher (see VisType constants)
 // Apps will be sorted by displayOrder (and then AppTitle).  displayOrder of 0 (the default) will
 // sort to the end of the list, not the beginning
 // visType is either VisTypeHidden, VisTypeDefault, or VisTypeAlwaysVisible
-func (app *App) SetAppVisibility(visType string, displayOrder float64) {
-	visOpt := GenericAppOption{Type: visType, Order: displayOrder}
-	app.appConfig.Options[OptionAppVisibility] = visOpt
-}
-
-func (app *App) SetAppTitle(title string) {
-	if title == "" {
-		delete(app.appConfig.Options, OptionTitle)
-	} else {
-		app.appConfig.Options[OptionTitle] = GenericAppOption{AppTitle: title}
-	}
+func (app *App) SetAppVisibility(visType string, visOrder float64) {
+	app.appConfig.AppVisType = visType
+	app.appConfig.AppVisOrder = visOrder
 }
 
 func (app *App) SetHtml(htmlStr string) error {
-	bytesReader := bytes.NewReader([]byte(htmlStr))
-	fileOpts := &FileOpts{MimeType: MimeTypeDashborgHtml, MkDirs: true}
-	fileOpts.AllowedRoles = app.getAuthOpt().AllowedRoles
-	err := UpdateFileOptsFromReadSeeker(bytesReader, fileOpts)
-	if err != nil {
-		return err
-	}
-	htmlPath := fmt.Sprintf("/@app/%s/html", app.AppName())
-	dashfs := &fsImpl{app.api}
-	err = dashfs.SetRawPath(htmlPath, bytesReader, fileOpts)
-	if err != nil {
-		return err
-	}
-	app.appConfig.HtmlPath = htmlPath
+	app.htmlStr = htmlStr
+	app.htmlFileName = ""
+	app.appConfig.HtmlPath = ""
 	return nil
 }
 
 func (app *App) SetHtmlFromFile(fileName string) error {
-	dashfs := &fsImpl{app.api}
-	htmlPath := fmt.Sprintf("/@app/%s/html", app.AppName())
-	fileOpts := &FileOpts{MimeType: MimeTypeDashborgHtml, MkDirs: true}
-	err := dashfs.WatchFile(htmlPath, fileName, fileOpts, nil)
-	if err != nil {
-		return err
-	}
-	app.appConfig.HtmlPath = htmlPath
+	app.htmlStr = ""
+	app.htmlFileName = fileName
+	app.appConfig.HtmlPath = ""
+	app.htmlFileWatchOpts = nil
+	// maybe check file to see if it exists and is readable?
 	return nil
 }
 
-func (app *App) SetHtmlPath(path string) {
+func (app *App) WatchHtmlFile(fileName string, watchOpts *WatchOpts) error {
+	app.htmlStr = ""
+	app.htmlFileName = fileName
+	app.appConfig.HtmlPath = ""
+	if watchOpts == nil {
+		watchOpts = &WatchOpts{}
+	}
+	app.htmlFileWatchOpts = watchOpts
+	// maybe check file to see if it exists and is readable?
+	return nil
+}
+
+func (app *App) SetExternalHtmlPath(path string) {
+	app.htmlStr = ""
+	app.htmlFileName = ""
 	app.appConfig.HtmlPath = path
 }
 
@@ -341,10 +224,41 @@ func (app *App) SetHtmlFromRuntime() {
 }
 
 // initType is either InitHandlerRequired, InitHandlerRequiredWhenConnected, or InitHandlerNone
-func (app *App) SetInitHandlerType(initType string) {
-	app.RawOptionSet(OptionInitHandler, GenericAppOption{Type: initType})
+func (app *App) SetInitRequired(initRequired bool) {
+	app.appConfig.InitRequired = initRequired
 }
 
 func (app *App) AppName() string {
 	return app.appConfig.AppName
+}
+
+func (app *App) validateHtmlOpts() error {
+	if app.htmlStr != "" && app.htmlFileName != "" {
+		return fmt.Errorf("Cannot have static-html [len=%d] and an html file set [%s]", len(app.htmlStr), app.htmlFileName)
+	}
+	if app.htmlStr != "" && app.appConfig.HtmlPath != "" {
+		return fmt.Errorf("Cannot have static-html [len=%d] and an external html path set [%s]", len(app.htmlStr), app.appConfig.HtmlPath)
+	}
+	if app.htmlFileName != "" && app.appConfig.HtmlPath != "" {
+		return fmt.Errorf("Cannot have an html file [%s] and an external html path set [%s]", app.htmlFileName, app.appConfig.HtmlPath)
+	}
+	return nil
+}
+
+func (app *App) getHtmlPath() string {
+	if app.appConfig.HtmlPath != "" {
+		return app.appConfig.HtmlPath
+	}
+	return fmt.Sprintf("%s/html", app.appPath)
+}
+
+func (app *App) getRuntimePath() string {
+	if app.appConfig.RuntimePath != "" {
+		return app.appConfig.RuntimePath
+	}
+	return fmt.Sprintf("%s/runtime", app.appPath)
+}
+
+func (app *App) hasDefaultRuntimePath() bool {
+	return app.getRuntimePath() == fmt.Sprintf("%s/runtime", app.appPath)
 }

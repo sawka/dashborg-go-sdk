@@ -274,7 +274,7 @@ func (pc *DashCloudClient) reconnectLink(path string) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
-	pathId, err := parsePathToPathId(path)
+	pathId, err := parsePathToPathId(path, false)
 	if err != nil {
 		return err
 	}
@@ -292,10 +292,10 @@ func (pc *DashCloudClient) reconnectLink(path string) error {
 	return nil
 }
 
-func parsePathToPathId(path string) (*dashproto.PathId, error) {
+func parsePathToPathId(path string, allowFrag bool) (*dashproto.PathId, error) {
 	var err error
 	rtn := &dashproto.PathId{}
-	rtn.PathNs, rtn.Path, rtn.PathFrag, err = dashutil.ParseFullPath(path)
+	rtn.PathNs, rtn.Path, rtn.PathFrag, err = dashutil.ParseFullPath(path, allowFrag)
 	if err != nil {
 		return nil, dasherr.ValidateErr(err)
 	}
@@ -458,7 +458,7 @@ func (pc *DashCloudClient) removePath(path string) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
-	pathId, err := parsePathToPathId(path)
+	pathId, err := parsePathToPathId(path, false)
 	if err != nil {
 		return err
 	}
@@ -481,7 +481,7 @@ func (pc *DashCloudClient) fileInfo(path string, dirOpts *dash.DirOpts) ([]*dash
 	if !pc.IsConnected() {
 		return nil, NotConnectedErr
 	}
-	pathId, err := parsePathToPathId(path)
+	pathId, err := parsePathToPathId(path, false)
 	if err != nil {
 		return nil, err
 	}
@@ -741,7 +741,7 @@ func (pc *DashCloudClient) backendPush(appName string, path string, data interfa
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
-	pathId, err := parsePathToPathId(path)
+	pathId, err := parsePathToPathId(path, true)
 	if err != nil {
 		return err
 	}
@@ -788,7 +788,7 @@ func (pc *DashCloudClient) callDataHandler(appName string, path string, data int
 	if err != nil {
 		return nil, err
 	}
-	pathId, err := parsePathToPathId(path)
+	pathId, err := parsePathToPathId(path, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1075,12 +1075,9 @@ func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts
 	if !dashutil.IsFullPathValid(fullPath) {
 		return dasherr.ValidateErr(fmt.Errorf("Invalid Path '%s'", fullPath))
 	}
-	pathId, err := parsePathToPathId(fullPath)
+	pathId, err := parsePathToPathId(fullPath, false)
 	if err != nil {
 		return err
-	}
-	if pathId.PathFrag != "" {
-		return dasherr.ValidateErr(fmt.Errorf("Invalid Path '%s', SetPath does not allow fragment", fullPath))
 	}
 	if len(fileOpts.AllowedRoles) == 0 {
 		fileOpts.AllowedRoles = []string{dash.RoleUser}
@@ -1091,9 +1088,6 @@ func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts
 	}
 	if fileOpts.FileType != dash.FileTypeStatic && r != nil {
 		return dasherr.ValidateErr(fmt.Errorf("SetRawPath no io.Reader allowed except for file-type:static"))
-	}
-	if fileOpts.IsLinkType() && linkRt == nil {
-		return dasherr.ValidateErr(fmt.Errorf("FileType is %s, but no dash.LinkRuntime provided", fileOpts.FileType))
 	}
 	if !fileOpts.IsLinkType() && linkRt != nil {
 		return dasherr.ValidateErr(fmt.Errorf("FileType is %s, no dash.LinkRuntime allowed", fileOpts.FileType))
@@ -1111,10 +1105,11 @@ func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts
 	defer pc.drainSetPathStream(client)
 
 	m := &dashproto.SetPathMessage{
-		Ts:           dashutil.Ts(),
-		Path:         pathId,
-		HasBody:      (r != nil),
-		FileOptsJson: optsJson,
+		Ts:             dashutil.Ts(),
+		Path:           pathId,
+		HasBody:        (r != nil),
+		ConnectRuntime: (linkRt != nil),
+		FileOptsJson:   optsJson,
 	}
 	err = client.Send(m)
 	if err != nil {
@@ -1126,7 +1121,7 @@ func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts
 		return dashErr
 	}
 	if metaResp.BlobFound || !m.HasBody {
-		if fileOpts.IsLinkType() {
+		if fileOpts.IsLinkType() && linkRt != nil {
 			pc.connectLinkRuntime(fullPath, linkRt)
 		}
 		return nil

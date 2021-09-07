@@ -170,10 +170,11 @@ message SetPathMessage {
     PathId Path = 2;
     string TxId = 3;
     bool HasBody = 4;
-    string FileOptsJson = 5;
-    string BlobBytesKey = 6;
-    bytes BlobBytes = 7;
-    bool ClientErr = 8;
+    bool ConnectRuntime = 5;
+    string FileOptsJson = 6;
+    string BlobBytesKey = 7;
+    bytes BlobBytes = 8;
+    bool ClientErr = 9;
 }
 
 message SetPathResponse {

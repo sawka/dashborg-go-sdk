@@ -217,7 +217,7 @@ func Sha256Base64(barr []byte) string {
 	return hashValStr
 }
 
-func ParseFullPath(fullPath string) (string, string, string, error) {
+func ParseFullPath(fullPath string, allowFrag bool) (string, string, string, error) {
 	if fullPath == "" {
 		return "", "", "", fmt.Errorf("Path cannot be empty")
 	}
@@ -234,6 +234,9 @@ func ParseFullPath(fullPath string) (string, string, string, error) {
 	path := match[2]
 	if path == "" {
 		path = "/"
+	}
+	if match[3] != "" && !allowFrag {
+		return "", "", "", fmt.Errorf("Path does not allow path-fragment")
 	}
 	return match[1], path, match[3], nil
 }

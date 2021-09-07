@@ -16,11 +16,13 @@ const (
 	pathFragHtml    = "@html"
 )
 
-type handlerType struct {
+type appHandlerType struct {
 	HandlerFn func(req *AppRequest) (interface{}, error)
 }
 
-type linkHandlerFn func(req Request) (interface{}, error)
+type linkHandlerType struct {
+	HandlerFn func(req Request) (interface{}, error)
+}
 
 type LinkRuntime interface {
 	RunHandler(req *AppRequest) (interface{}, error)
@@ -28,28 +30,28 @@ type LinkRuntime interface {
 
 type LinkRuntimeImpl struct {
 	lock     *sync.Mutex
-	handlers map[string]linkHandlerFn
+	handlers map[string]linkHandlerType
 }
 
 type AppRuntimeImpl struct {
 	lock         *sync.Mutex
 	appStateType reflect.Type
-	handlers     map[string]handlerType
+	handlers     map[string]appHandlerType
 	middlewares  []middlewareType
 }
 
 // Apps that are created using dashcloud.OpenApp() have their own built in runtime.
 // Only call MakeAppRuntime when you want to call dashcloud.ConnectAppRuntime()
 // without calling OpenApp.
-func MakeAppRuntime(appName string) *AppRuntimeImpl {
+func MakeAppRuntime() *AppRuntimeImpl {
 	rtn := &AppRuntimeImpl{
-		lock: &sync.Mutex{},
+		lock:     &sync.Mutex{},
+		handlers: make(map[string]appHandlerType),
 	}
-	rtn.handlers = make(map[string]handlerType)
 	return rtn
 }
 
-func (app *AppRuntimeImpl) setHandler(path string, handler handlerType) {
+func (app *AppRuntimeImpl) setHandler(path string, handler appHandlerType) {
 	app.lock.Lock()
 	defer app.lock.Unlock()
 	app.handlers[path] = handler
@@ -74,7 +76,7 @@ func (apprt *AppRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) {
 	return rtn, nil
 }
 
-func mwHelper(outerReq *AppRequest, hval handlerType, mws []middlewareType, mwPos int) (interface{}, error) {
+func mwHelper(outerReq *AppRequest, hval appHandlerType, mws []middlewareType, mwPos int) (interface{}, error) {
 	if mwPos >= len(mws) {
 		return hval.HandlerFn(outerReq)
 	}
@@ -123,7 +125,7 @@ func (apprt *AppRuntimeImpl) SetRawHandler(handlerName string, handlerFn func(re
 	if !dashutil.IsPathFragValid(handlerName) {
 		return fmt.Errorf("Invalid handler name")
 	}
-	apprt.setHandler(handlerName, handlerType{HandlerFn: handlerFn})
+	apprt.setHandler(handlerName, appHandlerType{HandlerFn: handlerFn})
 	return nil
 }
 
@@ -138,7 +140,7 @@ func (apprt *AppRuntimeImpl) SetHtmlHandler(handlerFn interface{}) error {
 func MakeRuntime() *LinkRuntimeImpl {
 	rtn := &LinkRuntimeImpl{
 		lock:     &sync.Mutex{},
-		handlers: make(map[string]linkHandlerFn),
+		handlers: make(map[string]linkHandlerType),
 	}
 	return rtn
 }
@@ -146,7 +148,7 @@ func MakeRuntime() *LinkRuntimeImpl {
 func MakeSingleFnRuntime(handlerFn interface{}) (*LinkRuntimeImpl, error) {
 	rtn := &LinkRuntimeImpl{
 		lock:     &sync.Mutex{},
-		handlers: make(map[string]linkHandlerFn),
+		handlers: make(map[string]linkHandlerType),
 	}
 	err := rtn.Handler(pathFragDefault, handlerFn)
 	if err != nil {
@@ -155,13 +157,13 @@ func MakeSingleFnRuntime(handlerFn interface{}) (*LinkRuntimeImpl, error) {
 	return rtn, nil
 }
 
-func (linkrt *LinkRuntimeImpl) setHandler(name string, fn linkHandlerFn) {
+func (linkrt *LinkRuntimeImpl) setHandler(name string, fn linkHandlerType) {
 	linkrt.lock.Lock()
 	defer linkrt.lock.Unlock()
 	linkrt.handlers[name] = fn
 }
 
-func (linkrt *LinkRuntimeImpl) RunHandler(req Request) (interface{}, error) {
+func (linkrt *LinkRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) {
 	info := req.RequestInfo()
 	if info.RequestType != requestTypePath {
 		return nil, dasherr.ValidateErr(fmt.Errorf("Invalid RequestType for linked runtime"))
@@ -176,5 +178,13 @@ func (linkrt *LinkRuntimeImpl) RunHandler(req Request) (interface{}, error) {
 	if !ok {
 		return nil, dasherr.ErrWithCode(dasherr.ErrCodeNoHandler, fmt.Errorf("No handler found for %s:%s", info.Path, info.PathFrag))
 	}
-	return linkfn(req)
+	return linkfn.HandlerFn(req)
+}
+
+func (linkrt *LinkRuntimeImpl) SetRawHandler(handlerName string, handlerFn func(req Request) (interface{}, error)) error {
+	if !dashutil.IsPathFragValid(handlerName) {
+		return fmt.Errorf("Invalid handler name")
+	}
+	linkrt.setHandler(handlerName, linkHandlerType{HandlerFn: handlerFn})
+	return nil
 }

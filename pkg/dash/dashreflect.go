@@ -180,7 +180,7 @@ func (apprt *AppRuntimeImpl) Handler(name string, handlerFn interface{}) error {
 		rtnVals := hVal.Call(args)
 		return convertRtnVals(hType, rtnVals)
 	}
-	apprt.setHandler(name, handlerType{HandlerFn: hfn})
+	apprt.setHandler(name, appHandlerType{HandlerFn: hfn})
 	return nil
 }
 
@@ -204,7 +204,7 @@ func (linkrt *LinkRuntimeImpl) Handler(name string, handlerFn interface{}) error
 		rtnVals := hVal.Call(args)
 		return convertRtnVals(hType, rtnVals)
 	}
-	linkrt.setHandler(name, hfn)
+	linkrt.setHandler(name, linkHandlerType{HandlerFn: hfn})
 	return nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -13,6 +14,14 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/sawka/dashborg-go-sdk/pkg/dasherr"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
+	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
+)
+
+const (
+	MimeTypeDashborgHtml = "text/x-dashborg-html"
+	MimeTypeHtml         = "text/html"
+	MimeTypeJson         = "application/json"
+	MimeTypeDashborgApp  = "application/x-dashborg+json"
 )
 
 const (
@@ -46,9 +55,9 @@ type BlobReturn struct {
 }
 
 type FileOpts struct {
+	FileType     string      `json:"filetype"`
 	Sha256       string      `json:"sha256"`
 	Size         int64       `json:"size"`
-	FileType     string      `json:"filetype"`
 	MimeType     string      `json:"mimetype"`
 	AllowedRoles []string    `json:"allowedroles,omitempty"`
 	Display      string      `json:"display,omitempty"`
@@ -62,14 +71,6 @@ func (opts *FileOpts) IsLinkType() bool {
 	return opts.FileType == FileTypeRuntimeLink || opts.FileType == FileTypeAppRuntimeLink
 }
 
-type AppOpts struct {
-	AppTitle    string  `json:"apptitle"`
-	AppVisType  string  `json:"appvistype"`
-	AppVisOrder float64 `json:"appvisorder"`
-	InitPath    string  `json:"initpath"`
-	OfflineMode string  `json:"offlinemode"`
-}
-
 type DirOpts struct {
 	RoleList   []string `json:"rolelist"`
 	ShowHidden bool     `json:"showhidden"`
@@ -77,12 +78,14 @@ type DirOpts struct {
 }
 
 type WatchOpts struct {
-	ShutdownCh   chan struct{}
 	ThrottleTime time.Duration
+	ShutdownCh   chan struct{}
 }
 
 type DashFS interface {
 	SetRawPath(path string, r io.Reader, fileOpts *FileOpts) error
+
+	SetStaticPath(path string, r io.ReadSeeker, fileOpts *FileOpts) error
 	SetJsonPath(path string, data interface{}, fileOpts *FileOpts) error
 	SetPathFromFile(path string, fileName string, fileOpts *FileOpts) error
 	WatchFile(path string, fileName string, fileOpts *FileOpts, watchOpts *WatchOpts) error
@@ -90,9 +93,7 @@ type DashFS interface {
 	RemovePath(path string) error
 	FileInfo(path string) (*FileInfo, error)
 	DirInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error)
-	// TxStart() (DashFS, error)
-	// TxCommit() error
-	// TxRollback() error
+	WriteApp(app *App) error
 }
 
 // internal callbacks into DashCloud package.  Not for use by end-user, API subject to change.
@@ -101,11 +102,6 @@ type InternalApi interface {
 	SetRawPath(path string, r io.Reader, fileOpts *FileOpts, rt LinkRuntime) error
 	RemovePath(path string) error
 	FileInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error)
-}
-
-type AppFS interface {
-	CreateApp(appName string, app *AppOpts) error
-	RemoveApp(appName string)
 }
 
 // type - static, runtime, dir
@@ -134,7 +130,9 @@ func (fs *fsImpl) SetJsonPath(path string, data interface{}, fileOpts *FileOpts)
 	if err != nil {
 		return err
 	}
-	fileOpts.MimeType = MimeTypeJson
+	if fileOpts.MimeType == "" {
+		fileOpts.MimeType = MimeTypeJson
+	}
 	return fs.SetRawPath(path, reader, fileOpts)
 }
 
@@ -298,6 +296,60 @@ func (fs *fsImpl) linkAppRuntime(path string, apprt LinkRuntime, fileOpts *FileO
 	return fs.api.SetRawPath(path, nil, fileOpts, apprt)
 }
 
-func (fs *fsImpl) LinkHandler(path string, fn interface{}, fileOpts *FileOpts) error {
+func (fs *fsImpl) WriteApp(app *App) error {
+	_, _, _, err := dashutil.ParseFullPath(app.appPath, false)
+	if err != nil {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid App Path: '%s': %v", app.appPath, err))
+	}
+	err = app.validateHtmlOpts()
+	if err != nil {
+		return dasherr.ValidateErr(err)
+	}
+	roles := app.appConfig.AllowedRoles
+	err = fs.SetJsonPath(app.appPath, app.appConfig, &FileOpts{MimeType: MimeTypeDashborgApp, AllowedRoles: roles})
+	if err != nil {
+		return err
+	}
+	htmlPath := app.getHtmlPath()
+	if app.htmlStr != "" {
+		htmlFileOpts := &FileOpts{MimeType: MimeTypeHtml, AllowedRoles: roles}
+		err = fs.SetStaticPath(htmlPath, bytes.NewReader([]byte(app.htmlStr)), htmlFileOpts)
+		if err != nil {
+			return err
+		}
+	} else if app.htmlFileName != "" {
+		if app.htmlFileWatchOpts == nil {
+			err = fs.SetPathFromFile(htmlPath, app.htmlFileName, &FileOpts{MimeType: MimeTypeHtml, AllowedRoles: roles})
+		} else {
+			err = fs.WatchFile(htmlPath, app.htmlFileName, &FileOpts{MimeType: MimeTypeHtml, AllowedRoles: roles}, app.htmlFileWatchOpts)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	runtimePath := app.getRuntimePath()
+	if app.hasDefaultRuntimePath() {
+		err = fs.linkAppRuntime(runtimePath, app.appRuntime, &FileOpts{AllowedRoles: roles})
+		if err != nil {
+			return err
+		}
+	} else {
+		err = fs.linkAppRuntime(runtimePath, nil, &FileOpts{AllowedRoles: roles})
+		if err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func (fs *fsImpl) SetStaticPath(path string, r io.ReadSeeker, fileOpts *FileOpts) error {
+	if fileOpts == nil {
+		fileOpts = &FileOpts{}
+	}
+	fileOpts.FileType = FileTypeStatic
+	err := UpdateFileOptsFromReadSeeker(r, fileOpts)
+	if err != nil {
+		return err
+	}
+	return fs.SetRawPath(path, r, fileOpts)
 }
