@@ -12,7 +12,6 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/sawka/dashborg-go-sdk/pkg/dasherr"
-	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 )
 
 const (
@@ -93,22 +92,12 @@ type DashFS interface {
 	DirInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error)
 }
 
-// internal callbacks into DashCloud package.  Not for use by end-user, API subject to change.
-type InternalApi interface {
-	SendResponseProtoRpc(m *dashproto.SendResponseMessage) (int, error)
-	SetRawPath(path string, r io.Reader, fileOpts *FileOpts, rt LinkRuntime) error
-	RemovePath(path string) error
-	FileInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error)
-}
-
-// type - static, runtime, dir
-
 type fsImpl struct {
-	api InternalApi
+	client *DashCloudClient
 }
 
 func (fs *fsImpl) SetRawPath(path string, r io.Reader, fileOpts *FileOpts, runtime LinkRuntime) error {
-	return fs.api.SetRawPath(path, r, fileOpts, runtime)
+	return fs.client.SetRawPath(path, r, fileOpts, runtime)
 }
 
 func (fs *fsImpl) SetJsonPath(path string, data interface{}, fileOpts *FileOpts) error {
@@ -130,7 +119,7 @@ func (fs *fsImpl) SetJsonPath(path string, data interface{}, fileOpts *FileOpts)
 	if fileOpts.MimeType == "" {
 		fileOpts.MimeType = MimeTypeJson
 	}
-	return fs.SetRawPath(path, reader, fileOpts)
+	return fs.SetRawPath(path, reader, fileOpts, nil)
 }
 
 func (fs *fsImpl) SetPathFromFile(path string, fileName string, fileOpts *FileOpts) error {
@@ -142,7 +131,7 @@ func (fs *fsImpl) SetPathFromFile(path string, fileName string, fileOpts *FileOp
 	if err != nil {
 		return err
 	}
-	return fs.SetRawPath(path, fd, fileOpts)
+	return fs.SetRawPath(path, fd, fileOpts, nil)
 }
 
 // Will call Seek(0, 0) on the reader twice, once at the beginning and once at the end.
@@ -171,8 +160,8 @@ func UpdateFileOptsFromReadSeeker(r io.ReadSeeker, fileOpts *FileOpts) error {
 	return nil
 }
 
-func MakeDashFS(api InternalApi) DashFS {
-	return &fsImpl{api: api}
+func makeDashFS(client *DashCloudClient) DashFS {
+	return &fsImpl{client: client}
 }
 
 func (fs *fsImpl) runWatchedSetPath(path string, fileName string, fileOpts *FileOpts) {
@@ -256,11 +245,11 @@ func (fs *fsImpl) WatchFile(path string, fileName string, fileOpts *FileOpts, wa
 }
 
 func (fs *fsImpl) RemovePath(path string) error {
-	return fs.api.RemovePath(path)
+	return fs.client.removePath(path)
 }
 
 func (fs *fsImpl) FileInfo(path string) (*FileInfo, error) {
-	rtn, err := fs.api.FileInfo(path, nil)
+	rtn, err := fs.client.fileInfo(path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +263,7 @@ func (fs *fsImpl) DirInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error) {
 	if dirOpts == nil {
 		dirOpts = &DirOpts{}
 	}
-	return fs.api.FileInfo(path, dirOpts)
+	return fs.client.fileInfo(path, dirOpts)
 }
 
 func (fs *fsImpl) LinkRuntime(path string, rt LinkRuntime, fileOpts *FileOpts) error {
@@ -288,7 +277,7 @@ func (fs *fsImpl) LinkRuntime(path string, rt LinkRuntime, fileOpts *FileOpts) e
 		fileOpts = &FileOpts{}
 	}
 	fileOpts.FileType = FileTypeRuntimeLink
-	return fs.api.SetRawPath(path, nil, fileOpts, rt)
+	return fs.client.SetRawPath(path, nil, fileOpts, rt)
 }
 
 func (fs *fsImpl) LinkAppRuntime(path string, apprt LinkRuntime, fileOpts *FileOpts) error {
@@ -302,7 +291,7 @@ func (fs *fsImpl) LinkAppRuntime(path string, apprt LinkRuntime, fileOpts *FileO
 		fileOpts = &FileOpts{}
 	}
 	fileOpts.FileType = FileTypeAppRuntimeLink
-	return fs.api.SetRawPath(path, nil, fileOpts, apprt)
+	return fs.client.SetRawPath(path, nil, fileOpts, apprt)
 }
 
 func (fs *fsImpl) SetStaticPath(path string, r io.ReadSeeker, fileOpts *FileOpts) error {
@@ -314,5 +303,5 @@ func (fs *fsImpl) SetStaticPath(path string, r io.ReadSeeker, fileOpts *FileOpts
 	if err != nil {
 		return err
 	}
-	return fs.SetRawPath(path, r, fileOpts)
+	return fs.SetRawPath(path, r, fileOpts, nil)
 }

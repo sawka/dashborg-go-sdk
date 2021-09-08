@@ -1,4 +1,4 @@
-package dashcloud
+package dash
 
 import (
 	"time"

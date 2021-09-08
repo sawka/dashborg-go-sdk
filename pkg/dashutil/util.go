@@ -272,9 +272,12 @@ func ResolveAppNameOrPath(appNameOrPath string) (string, string, error) {
 		return "", "", dasherr.ValidateErr(fmt.Errorf("AppName cannot be empty"))
 	}
 	if appNameOrPath[0] == '/' {
-		_, _, _, parseErr := ParseFullPath(appNameOrPath, false)
+		pathNs, path, _, parseErr := ParseFullPath(appNameOrPath, false)
 		if parseErr != nil {
 			return "", "", dasherr.ValidateErr(fmt.Errorf("Bad Path '%s': %w", appNameOrPath, parseErr))
+		}
+		if pathNs == "app" && len(path) > 0 && IsAppNameValid(path[1:]) {
+			return path[1:], appNameOrPath, nil
 		}
 		return appNameOrPath, appNameOrPath, nil
 	}

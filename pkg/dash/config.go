@@ -1,4 +1,4 @@
-package dashcloud
+package dash
 
 import (
 	"crypto/ecdsa"
@@ -15,7 +15,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
-	"github.com/sawka/dashborg-go-sdk/pkg/dash"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 	"github.com/sawka/dashborg-go-sdk/pkg/keygen"
 )
@@ -31,7 +30,7 @@ const (
 	DefaultProcHost        = "grpc.api.dashborg.net"
 	DefaultJwtValidFor     = 24 * time.Hour
 	DefaultJwtUserId       = "jwt-user"
-	DefaultJwtRole         = dash.RoleUser
+	DefaultJwtRole         = RoleUser
 )
 
 type Config struct {

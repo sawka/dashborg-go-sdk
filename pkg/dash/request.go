@@ -16,9 +16,6 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
-// must be divisible by 3 (for base64 encoding)
-const blobReadSize = 3 * 340 * 1024
-
 // Request encapsulates all the data about a Dashborg request.  Normally the only
 // fields that a handler needs to access are "Data" and "appState" in order to read
 // the parameters and UI state associated with this request.  The other fields are
@@ -66,7 +63,7 @@ type AppRequest struct {
 	ctx       context.Context // gRPC context / streaming context
 	info      RequestInfo
 	rawData   RawRequestData
-	api       InternalApi
+	client    *DashCloudClient
 	appState  interface{}           // json-unmarshaled app state for this request
 	authData  *AuthAtom             // authentication tokens associated with this request
 	err       error                 // set if an error occured (when set, RRActions are not sent)
@@ -121,10 +118,6 @@ func (req *AppRequest) BindAppState(obj interface{}) error {
 	}
 	err := json.Unmarshal([]byte(req.rawData.AppStateJson), obj)
 	return err
-}
-
-func (req *AppRequest) AppState() interface{} {
-	return req.appState
 }
 
 func (req *AppRequest) appendRR(rrAction *dashproto.RRAction) {
@@ -197,7 +190,7 @@ func (req *AppRequest) reqInfoStr() string {
 }
 
 // SetData is used to return data to the client.  Will replace the contents of path with data.
-func (req *AppRequest) DataOp(op string, path string, data interface{}) error {
+func (req *AppRequest) AddDataOp(op string, path string, data interface{}) error {
 	if req.isDone {
 		return fmt.Errorf("Cannot call SetData(), reqinfo=%s data-path=%s, Request is already done", req.reqInfoStr())
 	}
@@ -221,7 +214,7 @@ func (req *AppRequest) DataOp(op string, path string, data interface{}) error {
 
 // SetData is used to return data to the client.  Will replace the contents of path with data.
 func (req *AppRequest) SetData(path string, data interface{}) error {
-	return req.DataOp("set", path, data)
+	return req.AddDataOp("set", path, data)
 }
 
 // SetHtml returns html to be rendered by the client.  Only valid for root handler requests (path = "/")
@@ -302,7 +295,7 @@ func (req *AppRequest) IsDone() bool {
 	return req.isDone
 }
 
-func MakeAppRequest(ctx context.Context, reqMsg *dashproto.RequestMessage, api InternalApi) *AppRequest {
+func makeAppRequest(ctx context.Context, reqMsg *dashproto.RequestMessage, client *DashCloudClient) *AppRequest {
 	preq := &AppRequest{
 		info: RequestInfo{
 			StartTime:   time.Now(),
@@ -318,9 +311,9 @@ func MakeAppRequest(ctx context.Context, reqMsg *dashproto.RequestMessage, api I
 			AuthDataJson: reqMsg.AuthData,
 			AppStateJson: reqMsg.AppStateData,
 		},
-		ctx:  ctx,
-		lock: &sync.Mutex{},
-		api:  api,
+		ctx:    ctx,
+		lock:   &sync.Mutex{},
+		client: client,
 	}
 	if reqMsg.AppId != nil {
 		preq.info.AppName = reqMsg.AppId.AppName
@@ -350,8 +343,7 @@ func MakeAppRequest(ctx context.Context, reqMsg *dashproto.RequestMessage, api I
 	return preq
 }
 
-// internal use for testing and dashcloud (API subject to change)
-func (req *AppRequest) GetRRA() []*dashproto.RRAction {
+func (req *AppRequest) getRRA() []*dashproto.RRAction {
 	return req.rrActions
 }
 

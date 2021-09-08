@@ -29,9 +29,10 @@ type LinkRuntime interface {
 }
 
 type LinkRuntimeImpl struct {
-	lock     *sync.Mutex
-	handlers map[string]linkHandlerType
-	errs     []error
+	lock        *sync.Mutex
+	middlewares []middlewareType
+	handlers    map[string]linkHandlerType
+	errs        []error
 }
 
 type AppRuntimeImpl struct {
@@ -46,9 +47,6 @@ type HasErr interface {
 	Err() error
 }
 
-// Apps that are created using dashcloud.OpenApp() have their own built in runtime.
-// Only call MakeAppRuntime when you want to call dashcloud.ConnectAppRuntime()
-// without calling OpenApp.
 func MakeAppRuntime() *AppRuntimeImpl {
 	rtn := &AppRuntimeImpl{
 		lock:     &sync.Mutex{},
@@ -75,14 +73,14 @@ func (apprt *AppRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) {
 	if !ok {
 		return nil, fmt.Errorf("No handler found for %s", req.RequestInfo().FullPath())
 	}
-	rtn, err := mwHelper(req, hval, mws, 0)
+	rtn, err := mwAppHelper(req, hval, mws, 0)
 	if err != nil {
 		return nil, err
 	}
 	return rtn, nil
 }
 
-func mwHelper(outerReq *AppRequest, hval appHandlerType, mws []middlewareType, mwPos int) (interface{}, error) {
+func mwAppHelper(outerReq *AppRequest, hval appHandlerType, mws []middlewareType, mwPos int) (interface{}, error) {
 	if mwPos >= len(mws) {
 		return hval.HandlerFn(outerReq)
 	}
@@ -91,7 +89,20 @@ func mwHelper(outerReq *AppRequest, hval appHandlerType, mws []middlewareType, m
 		if innerReq == nil {
 			panic("No Request Passed to middleware nextFn")
 		}
-		return mwHelper(innerReq, hval, mws, mwPos+1)
+		return mwAppHelper(innerReq, hval, mws, mwPos+1)
+	})
+}
+
+func mwLinkHelper(outerReq *AppRequest, hval linkHandlerType, mws []middlewareType, mwPos int) (interface{}, error) {
+	if mwPos >= len(mws) {
+		return hval.HandlerFn(outerReq)
+	}
+	mw := mws[mwPos]
+	return mw.Fn(outerReq, func(innerReq *AppRequest) (interface{}, error) {
+		if innerReq == nil {
+			panic("No Request Passed to middleware nextFn")
+		}
+		return mwLinkHelper(innerReq, hval, mws, mwPos+1)
 	})
 }
 
@@ -99,32 +110,41 @@ func (apprt *AppRuntimeImpl) SetAppStateType(appStateType reflect.Type) {
 	apprt.appStateType = appStateType
 }
 
-func (apprt *AppRuntimeImpl) AddRawMiddleware(name string, mwFunc MiddlewareFuncType, priority float64) {
-	apprt.RemoveMiddleware(name)
-	apprt.lock.Lock()
-	defer apprt.lock.Unlock()
-	newmws := make([]middlewareType, len(apprt.middlewares)+1)
-	copy(newmws, apprt.middlewares)
-	newmws[len(apprt.middlewares)] = middlewareType{Name: name, Fn: mwFunc, Priority: priority}
+func addMiddlewares(mws []middlewareType, mw middlewareType) []middlewareType {
+	newmws := make([]middlewareType, len(mws)+1)
+	copy(newmws, mws)
+	newmws[len(mws)] = mw
 	sort.Slice(newmws, func(i int, j int) bool {
 		mw1 := newmws[i]
 		mw2 := newmws[j]
 		return mw1.Priority > mw2.Priority
 	})
-	apprt.middlewares = newmws
+	return newmws
+}
+
+func removeMiddleware(mws []middlewareType, name string) []middlewareType {
+	newmws := make([]middlewareType, 0)
+	for _, mw := range mws {
+		if mw.Name == name {
+			continue
+		}
+		newmws = append(newmws, mw)
+	}
+	return newmws
+}
+
+func (apprt *AppRuntimeImpl) AddRawMiddleware(name string, mwFunc MiddlewareFuncType, priority float64) {
+	apprt.RemoveMiddleware(name)
+	apprt.lock.Lock()
+	defer apprt.lock.Unlock()
+	newmw := middlewareType{Name: name, Fn: mwFunc, Priority: priority}
+	apprt.middlewares = addMiddlewares(apprt.middlewares, newmw)
 }
 
 func (apprt *AppRuntimeImpl) RemoveMiddleware(name string) {
 	apprt.lock.Lock()
 	defer apprt.lock.Unlock()
-	mws := make([]middlewareType, 0)
-	for _, mw := range apprt.middlewares {
-		if mw.Name == name {
-			continue
-		}
-		mws = append(mws, mw)
-	}
-	apprt.middlewares = mws
+	apprt.middlewares = removeMiddleware(apprt.middlewares, name)
 }
 
 func (apprt *AppRuntimeImpl) SetRawHandler(handlerName string, handlerFn func(req *AppRequest) (interface{}, error)) error {
@@ -176,12 +196,17 @@ func (linkrt *LinkRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) 
 		return nil, dasherr.ValidateErr(fmt.Errorf("PathFrag cannot be empty for linked request"))
 	}
 	linkrt.lock.Lock()
-	linkfn, ok := linkrt.handlers[pathFrag]
+	hval, ok := linkrt.handlers[pathFrag]
+	mws := linkrt.middlewares
 	linkrt.lock.Unlock()
 	if !ok {
 		return nil, dasherr.ErrWithCode(dasherr.ErrCodeNoHandler, fmt.Errorf("No handler found for %s:%s", info.Path, info.PathFrag))
 	}
-	return linkfn.HandlerFn(req)
+	rtn, err := mwLinkHelper(req, hval, mws, 0)
+	if err != nil {
+		return nil, err
+	}
+	return rtn, nil
 }
 
 func (linkrt *LinkRuntimeImpl) SetRawHandler(handlerName string, handlerFn func(req Request) (interface{}, error)) error {
@@ -206,4 +231,18 @@ func (linkrt *LinkRuntimeImpl) addError(err error) {
 
 func (linkrt *LinkRuntimeImpl) Err() error {
 	return dashutil.ConvertErrArray(linkrt.errs)
+}
+
+func (linkrt *LinkRuntimeImpl) AddRawMiddleware(name string, mwFunc MiddlewareFuncType, priority float64) {
+	linkrt.RemoveMiddleware(name)
+	linkrt.lock.Lock()
+	defer linkrt.lock.Unlock()
+	newmw := middlewareType{Name: name, Fn: mwFunc, Priority: priority}
+	linkrt.middlewares = addMiddlewares(linkrt.middlewares, newmw)
+}
+
+func (linkrt *LinkRuntimeImpl) RemoveMiddleware(name string) {
+	linkrt.lock.Lock()
+	defer linkrt.lock.Unlock()
+	linkrt.middlewares = removeMiddleware(linkrt.middlewares, name)
 }

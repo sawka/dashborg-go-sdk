@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/sawka/dashborg-go-sdk/pkg/dasherr"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
@@ -47,43 +46,6 @@ type AppConfig struct {
 	OfflineAccess bool     `json:"offlineaccess"`
 	HtmlPath      string   `json:"htmlpath,omitempty"`    // empty for ./html
 	RuntimePath   string   `json:"runtimepath,omitempty"` // empty for ./runtime
-
-	AppVersion string `json:"appversion,omitempty"` // uuid
-	UpdatedTs  int64  `json:"updatedts"`            // set by container
-	ProcRunId  string `json:"procrunid"`            // set by container
-
-	// helpers for WriteApp, if these are set, WriteApp will call the
-	// approritate SetPath functions to write the HTML to HtmlPath
-	HtmlStr           string     `json:"-"`
-	HtmlFileName      string     `json:"-"`
-	HtmlFileWatchOpts *WatchOpts `json:"-"`
-}
-
-type AppId struct {
-	AppName    string
-	AppVersion string
-}
-
-// super-set of all option fields for JSON marshaling/parsing
-type GenericAppOption struct {
-	Type         string   `json:"type,omitempty"`
-	Path         string   `json:"path,omitempty"`
-	AllowedRoles []string `json:"allowedroles,omitempty"`
-	Enabled      bool     `json:"enabled,omitempty"`
-	AppTitle     string   `json:"apptitle,omitempty"`
-	Order        float64  `json:"order,omitempty"`
-}
-
-type BlobData struct {
-	BlobNs   string      `json:"blobns"`
-	BlobKey  string      `json:"blobkey"`
-	MimeType string      `json:"mimetype"`
-	Size     int64       `json:"size"`
-	Sha256   string      `json:"sha256"`
-	UpdateTs int64       `json:"updatets"`
-	Metadata interface{} `json:"metadata"`
-	Removed  bool        `json:"removed"`
-	Added    bool        `json:"added"`
 }
 
 type middlewareType struct {
@@ -94,10 +56,6 @@ type middlewareType struct {
 
 type MiddlewareNextFuncType func(req *AppRequest) (interface{}, error)
 type MiddlewareFuncType func(req *AppRequest, nextFn MiddlewareNextFuncType) (interface{}, error)
-
-func (b BlobData) ExtBlobKey() string {
-	return fmt.Sprintf("%s:%s", b.BlobNs, b.BlobKey)
-}
 
 type ProcInfo struct {
 	StartTs   int64
@@ -111,7 +69,6 @@ type App struct {
 	appPath           string
 	appConfig         AppConfig
 	appRuntime        *AppRuntimeImpl
-	isNewApp          bool
 	htmlStr           string
 	htmlFileName      string
 	htmlFileWatchOpts *WatchOpts
@@ -124,6 +81,13 @@ func (app *App) Runtime() *AppRuntimeImpl {
 	return app.appRuntime
 }
 
+func (app *App) SetRuntime(apprt *AppRuntimeImpl) {
+	if apprt == nil {
+		apprt = MakeAppRuntime()
+	}
+	app.appRuntime = apprt
+}
+
 func MakeApp(appNameOrPath string) *App {
 	appName, appPath, appNameErr := dashutil.ResolveAppNameOrPath(appNameOrPath)
 	rtn := &App{
@@ -131,11 +95,27 @@ func MakeApp(appNameOrPath string) *App {
 		appRuntime: MakeAppRuntime(),
 		appConfig: AppConfig{
 			ClientVersion: ClientVersion,
-			AppVersion:    uuid.New().String(),
 			AppName:       appName,
 			AllowedRoles:  []string{RoleUser},
 		},
-		isNewApp: true,
+	}
+	if appNameErr != nil {
+		rtn.errs = append(rtn.errs, dasherr.ValidateErr(fmt.Errorf("MakeApp: %w", appNameErr)))
+	}
+	return rtn
+}
+
+func MakeAppFromConfig(appNameOrPath string, cfg AppConfig) *App {
+	appName, appPath, appNameErr := dashutil.ResolveAppNameOrPath(appNameOrPath)
+	cfg.AppName = appName
+	cfg.ClientVersion = ClientVersion
+	if len(cfg.AllowedRoles) == 0 {
+		cfg.AllowedRoles = []string{RoleUser}
+	}
+	rtn := &App{
+		appPath:    appPath,
+		appRuntime: MakeAppRuntime(),
+		appConfig:  cfg,
 	}
 	if appNameErr != nil {
 		rtn.errs = append(rtn.errs, dasherr.ValidateErr(fmt.Errorf("MakeApp: %w", appNameErr)))
@@ -152,19 +132,6 @@ func (app *App) SetOfflineAccess(offlineAccess bool) {
 	app.appConfig.OfflineAccess = offlineAccess
 }
 
-func (app *App) IsNew() bool {
-	return app.isNewApp
-}
-
-func MakeAppFromConfig(cfg AppConfig) *App {
-	rtn := &App{
-		appRuntime: MakeAppRuntime(),
-		appConfig:  cfg,
-	}
-	rtn.appConfig.AppVersion = uuid.New().String()
-	return rtn
-}
-
 func (app *App) AppConfig() (AppConfig, error) {
 	if len(app.errs) > 0 {
 		return AppConfig{}, app.Err()
@@ -176,9 +143,6 @@ func (app *App) AppConfig() (AppConfig, error) {
 	app.appConfig.HtmlPath = app.getHtmlPath()
 	app.appConfig.RuntimePath = app.getRuntimePath()
 	app.appConfig.ClientVersion = ClientVersion
-	app.appConfig.HtmlStr = app.htmlStr
-	app.appConfig.HtmlFileName = app.htmlFileName
-	app.appConfig.HtmlFileWatchOpts = app.htmlFileWatchOpts
 	return app.appConfig, nil
 }
 
@@ -218,10 +182,6 @@ func (app *App) SetAllowedRoles(roles ...string) {
 	app.appConfig.AllowedRoles = roles
 }
 
-func (app *App) GetAllowedRoles() []string {
-	return app.appConfig.AllowedRoles
-}
-
 func (app *App) SetAppTitle(title string) {
 	app.appConfig.AppTitle = title
 }
@@ -235,7 +195,7 @@ func (app *App) SetAppVisibility(visType string, visOrder float64) {
 	app.appConfig.AppVisOrder = visOrder
 }
 
-func (app *App) clearHtml() {
+func (app *App) ClearHtml() {
 	app.htmlStr = ""
 	app.htmlFileName = ""
 	app.htmlFileWatchOpts = nil
@@ -245,19 +205,19 @@ func (app *App) clearHtml() {
 }
 
 func (app *App) SetHtml(htmlStr string) {
-	app.clearHtml()
+	app.ClearHtml()
 	app.htmlStr = htmlStr
 	return
 }
 
 func (app *App) SetHtmlFromFile(fileName string) {
-	app.clearHtml()
+	app.ClearHtml()
 	app.htmlFileName = fileName
 	return
 }
 
 func (app *App) WatchHtmlFile(fileName string, watchOpts *WatchOpts) {
-	app.clearHtml()
+	app.ClearHtml()
 	app.htmlFileName = fileName
 	if watchOpts == nil {
 		watchOpts = &WatchOpts{}
@@ -267,12 +227,12 @@ func (app *App) WatchHtmlFile(fileName string, watchOpts *WatchOpts) {
 }
 
 func (app *App) SetHtmlExternalPath(path string) {
-	app.clearHtml()
+	app.ClearHtml()
 	app.htmlExtPath = path
 }
 
 func (app *App) SetHtmlFromRuntime() {
-	app.clearHtml()
+	app.ClearHtml()
 	app.htmlFromRuntime = true
 }
 
@@ -334,6 +294,6 @@ func (app *App) Err() error {
 	return dashutil.ConvertErrArray(errs)
 }
 
-func (acfg AppConfig) AppPath() string {
-	return fmt.Sprintf("/@app/%s", acfg.AppName)
+func (app *App) AppPath() string {
+	return app.appPath
 }

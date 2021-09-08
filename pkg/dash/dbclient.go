@@ -1,4 +1,4 @@
-package dashcloud
+package dash
 
 import (
 	"bytes"
@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/sawka/dashborg-go-sdk/pkg/dash"
 	"github.com/sawka/dashborg-go-sdk/pkg/dasherr"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashproto"
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
@@ -73,7 +72,7 @@ type DashCloudClient struct {
 	Conn      *grpc.ClientConn
 	DBService dashproto.DashborgServiceClient
 	ConnId    *atomic.Value
-	LinkRtMap map[string]dash.LinkRuntime
+	LinkRtMap map[string]LinkRuntime
 	DoneCh    chan bool
 	PermErr   bool
 	ExitErr   error
@@ -87,7 +86,7 @@ func makeCloudClient(config *Config) *DashCloudClient {
 		ProcRunId: uuid.New().String(),
 		Config:    config,
 		ConnId:    &atomic.Value{},
-		LinkRtMap: make(map[string]dash.LinkRuntime),
+		LinkRtMap: make(map[string]LinkRuntime),
 		DoneCh:    make(chan bool),
 	}
 	rtn.ConnId.Store("")
@@ -172,7 +171,7 @@ func (pc *DashCloudClient) ctxWithMd(timeout time.Duration) (context.Context, co
 		ctx, cancelFn = context.WithTimeout(context.Background(), timeout)
 	}
 	connId := pc.ConnId.Load().(string)
-	ctx = metadata.AppendToOutgoingContext(ctx, mdConnIdKey, connId, mdClientVersionKey, dash.ClientVersion)
+	ctx = metadata.AppendToOutgoingContext(ctx, mdConnIdKey, connId, mdClientVersionKey, ClientVersion)
 	return ctx, cancelFn
 }
 
@@ -388,7 +387,7 @@ func (pc *DashCloudClient) unlinkRuntime(path string) {
 	delete(pc.LinkRtMap, path)
 }
 
-func (pc *DashCloudClient) connectLinkRuntime(path string, rt dash.LinkRuntime) {
+func (pc *DashCloudClient) connectLinkRuntime(path string, rt LinkRuntime) {
 	pc.Lock.Lock()
 	defer pc.Lock.Unlock()
 	pc.LinkRtMap[path] = rt
@@ -440,7 +439,7 @@ func (pc *DashCloudClient) removePath(path string) error {
 	return nil
 }
 
-func (pc *DashCloudClient) fileInfo(path string, dirOpts *dash.DirOpts) ([]*dash.FileInfo, error) {
+func (pc *DashCloudClient) fileInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error) {
 	if !pc.IsConnected() {
 		return nil, NotConnectedErr
 	}
@@ -469,7 +468,7 @@ func (pc *DashCloudClient) fileInfo(path string, dirOpts *dash.DirOpts) ([]*dash
 	if resp.FileInfoJson == "" {
 		return nil, nil
 	}
-	var rtn []*dash.FileInfo
+	var rtn []*FileInfo
 	err = json.Unmarshal([]byte(resp.FileInfoJson), &rtn)
 	if err != nil {
 		return nil, dasherr.JsonUnmarshalErr("FileInfoJson", err)
@@ -607,7 +606,7 @@ func (pc *DashCloudClient) runRequestStream() (bool, dasherr.ErrCode) {
 	return (elapsed >= 5*time.Second), endingErrCode
 }
 
-func (pc *DashCloudClient) sendPathResponse(preq *dash.AppRequest, rtnVal interface{}, appReq bool) {
+func (pc *DashCloudClient) sendPathResponse(preq *AppRequest, rtnVal interface{}, appReq bool) {
 	if preq.IsDone() {
 		return
 	}
@@ -643,13 +642,13 @@ func (pc *DashCloudClient) sendPathResponse(preq *dash.AppRequest, rtnVal interf
 		}
 	}
 	if appReq {
-		m.Actions = preq.GetRRA()
+		m.Actions = preq.getRRA()
 	}
 	m.Actions = append(m.Actions, rtnValRRA...)
 	return
 }
 
-func (pc *DashCloudClient) sendAppResponse(preq *dash.AppRequest, rtnVal interface{}) {
+func (pc *DashCloudClient) sendAppResponse(preq *AppRequest, rtnVal interface{}) {
 	if preq.IsDone() {
 		return
 	}
@@ -674,15 +673,15 @@ func (pc *DashCloudClient) sendAppResponse(preq *dash.AppRequest, rtnVal interfa
 		if err != nil {
 			m.Err = err.Error()
 		} else {
-			m.Actions = append(preq.GetRRA(), rtnValRRA...)
+			m.Actions = append(preq.getRRA(), rtnValRRA...)
 		}
 	}
 	pc.sendResponseProtoRpc(m)
 }
 
-func (pc *DashCloudClient) dispatchRtRequest(ctx context.Context, linkrt dash.LinkRuntime, reqMsg *dashproto.RequestMessage) {
+func (pc *DashCloudClient) dispatchRtRequest(ctx context.Context, linkrt LinkRuntime, reqMsg *dashproto.RequestMessage) {
 	var rtnVal interface{}
-	preq := dash.MakeAppRequest(ctx, reqMsg, pc.InternalApi())
+	preq := makeAppRequest(ctx, reqMsg, pc)
 	defer func() {
 		if panicErr := recover(); panicErr != nil {
 			log.Printf("Dashborg PANIC in Handler %s | %v\n", requestMsgStr(reqMsg), panicErr)
@@ -721,10 +720,6 @@ func (pc *DashCloudClient) backendPush(appName string, path string, data interfa
 		return dashErr
 	}
 	return nil
-}
-
-func (pc *DashCloudClient) InternalApi() *InternalApi {
-	return &InternalApi{client: pc}
 }
 
 // returns the reason for shutdown (GetExitError())
@@ -890,7 +885,7 @@ func (pc *DashCloudClient) drainSetPathStream(client dashproto.DashborgService_S
 	}
 }
 
-func validateFileOpts(opts *dash.FileOpts) error {
+func validateFileOpts(opts *FileOpts) error {
 	if !dashutil.IsFileTypeValid(opts.FileType) {
 		return dasherr.ValidateErr(fmt.Errorf("Invalid FileType"))
 	}
@@ -903,7 +898,7 @@ func validateFileOpts(opts *dash.FileOpts) error {
 	if !dashutil.IsDescriptionValid(opts.Description) {
 		return dasherr.ValidateErr(fmt.Errorf("Invalid Description (too long)"))
 	}
-	if opts.FileType == dash.FileTypeStatic {
+	if opts.FileType == FileTypeStatic {
 		if !dashutil.IsSha256Base64HashValid(opts.Sha256) {
 			return dasherr.ValidateErr(fmt.Errorf("Invalid SHA-256 hash value, must be a base64 encoded SHA-256 hash (44 characters), see dashutil.Sha256Base64()"))
 		}
@@ -917,7 +912,7 @@ func validateFileOpts(opts *dash.FileOpts) error {
 	return nil
 }
 
-func (pc *DashCloudClient) SetRawPath(fullPath string, r io.Reader, fileOpts *dash.FileOpts, linkRt dash.LinkRuntime) error {
+func (pc *DashCloudClient) SetRawPath(fullPath string, r io.Reader, fileOpts *FileOpts, linkRt LinkRuntime) error {
 	err := pc.setRawPathWrap(fullPath, r, fileOpts, linkRt)
 	if err != nil {
 		pc.logV("Dashborg SetPath ERROR %s => %s | %v\n", fullPath, shortFileOptsStr(fileOpts), err)
@@ -927,7 +922,7 @@ func (pc *DashCloudClient) SetRawPath(fullPath string, r io.Reader, fileOpts *da
 	return nil
 }
 
-func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts *dash.FileOpts, linkRt dash.LinkRuntime) error {
+func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts *FileOpts, linkRt LinkRuntime) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
@@ -942,13 +937,13 @@ func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts
 		return err
 	}
 	if len(fileOpts.AllowedRoles) == 0 {
-		fileOpts.AllowedRoles = []string{dash.RoleUser}
+		fileOpts.AllowedRoles = []string{RoleUser}
 	}
 	err = validateFileOpts(fileOpts)
 	if err != nil {
 		return err
 	}
-	if fileOpts.FileType != dash.FileTypeStatic && r != nil {
+	if fileOpts.FileType != FileTypeStatic && r != nil {
 		return dasherr.ValidateErr(fmt.Errorf("SetRawPath no io.Reader allowed except for file-type:static"))
 	}
 	if !fileOpts.IsLinkType() && linkRt != nil {
@@ -1052,8 +1047,8 @@ func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts
 	return nil
 }
 
-func (pc *DashCloudClient) DashFS() dash.DashFS {
-	return dash.MakeDashFS(pc.InternalApi())
+func (pc *DashCloudClient) DashFS() DashFS {
+	return makeDashFS(pc)
 }
 
 func requestMsgStr(reqMsg *dashproto.RequestMessage) string {
@@ -1082,10 +1077,10 @@ func pathStr(path *dashproto.PathId) string {
 }
 
 func rtnValToRRA(rtnVal interface{}) ([]*dashproto.RRAction, error) {
-	if blobRtn, ok := rtnVal.(dash.BlobReturn); ok {
+	if blobRtn, ok := rtnVal.(BlobReturn); ok {
 		return blobToRRA(blobRtn.MimeType, blobRtn.Reader)
 	}
-	if blobRtn, ok := rtnVal.(*dash.BlobReturn); ok {
+	if blobRtn, ok := rtnVal.(*BlobReturn); ok {
 		return blobToRRA(blobRtn.MimeType, blobRtn.Reader)
 	}
 	jsonData, err := dashutil.MarshalJson(rtnVal)
@@ -1095,7 +1090,7 @@ func rtnValToRRA(rtnVal interface{}) ([]*dashproto.RRAction, error) {
 	rrAction := &dashproto.RRAction{
 		Ts:         dashutil.Ts(),
 		ActionType: "setdata",
-		Selector:   dash.RtnSetDataPath,
+		Selector:   RtnSetDataPath,
 		JsonData:   jsonData,
 	}
 	return []*dashproto.RRAction{rrAction}, nil
@@ -1118,7 +1113,7 @@ func blobToRRA(mimeType string, reader io.Reader) ([]*dashproto.RRAction, error)
 			// write
 			rrAction := &dashproto.RRAction{
 				Ts:        dashutil.Ts(),
-				Selector:  dash.RtnSetDataPath,
+				Selector:  RtnSetDataPath,
 				BlobBytes: buffer[0:n],
 			}
 			if first {
@@ -1140,7 +1135,7 @@ func blobToRRA(mimeType string, reader io.Reader) ([]*dashproto.RRAction, error)
 	return rra, nil
 }
 
-func shortFileOptsStr(fileOpts *dash.FileOpts) string {
+func shortFileOptsStr(fileOpts *FileOpts) string {
 	if fileOpts == nil {
 		return "[null]"
 	}
@@ -1170,11 +1165,11 @@ func pathWithNs(p *dashproto.PathId, includeFrag bool) string {
 	}
 }
 
-func (pc *DashCloudClient) WriteApp(app *dash.App) error {
+func (pc *DashCloudClient) WriteApp(app *App) error {
 	return pc.baseWriteApp(app, false)
 }
 
-func (pc *DashCloudClient) ConnectAppRuntime(app *dash.App) error {
+func (pc *DashCloudClient) ConnectAppRuntime(app *App) error {
 	appConfig, err := app.AppConfig()
 	if err != nil {
 		return err
@@ -1191,31 +1186,31 @@ func (pc *DashCloudClient) ConnectAppRuntime(app *dash.App) error {
 	return nil
 }
 
-func (pc *DashCloudClient) WriteAndConnectApp(app *dash.App) error {
+func (pc *DashCloudClient) WriteAndConnectApp(app *App) error {
 	return pc.baseWriteApp(app, true)
 }
 
-func (pc *DashCloudClient) baseWriteApp(app *dash.App, shouldConnect bool) error {
+func (pc *DashCloudClient) baseWriteApp(app *App, shouldConnect bool) error {
 	appConfig, err := app.AppConfig()
 	if err != nil {
 		return err
 	}
 	roles := appConfig.AllowedRoles
 	fs := pc.DashFS()
-	err = fs.SetJsonPath(appConfig.AppPath(), appConfig, &dash.FileOpts{MimeType: dash.MimeTypeDashborgApp, AllowedRoles: roles})
+	err = fs.SetJsonPath(app.AppPath(), appConfig, &FileOpts{MimeType: MimeTypeDashborgApp, AllowedRoles: roles})
 	if err != nil {
 		return err
 	}
 	// test html for error earlier
 	htmlPath := appConfig.HtmlPath
-	htmlFileOpts := &dash.FileOpts{MimeType: dash.MimeTypeHtml, AllowedRoles: roles}
-	if appConfig.HtmlStr != "" {
-		err = fs.SetStaticPath(htmlPath, bytes.NewReader([]byte(appConfig.HtmlStr)), htmlFileOpts)
-	} else if appConfig.HtmlFileName != "" {
-		if appConfig.HtmlFileWatchOpts == nil {
-			err = fs.SetPathFromFile(htmlPath, appConfig.HtmlFileName, htmlFileOpts)
+	htmlFileOpts := &FileOpts{MimeType: MimeTypeHtml, AllowedRoles: roles}
+	if app.htmlStr != "" {
+		err = fs.SetStaticPath(htmlPath, bytes.NewReader([]byte(app.htmlStr)), htmlFileOpts)
+	} else if app.htmlFileName != "" {
+		if app.htmlFileWatchOpts == nil {
+			err = fs.SetPathFromFile(htmlPath, app.htmlFileName, htmlFileOpts)
 		} else {
-			err = fs.WatchFile(htmlPath, appConfig.HtmlFileName, htmlFileOpts, appConfig.HtmlFileWatchOpts)
+			err = fs.WatchFile(htmlPath, app.htmlFileName, htmlFileOpts, app.htmlFileWatchOpts)
 		}
 	}
 	if err != nil {
@@ -1223,7 +1218,7 @@ func (pc *DashCloudClient) baseWriteApp(app *dash.App, shouldConnect bool) error
 	}
 	if shouldConnect {
 		runtimePath := appConfig.RuntimePath
-		err = fs.LinkAppRuntime(runtimePath, app.Runtime(), &dash.FileOpts{AllowedRoles: roles})
+		err = fs.LinkAppRuntime(runtimePath, app.Runtime(), &FileOpts{AllowedRoles: roles})
 		if err != nil {
 			return err
 		}

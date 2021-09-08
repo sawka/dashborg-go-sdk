@@ -147,10 +147,6 @@ func unmarshalToType(jsonData string, rtnType reflect.Type) (reflect.Value, erro
 	return reflect.Zero(rtnType), nil
 }
 
-type CallHandlerOpts struct {
-	StateType reflect.Type
-}
-
 // Handler registers a handler using reflection.
 // Return value must be return void, interface{}, error, or (interface{}, error).
 // First optional argument to the function is a *dash.AppRequest.
