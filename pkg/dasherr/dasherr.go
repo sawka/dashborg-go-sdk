@@ -29,6 +29,7 @@ const (
 	ErrCodeQueueFull    ErrCode = "QUEUE"
 	ErrCodeTimeout      ErrCode = "TIMEOUT"
 	ErrCodeNotImpl      ErrCode = "NOTIMPL"
+	ErrCodePathNotFound ErrCode = "NOTFOUND"
 )
 
 type DashErr struct {
