@@ -675,29 +675,6 @@ func (pc *DashCloudClient) dispatchRtRequest(ctx context.Context, linkrt LinkRun
 	return
 }
 
-func (pc *DashCloudClient) backendPush(appName string, path string, data interface{}) error {
-	if !pc.IsConnected() {
-		return NotConnectedErr
-	}
-	pathId, err := parsePathToPathId(path, true)
-	if err != nil {
-		return err
-	}
-	m := &dashproto.BackendPushMessage{
-		Ts:    dashutil.Ts(),
-		AppId: &dashproto.AppId{AppName: appName},
-		Path:  pathId,
-	}
-	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
-	defer cancelFn()
-	resp, respErr := pc.DBService.BackendPush(ctx, m)
-	dashErr := pc.handleStatusErrors("BackendPush", resp, respErr, false)
-	if dashErr != nil {
-		return dashErr
-	}
-	return nil
-}
-
 // returns the reason for shutdown (GetExitError())
 func (pc *DashCloudClient) WaitForShutdown() error {
 	<-pc.DoneCh

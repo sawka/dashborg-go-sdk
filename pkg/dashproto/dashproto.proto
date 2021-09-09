@@ -91,16 +91,6 @@ message RequestStreamMessage {
     int64 Ts = 1;
 }
 
-message BackendPushMessage {
-    int64 Ts = 1;
-    AppId AppId = 2;
-    PathId Path = 3;
-}
-
-message BackendPushResponse {
-    RtnStatus Status = 1;
-}
-
 message SetPathMessage {
     int64 Ts = 1;
     PathId Path = 2;
@@ -150,7 +140,6 @@ message ConnectLinkResponse {
 
 service DashborgService {
     rpc ConnectClient(ConnectClientMessage) returns (ConnectClientResponse) {}
-    rpc BackendPush(BackendPushMessage) returns (BackendPushResponse) {}
     rpc RequestStream(RequestStreamMessage) returns (stream RequestMessage) {} // backwards
     rpc SendResponse(SendResponseMessage) returns (SendResponseResponse) {}
     rpc SetPath(stream SetPathMessage) returns (stream SetPathResponse) {}
