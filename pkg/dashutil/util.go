@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 	"unicode"
-
-	"github.com/sawka/dashborg-go-sdk/pkg/dasherr"
 )
 
 var TimeoutErr = errors.New("TimeoutErr")
@@ -264,25 +262,4 @@ func ConvertErrArray(errs []error) error {
 		return errs[0]
 	}
 	return MultiErr{Errs: errs}
-}
-
-// returns (appName, appPath, error)
-func ResolveAppNameOrPath(appNameOrPath string) (string, string, error) {
-	if appNameOrPath == "" {
-		return "", "", dasherr.ValidateErr(fmt.Errorf("AppName cannot be empty"))
-	}
-	if appNameOrPath[0] == '/' {
-		pathNs, path, _, parseErr := ParseFullPath(appNameOrPath, false)
-		if parseErr != nil {
-			return "", "", dasherr.ValidateErr(fmt.Errorf("Bad Path '%s': %w", appNameOrPath, parseErr))
-		}
-		if pathNs == "app" && len(path) > 0 && IsAppNameValid(path[1:]) {
-			return path[1:], appNameOrPath, nil
-		}
-		return appNameOrPath, appNameOrPath, nil
-	}
-	if !IsAppNameValid(appNameOrPath) {
-		return "", "", dasherr.ValidateErr(fmt.Errorf("Invalid AppName '%s'", appNameOrPath))
-	}
-	return appNameOrPath, fmt.Sprintf("/@app/%s", appNameOrPath), nil
 }

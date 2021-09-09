@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/sawka/dashborg-go-sdk/pkg/dasherr"
+	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
 const (
@@ -79,28 +81,15 @@ type WatchOpts struct {
 	ShutdownCh   chan struct{}
 }
 
-type DashFS interface {
-	SetRawPath(path string, r io.Reader, fileOpts *FileOpts, runtime LinkRuntime) error
-	SetStaticPath(path string, r io.ReadSeeker, fileOpts *FileOpts) error
-	SetJsonPath(path string, data interface{}, fileOpts *FileOpts) error
-	SetPathFromFile(path string, fileName string, fileOpts *FileOpts) error
-	WatchFile(path string, fileName string, fileOpts *FileOpts, watchOpts *WatchOpts) error
-	LinkRuntime(path string, runtime LinkRuntime, fileOpts *FileOpts) error
-	LinkAppRuntime(path string, apprt LinkRuntime, fileOpts *FileOpts) error
-	RemovePath(path string) error
-	FileInfo(path string) (*FileInfo, error)
-	DirInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error)
-}
-
-type fsImpl struct {
+type DashFSClient struct {
 	client *DashCloudClient
 }
 
-func (fs *fsImpl) SetRawPath(path string, r io.Reader, fileOpts *FileOpts, runtime LinkRuntime) error {
-	return fs.client.SetRawPath(path, r, fileOpts, runtime)
+func (fs *DashFSClient) SetRawPath(path string, r io.Reader, fileOpts *FileOpts, runtime LinkRuntime) error {
+	return fs.client.setRawPath(path, r, fileOpts, runtime)
 }
 
-func (fs *fsImpl) SetJsonPath(path string, data interface{}, fileOpts *FileOpts) error {
+func (fs *DashFSClient) SetJsonPath(path string, data interface{}, fileOpts *FileOpts) error {
 	var jsonBuf bytes.Buffer
 	enc := json.NewEncoder(&jsonBuf)
 	enc.SetEscapeHTML(false)
@@ -122,7 +111,7 @@ func (fs *fsImpl) SetJsonPath(path string, data interface{}, fileOpts *FileOpts)
 	return fs.SetRawPath(path, reader, fileOpts, nil)
 }
 
-func (fs *fsImpl) SetPathFromFile(path string, fileName string, fileOpts *FileOpts) error {
+func (fs *DashFSClient) SetPathFromFile(path string, fileName string, fileOpts *FileOpts) error {
 	fd, err := os.Open(fileName)
 	if err != nil {
 		return err
@@ -160,11 +149,7 @@ func UpdateFileOptsFromReadSeeker(r io.ReadSeeker, fileOpts *FileOpts) error {
 	return nil
 }
 
-func makeDashFS(client *DashCloudClient) DashFS {
-	return &fsImpl{client: client}
-}
-
-func (fs *fsImpl) runWatchedSetPath(path string, fileName string, fileOpts *FileOpts) {
+func (fs *DashFSClient) runWatchedSetPath(path string, fileName string, fileOpts *FileOpts) {
 	err := fs.SetPathFromFile(path, fileName, fileOpts)
 	if err != nil {
 		log.Printf("Error calling SetPathFromFile (watched file) path=%s file=%s err=%v\n", path, fileName, err)
@@ -173,7 +158,7 @@ func (fs *fsImpl) runWatchedSetPath(path string, fileName string, fileOpts *File
 	}
 }
 
-func (fs *fsImpl) WatchFile(path string, fileName string, fileOpts *FileOpts, watchOpts *WatchOpts) error {
+func (fs *DashFSClient) WatchFile(path string, fileName string, fileOpts *FileOpts, watchOpts *WatchOpts) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return err
@@ -244,11 +229,11 @@ func (fs *fsImpl) WatchFile(path string, fileName string, fileOpts *FileOpts, wa
 	return nil
 }
 
-func (fs *fsImpl) RemovePath(path string) error {
+func (fs *DashFSClient) RemovePath(path string) error {
 	return fs.client.removePath(path)
 }
 
-func (fs *fsImpl) FileInfo(path string) (*FileInfo, error) {
+func (fs *DashFSClient) FileInfo(path string) (*FileInfo, error) {
 	rtn, err := fs.client.fileInfo(path, nil)
 	if err != nil {
 		return nil, err
@@ -259,14 +244,14 @@ func (fs *fsImpl) FileInfo(path string) (*FileInfo, error) {
 	return rtn[0], nil
 }
 
-func (fs *fsImpl) DirInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error) {
+func (fs *DashFSClient) DirInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error) {
 	if dirOpts == nil {
 		dirOpts = &DirOpts{}
 	}
 	return fs.client.fileInfo(path, dirOpts)
 }
 
-func (fs *fsImpl) LinkRuntime(path string, rt LinkRuntime, fileOpts *FileOpts) error {
+func (fs *DashFSClient) LinkRuntime(path string, rt LinkRuntime, fileOpts *FileOpts) error {
 	if hasErr, ok := rt.(HasErr); ok {
 		err := hasErr.Err()
 		if err != nil {
@@ -277,10 +262,10 @@ func (fs *fsImpl) LinkRuntime(path string, rt LinkRuntime, fileOpts *FileOpts) e
 		fileOpts = &FileOpts{}
 	}
 	fileOpts.FileType = FileTypeRuntimeLink
-	return fs.client.SetRawPath(path, nil, fileOpts, rt)
+	return fs.client.setRawPath(path, nil, fileOpts, rt)
 }
 
-func (fs *fsImpl) LinkAppRuntime(path string, apprt LinkRuntime, fileOpts *FileOpts) error {
+func (fs *DashFSClient) LinkAppRuntime(path string, apprt LinkRuntime, fileOpts *FileOpts) error {
 	if hasErr, ok := apprt.(HasErr); ok {
 		err := hasErr.Err()
 		if err != nil {
@@ -291,10 +276,10 @@ func (fs *fsImpl) LinkAppRuntime(path string, apprt LinkRuntime, fileOpts *FileO
 		fileOpts = &FileOpts{}
 	}
 	fileOpts.FileType = FileTypeAppRuntimeLink
-	return fs.client.SetRawPath(path, nil, fileOpts, apprt)
+	return fs.client.setRawPath(path, nil, fileOpts, apprt)
 }
 
-func (fs *fsImpl) SetStaticPath(path string, r io.ReadSeeker, fileOpts *FileOpts) error {
+func (fs *DashFSClient) SetStaticPath(path string, r io.ReadSeeker, fileOpts *FileOpts) error {
 	if fileOpts == nil {
 		fileOpts = &FileOpts{}
 	}
@@ -304,4 +289,26 @@ func (fs *fsImpl) SetStaticPath(path string, r io.ReadSeeker, fileOpts *FileOpts
 		return err
 	}
 	return fs.SetRawPath(path, r, fileOpts, nil)
+}
+
+func (fs *DashFSClient) MakePathUrl(path string, jwtOpts *JWTOpts) (string, error) {
+	if path == "" || !dashutil.IsFullPathValid(path) {
+		return "", fmt.Errorf("Invalid Path")
+	}
+	if jwtOpts == nil {
+		jwtOpts = fs.client.Config.GetJWTOpts()
+	}
+	pathLink := fs.client.getAccHost() + "/@fs" + path
+	if jwtOpts.NoJWT {
+		return pathLink, nil
+	}
+	err := jwtOpts.Validate()
+	if err != nil {
+		return "", err
+	}
+	jwtToken, err := fs.client.Config.MakeAccountJWT(jwtOpts)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s?jwt=%s", pathLink, jwtToken), nil
 }

@@ -26,36 +26,27 @@ type ReflectProcType struct {
 }
 
 type JWTOpts struct {
-	NoJwt    bool
+	NoJWT    bool
 	ValidFor time.Duration
 	UserId   string
 	Role     string
 }
 
-func (jwtOpts *JWTOpts) ValidateAndSetDefaults() error {
-	if jwtOpts.NoJwt {
+func (jwtOpts *JWTOpts) Validate() error {
+	if jwtOpts.NoJWT {
 		return nil
 	}
 	if jwtOpts.ValidFor < 0 {
 		return dasherr.ValidateErr(fmt.Errorf("Invalid ValidTime (negative)"))
 	}
-	if jwtOpts.ValidFor == 0 {
-		jwtOpts.ValidFor = DefaultJwtValidFor
-	}
-	if jwtOpts.Role == "" {
-		jwtOpts.Role = DefaultJwtRole
-	}
-	if jwtOpts.UserId == "" {
-		jwtOpts.UserId = DefaultJwtUserId
-	}
-	if !dashutil.IsRoleListValid(jwtOpts.Role) {
-		return dasherr.ValidateErr(fmt.Errorf("Invalid Role"))
-	}
-	if !dashutil.IsUserIdValid(jwtOpts.UserId) {
-		return dasherr.ValidateErr(fmt.Errorf("Invalid UserId"))
-	}
 	if jwtOpts.ValidFor > 24*time.Hour {
 		return dasherr.ValidateErr(fmt.Errorf("Maximum validFor for JWT tokens is 24-hours"))
+	}
+	if jwtOpts.Role != "" && !dashutil.IsRoleListValid(jwtOpts.Role) {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid Role"))
+	}
+	if jwtOpts.UserId != "" && !dashutil.IsUserIdValid(jwtOpts.UserId) {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid UserId"))
 	}
 	return nil
 }

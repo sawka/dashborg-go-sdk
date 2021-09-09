@@ -9,7 +9,7 @@ const (
 	ZoneNameMax      = 20
 	ZoneAccessMax    = 50
 	ControlNameMax   = 30
-	AppNameMax       = 20
+	AppNameMax       = 50
 	AppTitleMax      = 80
 	ProcNameMax      = 20
 	FileNameMax      = 80
@@ -26,7 +26,7 @@ const (
 	DataPathMax      = 200
 	PathMax          = 100
 	PathFragMax      = 30
-	FullPathMax      = 100
+	FullPathMax      = 120
 	TagMax           = 50
 	RoleMax          = 12
 	RoleListMax      = 50
@@ -40,9 +40,9 @@ const (
 )
 
 var (
-	zoneNameRe       = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_.-]*$")
+	zoneNameRe       = regexp.MustCompile("^[a-zA-Z][a-zA-Z0-9_.-]*$")
 	controlNameRe    = regexp.MustCompile("^[a-zA-Z0-9_.:#/-]+$")
-	appNameRe        = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_.-]*$")
+	appNameRe        = regexp.MustCompile("^[a-zA-Z][a-zA-Z0-9_./-]*$")
 	procNameRe       = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
 	uuidRe           = regexp.MustCompile("^[a-fA-F0-9-]{36}$")
 	handlerPathRe    = regexp.MustCompile("^/@?[a-zA-Z0-9_-][a-zA-Z0-9_/-]*$")

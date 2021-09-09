@@ -151,7 +151,6 @@ message ConnectLinkResponse {
 service DashborgService {
     rpc ConnectClient(ConnectClientMessage) returns (ConnectClientResponse) {}
     rpc BackendPush(BackendPushMessage) returns (BackendPushResponse) {}
-    
     rpc RequestStream(RequestStreamMessage) returns (stream RequestMessage) {} // backwards
     rpc SendResponse(SendResponseMessage) returns (SendResponseResponse) {}
     rpc SetPath(stream SetPathMessage) returns (stream SetPathResponse) {}

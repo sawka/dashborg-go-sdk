@@ -66,7 +66,7 @@ type ProcInfo struct {
 }
 
 type App struct {
-	appPath           string
+	appName           string
 	appConfig         AppConfig
 	appRuntime        *AppRuntimeImpl
 	htmlStr           string
@@ -88,43 +88,46 @@ func (app *App) SetRuntime(apprt *AppRuntimeImpl) {
 	app.appRuntime = apprt
 }
 
-func MakeApp(appNameOrPath string) *App {
-	appName, appPath, appNameErr := dashutil.ResolveAppNameOrPath(appNameOrPath)
+func MakeApp(appName string) *App {
+	var appNameErr error
+	if !dashutil.IsAppNameValid(appName) {
+		appNameErr = dasherr.ValidateErr(fmt.Errorf("MakeApp: Invalid appName '%s'", appName))
+	}
 	rtn := &App{
-		appPath:    appPath,
-		appRuntime: MakeAppRuntime(),
+		appName: appName,
 		appConfig: AppConfig{
 			ClientVersion: ClientVersion,
 			AppName:       appName,
 			AllowedRoles:  []string{RoleUser},
 		},
+		appRuntime: MakeAppRuntime(),
 	}
 	if appNameErr != nil {
-		rtn.errs = append(rtn.errs, dasherr.ValidateErr(fmt.Errorf("MakeApp: %w", appNameErr)))
+		rtn.errs = append(rtn.errs, appNameErr)
 	}
 	return rtn
 }
 
-func MakeAppFromConfig(appNameOrPath string, cfg AppConfig) *App {
-	appName, appPath, appNameErr := dashutil.ResolveAppNameOrPath(appNameOrPath)
-	cfg.AppName = appName
+func MakeAppFromConfig(cfg AppConfig) (*App, error) {
 	cfg.ClientVersion = ClientVersion
-	if len(cfg.AllowedRoles) == 0 {
-		cfg.AllowedRoles = []string{RoleUser}
+	err := cfg.Validate()
+	if err != nil {
+		return nil, err
 	}
 	rtn := &App{
-		appPath:    appPath,
-		appRuntime: MakeAppRuntime(),
+		appName:    cfg.AppName,
 		appConfig:  cfg,
+		appRuntime: MakeAppRuntime(),
 	}
-	if appNameErr != nil {
-		rtn.errs = append(rtn.errs, dasherr.ValidateErr(fmt.Errorf("MakeApp: %w", appNameErr)))
-	}
-	return rtn
+	return rtn, nil
 }
 
 func (app *App) SetExternalAppRuntimePath(runtimePath string) {
 	app.appConfig.RuntimePath = runtimePath
+}
+
+func (app *App) HasExternalRuntime() bool {
+	return app.getRuntimePath() != app.defaultRuntimePath()
 }
 
 // offline mode type is either OfflineModeEnable or OfflineModeDisable
@@ -147,6 +150,9 @@ func (app *App) AppConfig() (AppConfig, error) {
 }
 
 func (config *AppConfig) Validate() error {
+	if !dashutil.IsAppNameValid(config.AppName) {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid AppName: '%s'", config.AppName))
+	}
 	_, _, _, err := dashutil.ParseFullPath(config.HtmlPath, true)
 	if err != nil {
 		return dasherr.ValidateErr(err)
@@ -267,7 +273,7 @@ func (app *App) validateHtmlOpts() error {
 
 func (app *App) getHtmlPath() string {
 	if app.htmlStr != "" || app.htmlFileName != "" {
-		return fmt.Sprintf("%s/html", app.appPath)
+		return app.defaultHtmlPath()
 	}
 	if app.htmlFromRuntime {
 		return fmt.Sprintf("%s:@html", app.getRuntimePath())
@@ -278,14 +284,22 @@ func (app *App) getHtmlPath() string {
 	if app.appConfig.HtmlPath != "" {
 		return app.appConfig.HtmlPath
 	}
-	return fmt.Sprintf("%s/html", app.appPath)
+	return app.defaultHtmlPath()
 }
 
 func (app *App) getRuntimePath() string {
 	if app.appConfig.RuntimePath != "" {
 		return app.appConfig.RuntimePath
 	}
-	return fmt.Sprintf("%s/runtime", app.appPath)
+	return app.defaultRuntimePath()
+}
+
+func (app *App) defaultRuntimePath() string {
+	return app.AppPath() + AppRuntimeSubPath
+}
+
+func (app *App) defaultHtmlPath() string {
+	return app.AppPath() + AppHtmlSubPath
 }
 
 func (app *App) Err() error {
@@ -295,5 +309,5 @@ func (app *App) Err() error {
 }
 
 func (app *App) AppPath() string {
-	return app.appPath
+	return AppPathFromName(app.appName)
 }

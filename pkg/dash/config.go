@@ -28,10 +28,16 @@ const (
 	DefaultLocalServerAddr = "localhost:8082"
 	DefaultConsoleHost     = "console.dashborg.net"
 	DefaultProcHost        = "grpc.api.dashborg.net"
-	DefaultJwtValidFor     = 24 * time.Hour
-	DefaultJwtUserId       = "jwt-user"
-	DefaultJwtRole         = RoleUser
+	DefaultJWTValidFor     = 24 * time.Hour
+	DefaultJWTUserId       = "jwt-user"
+	DefaultJWTRole         = RoleUser
 )
+
+var DefaultJWTOpts = &JWTOpts{
+	ValidFor: DefaultJWTValidFor,
+	Role:     DefaultJWTRole,
+	UserId:   DefaultJWTUserId,
+}
 
 type Config struct {
 	// DASHBORG_ACCID, set to force an AccountId (must match certificate).  If not set, AccountId is set from certificate file.
@@ -71,8 +77,7 @@ type Config struct {
 
 	setupDone bool // internal
 
-	NoShowJWT bool // set to true to disable showing app-link with jwt param
-	JWTOpts   *JWTOpts
+	JWTOpts *JWTOpts
 
 	Logger *log.Logger // use to override the SDK's logger object
 }
@@ -118,9 +123,9 @@ func (c *Config) setDefaults() {
 	c.Verbose = dashutil.EnvOverride(c.Verbose, "DASHBORG_VERBOSE")
 
 	if c.JWTOpts == nil {
-		c.JWTOpts = &JWTOpts{}
+		c.JWTOpts = DefaultJWTOpts
 	}
-	err := c.JWTOpts.ValidateAndSetDefaults()
+	err := c.JWTOpts.Validate()
 	if err != nil {
 		panic(fmt.Sprintf("Invalid JWTOpts in config: %s", err))
 	}
@@ -225,25 +230,43 @@ func (c *Config) loadPrivateKey() (interface{}, error) {
 }
 
 // Creates a JWT token from the public/private keypair
-func (c *Config) MakeAccountJWT(jwtOpts JWTOpts) (string, error) {
+func (c *Config) MakeAccountJWT(jwtOpts *JWTOpts) (string, error) {
 	c.setDefaultsAndLoadKeys()
+	if jwtOpts == nil {
+		jwtOpts = c.GetJWTOpts()
+	}
+	if jwtOpts.NoJWT {
+		return "", fmt.Errorf("NoJWT set in JWTOpts")
+	}
 	ecKey, err := c.loadPrivateKey()
 	if err != nil {
 		return "", err
 	}
-	err = jwtOpts.ValidateAndSetDefaults()
+	err = jwtOpts.Validate()
 	if err != nil {
 		return "", err
 	}
+	jwtValidFor := jwtOpts.ValidFor
+	if jwtValidFor == 0 {
+		jwtValidFor = DefaultJWTValidFor
+	}
+	jwtRole := jwtOpts.Role
+	if jwtRole == "" {
+		jwtRole = DefaultJWTRole
+	}
+	jwtUserId := jwtOpts.UserId
+	if jwtUserId == "" {
+		jwtUserId = DefaultJWTUserId
+	}
 	claims := jwt.MapClaims{}
 	claims["iss"] = "dashborg"
-	claims["exp"] = time.Now().Add(jwtOpts.ValidFor).Unix()
+	claims["exp"] = time.Now().Add(jwtValidFor).Unix()
 	claims["iat"] = time.Now().Add(-5 * time.Second).Unix() // skeww
 	claims["jti"] = uuid.New().String()
 	claims["dash-acc"] = c.AccId
 	claims["aud"] = "dashborg-auth"
-	claims["sub"] = jwtOpts.UserId
-	claims["role"] = jwtOpts.Role
+	claims["sub"] = jwtUserId
+	claims["role"] = jwtRole
 	token := jwt.NewWithClaims(jwt.GetSigningMethod("ES384"), claims)
 	jwtStr, err := token.SignedString(ecKey)
 	if err != nil {
@@ -252,7 +275,7 @@ func (c *Config) MakeAccountJWT(jwtOpts JWTOpts) (string, error) {
 	return jwtStr, nil
 }
 
-func (c *Config) MustMakeAccountJWT(jwtOpts JWTOpts) string {
+func (c *Config) MustMakeAccountJWT(jwtOpts *JWTOpts) string {
 	rtn, err := c.MakeAccountJWT(jwtOpts)
 	if err != nil {
 		panic(err)
@@ -270,4 +293,11 @@ func (c *Config) log(fmtStr string, args ...interface{}) {
 
 func (c *Config) copyJWTOpts() JWTOpts {
 	return *c.JWTOpts
+}
+
+func (c *Config) GetJWTOpts() *JWTOpts {
+	if c.JWTOpts == nil {
+		return DefaultJWTOpts
+	}
+	return c.JWTOpts
 }
