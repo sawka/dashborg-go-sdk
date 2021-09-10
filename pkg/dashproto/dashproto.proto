@@ -122,11 +122,14 @@ message FileInfoMessage {
     int64 Ts = 1;
     PathId Path = 2;
     string DirOptsJson = 3;
+    bool RtnContents = 4;
 }
 
 message FileInfoResponse {
     RtnStatus Status = 1;
     string FileInfoJson = 2;
+    bytes FileContent = 3;
+    bool FileContentRtn = 4;
 }
 
 message ConnectLinkMessage {

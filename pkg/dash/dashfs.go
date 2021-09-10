@@ -234,7 +234,7 @@ func (fs *DashFSClient) RemovePath(path string) error {
 }
 
 func (fs *DashFSClient) FileInfo(path string) (*FileInfo, error) {
-	rtn, err := fs.client.fileInfo(path, nil)
+	rtn, _, err := fs.client.fileInfo(path, nil, false)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +248,8 @@ func (fs *DashFSClient) DirInfo(path string, dirOpts *DirOpts) ([]*FileInfo, err
 	if dirOpts == nil {
 		dirOpts = &DirOpts{}
 	}
-	return fs.client.fileInfo(path, dirOpts)
+	rtn, _, err := fs.client.fileInfo(path, dirOpts, false)
+	return rtn, err
 }
 
 func (fs *DashFSClient) LinkRuntime(path string, rt LinkRuntime, fileOpts *FileOpts) error {

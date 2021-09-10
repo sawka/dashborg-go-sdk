@@ -2,6 +2,7 @@ package dash
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 
 	"github.com/sawka/dashborg-go-sdk/pkg/dasherr"
@@ -15,6 +16,23 @@ const (
 
 type DashAppClient struct {
 	client *DashCloudClient
+}
+
+func (dac *DashAppClient) LoadApp(appName string) (*App, error) {
+	appPath := AppPathFromName(appName)
+	finfo, contents, err := dac.client.fileInfo(appPath, nil, true)
+	if err != nil {
+		return nil, err
+	}
+	if finfo == nil || len(contents) == 0 {
+		return nil, nil
+	}
+	var config AppConfig
+	err = json.Unmarshal(contents, &config)
+	if err != nil {
+		return nil, err
+	}
+	return MakeAppFromConfig(config)
 }
 
 func (dac *DashAppClient) WriteApp(app *App) error {

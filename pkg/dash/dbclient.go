@@ -415,22 +415,23 @@ func (pc *DashCloudClient) removePath(path string) error {
 	return nil
 }
 
-func (pc *DashCloudClient) fileInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error) {
+func (pc *DashCloudClient) fileInfo(path string, dirOpts *DirOpts, rtnContents bool) ([]*FileInfo, []byte, error) {
 	if !pc.IsConnected() {
-		return nil, NotConnectedErr
+		return nil, nil, NotConnectedErr
 	}
 	pathId, err := parsePathToPathId(path, false)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	m := &dashproto.FileInfoMessage{
-		Ts:   dashutil.Ts(),
-		Path: pathId,
+		Ts:          dashutil.Ts(),
+		Path:        pathId,
+		RtnContents: rtnContents,
 	}
 	if dirOpts != nil {
 		jsonStr, err := dashutil.MarshalJson(dirOpts)
 		if err != nil {
-			return nil, dasherr.JsonMarshalErr("DirOpts", err)
+			return nil, nil, dasherr.JsonMarshalErr("DirOpts", err)
 		}
 		m.DirOptsJson = jsonStr
 	}
@@ -439,17 +440,17 @@ func (pc *DashCloudClient) fileInfo(path string, dirOpts *DirOpts) ([]*FileInfo,
 	resp, respErr := pc.DBService.FileInfo(ctx, m)
 	dashErr := pc.handleStatusErrors(fmt.Sprintf("FileInfo(%s)", path), resp, respErr, false)
 	if dashErr != nil {
-		return nil, dashErr
+		return nil, nil, dashErr
 	}
 	if resp.FileInfoJson == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 	var rtn []*FileInfo
 	err = json.Unmarshal([]byte(resp.FileInfoJson), &rtn)
 	if err != nil {
-		return nil, dasherr.JsonUnmarshalErr("FileInfoJson", err)
+		return nil, nil, dasherr.JsonUnmarshalErr("FileInfoJson", err)
 	}
-	return rtn, nil
+	return rtn, resp.FileContent, nil
 }
 
 func (pc *DashCloudClient) runRequestStreamLoop() {
