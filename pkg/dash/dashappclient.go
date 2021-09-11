@@ -20,15 +20,19 @@ type DashAppClient struct {
 
 func (dac *DashAppClient) LoadApp(appName string) (*App, error) {
 	appPath := AppPathFromName(appName)
-	finfo, contents, err := dac.client.fileInfo(appPath, nil, true)
+	finfos, _, err := dac.client.fileInfo(appPath, nil, false)
 	if err != nil {
 		return nil, err
 	}
-	if finfo == nil || len(contents) == 0 {
+	if finfos == nil || len(finfos) == 0 {
+		return nil, nil
+	}
+	finfo := finfos[0]
+	if finfo.FileType != FileTypeApp || finfo.AppConfig == "" {
 		return nil, nil
 	}
 	var config AppConfig
-	err = json.Unmarshal(contents, &config)
+	err = json.Unmarshal([]byte(finfo.AppConfig), &config)
 	if err != nil {
 		return nil, err
 	}
@@ -119,8 +123,12 @@ func (dac *DashAppClient) baseWriteApp(app *App, shouldConnect bool) error {
 		return dasherr.ValidateErr(fmt.Errorf("App has specified an external runtime path '%s', use DashFS().LinkAppRuntime() to connect", app.getRuntimePath()))
 	}
 	roles := appConfig.AllowedRoles
+	appConfigJson, err := dashutil.MarshalJson(appConfig)
+	if err != nil {
+		return dasherr.JsonMarshalErr("AppConfig", err)
+	}
 	fs := dac.client.FSClient()
-	err = fs.SetJsonPath(app.AppPath(), appConfig, &FileOpts{MimeType: MimeTypeDashborgApp, AllowedRoles: roles})
+	err = fs.SetRawPath(app.AppPath(), nil, &FileOpts{FileType: FileTypeApp, MimeType: MimeTypeDashborgApp, AllowedRoles: roles, AppConfig: appConfigJson}, nil)
 	if err != nil {
 		return err
 	}

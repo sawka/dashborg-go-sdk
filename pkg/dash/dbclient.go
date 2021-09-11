@@ -784,7 +784,10 @@ func (pc *DashCloudClient) drainSetPathStream(client dashproto.DashborgService_S
 	}
 }
 
-func validateFileOpts(opts *FileOpts) error {
+func (opts *FileOpts) Validate() error {
+	if opts == nil {
+		return dasherr.ValidateErr(fmt.Errorf("FileOpts is nil"))
+	}
 	if !dashutil.IsFileTypeValid(opts.FileType) {
 		return dasherr.ValidateErr(fmt.Errorf("Invalid FileType"))
 	}
@@ -806,6 +809,32 @@ func validateFileOpts(opts *FileOpts) error {
 		}
 		if opts.Size <= 0 {
 			return dasherr.ValidateErr(fmt.Errorf("Invalid Size (cannot be 0)"))
+		}
+	}
+	if opts.FileType == FileTypeApp && opts.AppConfig == "" {
+		return dasherr.ValidateErr(fmt.Errorf("FileType 'app' must have AppConfig set"))
+	}
+	if opts.FileType != FileTypeApp && opts.AppConfig != "" {
+		return dasherr.ValidateErr(fmt.Errorf("FileType '%s' must not have AppConfig set", opts.FileType))
+	}
+	if opts.AppConfig != "" {
+		if len(opts.AppConfig) > dashutil.AppConfigMax {
+			return dasherr.ValidateErr(fmt.Errorf("AppConfig too large"))
+		}
+		var acfg AppConfig
+		err := json.Unmarshal([]byte(opts.AppConfig), &acfg)
+		if err != nil {
+			return dasherr.JsonUnmarshalErr("AppConfig", err)
+		}
+	}
+	if opts.Metadata != "" {
+		if len(opts.Metadata) > dashutil.MetadataMax {
+			return dasherr.ValidateErr(fmt.Errorf("Metadata too large"))
+		}
+		var testJson interface{}
+		err := json.Unmarshal([]byte(opts.Metadata), &testJson)
+		if err != nil {
+			return dasherr.JsonUnmarshalErr("Metadata", err)
 		}
 	}
 	return nil
@@ -838,7 +867,7 @@ func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts
 	if len(fileOpts.AllowedRoles) == 0 {
 		fileOpts.AllowedRoles = []string{RoleUser}
 	}
-	err = validateFileOpts(fileOpts)
+	err = fileOpts.Validate()
 	if err != nil {
 		return err
 	}
