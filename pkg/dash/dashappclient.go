@@ -28,11 +28,11 @@ func (dac *DashAppClient) LoadApp(appName string) (*App, error) {
 		return nil, nil
 	}
 	finfo := finfos[0]
-	if finfo.FileType != FileTypeApp || finfo.AppConfig == "" {
+	if finfo.FileType != FileTypeApp || finfo.AppConfigJson == "" {
 		return nil, nil
 	}
 	var config AppConfig
-	err = json.Unmarshal([]byte(finfo.AppConfig), &config)
+	err = json.Unmarshal([]byte(finfo.AppConfigJson), &config)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +128,7 @@ func (dac *DashAppClient) baseWriteApp(app *App, shouldConnect bool) error {
 		return dasherr.JsonMarshalErr("AppConfig", err)
 	}
 	fs := dac.client.FSClient()
-	err = fs.SetRawPath(app.AppPath(), nil, &FileOpts{FileType: FileTypeApp, MimeType: MimeTypeDashborgApp, AllowedRoles: roles, AppConfig: appConfigJson}, nil)
+	err = fs.SetRawPath(app.AppPath(), nil, &FileOpts{FileType: FileTypeApp, MimeType: MimeTypeDashborgApp, AllowedRoles: roles, AppConfigJson: appConfigJson}, nil)
 	if err != nil {
 		return err
 	}

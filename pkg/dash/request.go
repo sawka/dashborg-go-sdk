@@ -22,14 +22,15 @@ import (
 // exported, but subject to change and should not be used except in advanced use cases.
 
 type RequestInfo struct {
-	StartTime   time.Time
-	ReqId       string // unique request id
-	RequestType string // "data", "handler", or "stream"
-	PathNs      string
-	Path        string // handler or data path
-	PathFrag    string
-	AppName     string // app name
-	FeClientId  string // unique id for client
+	StartTime     time.Time
+	ReqId         string // unique request id
+	RequestType   string // "data", "handler", or "stream"
+	RequestMethod string // GET or POST
+	PathNs        string
+	Path          string // handler or data path
+	PathFrag      string
+	AppName       string // app name
+	FeClientId    string // unique id for client
 }
 
 func (info RequestInfo) FullPath() string {

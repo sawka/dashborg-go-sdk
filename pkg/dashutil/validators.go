@@ -37,8 +37,8 @@ const (
 	BlobNsMax        = 20
 	SimpleIdMax      = 30
 	UserIdMax        = 100
-	AppConfigMax     = 2000
-	MetadataMax      = 1000
+	AppConfigJsonMax = 2000
+	MetadataJsonMax  = 1000
 )
 
 var (
@@ -77,6 +77,7 @@ var ValidRequestType = map[string]bool{"data": true, "handler": true, "stream": 
 var ValidActionType = map[string]bool{"setdata": true, "event": true, "invalidate": true, "html": true, "panelauth": true, "panelauthchallenge": true, "error": true, "blob": true, "blobext": true, "streamopen": true, "backendpush": true}
 var ValidBlobNs = map[string]bool{"app": true, "html": true}
 var ValidFileType = map[string]bool{"static": true, "dir": true, "rt-link": true, "rt-app-link": true, "app": true}
+var ValidRequestMethod = map[string]bool{"GET": true, "POST": true}
 
 func IsZoneNameValid(zoneName string) bool {
 	if len(zoneName) > ZoneNameMax {
@@ -299,4 +300,8 @@ func IsFileDisplayValid(s string) bool {
 
 func IsDescriptionValid(s string) bool {
 	return len(s) < DescriptionMax
+}
+
+func IsRequestMethodValid(s string) bool {
+	return ValidRequestMethod[s]
 }

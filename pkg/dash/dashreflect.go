@@ -183,7 +183,7 @@ func (apprt *AppRuntimeImpl) handlerInternal(name string, handlerFn interface{})
 		rtnVals := hVal.Call(args)
 		return convertRtnVals(hType, rtnVals)
 	}
-	apprt.setHandler(name, appHandlerType{HandlerFn: hfn})
+	apprt.setHandler(name, handlerType{HandlerFn: hfn})
 	return nil
 }
 
@@ -206,7 +206,7 @@ func (linkrt *LinkRuntimeImpl) handlerInternal(name string, handlerFn interface{
 		return fmt.Errorf("Invalid handlerFn return, must return void, error, interface{}, or (interface{}, error)")
 	}
 	hVal := reflect.ValueOf(handlerFn)
-	hfn := func(req Request) (interface{}, error) {
+	hfn := func(req *AppRequest) (interface{}, error) {
 		args, err := makeCallArgs(hType, req, false, nil)
 		if err != nil {
 			return nil, err
@@ -214,7 +214,7 @@ func (linkrt *LinkRuntimeImpl) handlerInternal(name string, handlerFn interface{
 		rtnVals := hVal.Call(args)
 		return convertRtnVals(hType, rtnVals)
 	}
-	linkrt.setHandler(name, linkHandlerType{HandlerFn: hfn})
+	linkrt.setHandler(name, handlerType{HandlerFn: hfn})
 	return nil
 }
 

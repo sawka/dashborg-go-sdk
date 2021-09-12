@@ -32,26 +32,27 @@ const (
 )
 
 type FileInfo struct {
-	Path         string   `json:"path"`
-	Size         int64    `json:"size"`
-	CreatedTs    int64    `json:"createdts"`
-	UpdatedTs    int64    `json:"updatedts"`
-	Sha256       string   `json:"sha256"`
-	FileType     string   `json:"filetype"`
-	MimeType     string   `json:"mimetype"`
-	AllowedRoles []string `json:"allowedroles"`
-	Display      string   `json:"display,omitempty"`
-	Metadata     string   `json:'metadata,omitempty"`
-	Description  string   `json:"description,omitempty"`
-	Hidden       bool     `json:"hidden,omitempty"`
-	Removed      bool     `json:"removed,omitempty"`
-	ProcLinks    []string `json:"proclinks,omitempty"`
-	TxId         string   `json:"txid,omitempty"`
-	AppConfig    string   `json:"appconfig"` // json-string
+	Path          string   `json:"path"`
+	Size          int64    `json:"size"`
+	CreatedTs     int64    `json:"createdts"`
+	UpdatedTs     int64    `json:"updatedts"`
+	Sha256        string   `json:"sha256"`
+	FileType      string   `json:"filetype"`
+	MimeType      string   `json:"mimetype"`
+	AllowedRoles  []string `json:"allowedroles"`
+	EditRoles     []string `json:"editroles"`
+	Display       string   `json:"display,omitempty"`
+	MetadataJson  string   `json:'metadata,omitempty"` // json-string
+	Description   string   `json:"description,omitempty"`
+	Hidden        bool     `json:"hidden,omitempty"`
+	Removed       bool     `json:"removed,omitempty"`
+	ProcLinks     []string `json:"proclinks,omitempty"`
+	TxId          string   `json:"txid,omitempty"`
+	AppConfigJson string   `json:"appconfig"` // json-string
 }
 
 func (finfo *FileInfo) BindMetadata(obj interface{}) error {
-	return json.Unmarshal([]byte(finfo.Metadata), obj)
+	return json.Unmarshal([]byte(finfo.MetadataJson), obj)
 }
 
 type BlobReturn struct {
@@ -60,17 +61,18 @@ type BlobReturn struct {
 }
 
 type FileOpts struct {
-	FileType     string   `json:"filetype"`
-	Sha256       string   `json:"sha256"`
-	Size         int64    `json:"size"`
-	MimeType     string   `json:"mimetype"`
-	AllowedRoles []string `json:"allowedroles,omitempty"`
-	Display      string   `json:"display,omitempty"`
-	Metadata     string   `json:"metadata,omitempty"`
-	Description  string   `json:"description,omitempty"`
-	MkDirs       bool     `json:"mkdirs,omitempty"`
-	Hidden       bool     `json:"hidden,omitempty"`
-	AppConfig    string   `json:"appconfig"` // json-string
+	FileType      string   `json:"filetype"`
+	Sha256        string   `json:"sha256"`
+	Size          int64    `json:"size"`
+	MimeType      string   `json:"mimetype"`
+	AllowedRoles  []string `json:"allowedroles,omitempty"`
+	EditRoles     []string `json:"editroles,omitempty"`
+	Display       string   `json:"display,omitempty"`
+	MetadataJson  string   `json:"metadata,omitempty"`
+	Description   string   `json:"description,omitempty"`
+	MkDirs        bool     `json:"mkdirs,omitempty"`
+	Hidden        bool     `json:"hidden,omitempty"`
+	AppConfigJson string   `json:"appconfig"` // json-string
 }
 
 func (opts *FileOpts) SetMetadata(obj interface{}) error {
@@ -78,10 +80,10 @@ func (opts *FileOpts) SetMetadata(obj interface{}) error {
 	if err != nil {
 		return err
 	}
-	if len(metaStr) > dashutil.MetadataMax {
+	if len(metaStr) > dashutil.MetadataJsonMax {
 		return dasherr.ValidateErr(fmt.Errorf("Metadata too large"))
 	}
-	opts.Metadata = metaStr
+	opts.MetadataJson = metaStr
 	return nil
 }
 

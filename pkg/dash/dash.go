@@ -15,4 +15,9 @@ const (
 	AccTypeEnterprise = "enterprise"
 )
 
+const (
+	RequestMethodGet  = "GET"
+	RequestMethodPost = "POST"
+)
+
 const RtnSetDataPath = "@rtn"

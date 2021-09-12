@@ -67,6 +67,7 @@ message RequestMessage {
     int64 TimeoutMs = 14;
     bool IsBackendCall = 15;
     bool AppRequest = 16;
+    string RequestMethod = 17;
 }
 
 message ConnectClientMessage {

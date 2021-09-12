@@ -811,28 +811,28 @@ func (opts *FileOpts) Validate() error {
 			return dasherr.ValidateErr(fmt.Errorf("Invalid Size (cannot be 0)"))
 		}
 	}
-	if opts.FileType == FileTypeApp && opts.AppConfig == "" {
-		return dasherr.ValidateErr(fmt.Errorf("FileType 'app' must have AppConfig set"))
+	if opts.FileType == FileTypeApp && opts.AppConfigJson == "" {
+		return dasherr.ValidateErr(fmt.Errorf("FileType 'app' must have AppConfigJson set"))
 	}
-	if opts.FileType != FileTypeApp && opts.AppConfig != "" {
-		return dasherr.ValidateErr(fmt.Errorf("FileType '%s' must not have AppConfig set", opts.FileType))
+	if opts.FileType != FileTypeApp && opts.AppConfigJson != "" {
+		return dasherr.ValidateErr(fmt.Errorf("FileType '%s' must not have AppConfigJson set", opts.FileType))
 	}
-	if opts.AppConfig != "" {
-		if len(opts.AppConfig) > dashutil.AppConfigMax {
+	if opts.AppConfigJson != "" {
+		if len(opts.AppConfigJson) > dashutil.AppConfigJsonMax {
 			return dasherr.ValidateErr(fmt.Errorf("AppConfig too large"))
 		}
 		var acfg AppConfig
-		err := json.Unmarshal([]byte(opts.AppConfig), &acfg)
+		err := json.Unmarshal([]byte(opts.AppConfigJson), &acfg)
 		if err != nil {
 			return dasherr.JsonUnmarshalErr("AppConfig", err)
 		}
 	}
-	if opts.Metadata != "" {
-		if len(opts.Metadata) > dashutil.MetadataMax {
+	if opts.MetadataJson != "" {
+		if len(opts.MetadataJson) > dashutil.MetadataJsonMax {
 			return dasherr.ValidateErr(fmt.Errorf("Metadata too large"))
 		}
 		var testJson interface{}
-		err := json.Unmarshal([]byte(opts.Metadata), &testJson)
+		err := json.Unmarshal([]byte(opts.MetadataJson), &testJson)
 		if err != nil {
 			return dasherr.JsonUnmarshalErr("Metadata", err)
 		}

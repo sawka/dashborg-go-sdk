@@ -16,29 +16,30 @@ const (
 	pathFragHtml    = "@html"
 )
 
-type appHandlerType struct {
+type handlerType struct {
 	HandlerFn func(req *AppRequest) (interface{}, error)
-}
-
-type linkHandlerType struct {
-	HandlerFn func(req Request) (interface{}, error)
+	Opts      HandlerOpts
 }
 
 type LinkRuntime interface {
 	RunHandler(req *AppRequest) (interface{}, error)
 }
 
+type HandlerOpts struct {
+	AllowGetMethod bool
+}
+
 type LinkRuntimeImpl struct {
 	lock        *sync.Mutex
 	middlewares []middlewareType
-	handlers    map[string]linkHandlerType
+	handlers    map[string]handlerType
 	errs        []error
 }
 
 type AppRuntimeImpl struct {
 	lock         *sync.Mutex
 	appStateType reflect.Type
-	handlers     map[string]appHandlerType
+	handlers     map[string]handlerType
 	middlewares  []middlewareType
 	errs         []error
 }
@@ -50,12 +51,12 @@ type HasErr interface {
 func MakeAppRuntime() *AppRuntimeImpl {
 	rtn := &AppRuntimeImpl{
 		lock:     &sync.Mutex{},
-		handlers: make(map[string]appHandlerType),
+		handlers: make(map[string]handlerType),
 	}
 	return rtn
 }
 
-func (app *AppRuntimeImpl) setHandler(path string, handler appHandlerType) {
+func (app *AppRuntimeImpl) setHandler(path string, handler handlerType) {
 	app.lock.Lock()
 	defer app.lock.Unlock()
 	app.handlers[path] = handler
@@ -73,14 +74,14 @@ func (apprt *AppRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) {
 	if !ok {
 		return nil, fmt.Errorf("No handler found for %s", req.RequestInfo().FullPath())
 	}
-	rtn, err := mwAppHelper(req, hval, mws, 0)
+	rtn, err := mwHelper(req, hval, mws, 0)
 	if err != nil {
 		return nil, err
 	}
 	return rtn, nil
 }
 
-func mwAppHelper(outerReq *AppRequest, hval appHandlerType, mws []middlewareType, mwPos int) (interface{}, error) {
+func mwHelper(outerReq *AppRequest, hval handlerType, mws []middlewareType, mwPos int) (interface{}, error) {
 	if mwPos >= len(mws) {
 		return hval.HandlerFn(outerReq)
 	}
@@ -89,20 +90,7 @@ func mwAppHelper(outerReq *AppRequest, hval appHandlerType, mws []middlewareType
 		if innerReq == nil {
 			panic("No Request Passed to middleware nextFn")
 		}
-		return mwAppHelper(innerReq, hval, mws, mwPos+1)
-	})
-}
-
-func mwLinkHelper(outerReq *AppRequest, hval linkHandlerType, mws []middlewareType, mwPos int) (interface{}, error) {
-	if mwPos >= len(mws) {
-		return hval.HandlerFn(outerReq)
-	}
-	mw := mws[mwPos]
-	return mw.Fn(outerReq, func(innerReq *AppRequest) (interface{}, error) {
-		if innerReq == nil {
-			panic("No Request Passed to middleware nextFn")
-		}
-		return mwLinkHelper(innerReq, hval, mws, mwPos+1)
+		return mwHelper(innerReq, hval, mws, mwPos+1)
 	})
 }
 
@@ -147,11 +135,14 @@ func (apprt *AppRuntimeImpl) RemoveMiddleware(name string) {
 	apprt.middlewares = removeMiddleware(apprt.middlewares, name)
 }
 
-func (apprt *AppRuntimeImpl) SetRawHandler(handlerName string, handlerFn func(req *AppRequest) (interface{}, error)) error {
+func (apprt *AppRuntimeImpl) SetRawHandler(handlerName string, handlerFn func(req *AppRequest) (interface{}, error), opts *HandlerOpts) error {
+	if opts == nil {
+		opts = &HandlerOpts{}
+	}
 	if !dashutil.IsPathFragValid(handlerName) {
 		return fmt.Errorf("Invalid handler name")
 	}
-	apprt.setHandler(handlerName, appHandlerType{HandlerFn: handlerFn})
+	apprt.setHandler(handlerName, handlerType{HandlerFn: handlerFn, Opts: *opts})
 	return nil
 }
 
@@ -166,7 +157,7 @@ func (apprt *AppRuntimeImpl) SetHtmlHandler(handlerFn interface{}) {
 func MakeRuntime() *LinkRuntimeImpl {
 	rtn := &LinkRuntimeImpl{
 		lock:     &sync.Mutex{},
-		handlers: make(map[string]linkHandlerType),
+		handlers: make(map[string]handlerType),
 	}
 	return rtn
 }
@@ -174,13 +165,13 @@ func MakeRuntime() *LinkRuntimeImpl {
 func MakeSingleFnRuntime(handlerFn interface{}) *LinkRuntimeImpl {
 	rtn := &LinkRuntimeImpl{
 		lock:     &sync.Mutex{},
-		handlers: make(map[string]linkHandlerType),
+		handlers: make(map[string]handlerType),
 	}
 	rtn.Handler(pathFragDefault, handlerFn)
 	return rtn
 }
 
-func (linkrt *LinkRuntimeImpl) setHandler(name string, fn linkHandlerType) {
+func (linkrt *LinkRuntimeImpl) setHandler(name string, fn handlerType) {
 	linkrt.lock.Lock()
 	defer linkrt.lock.Unlock()
 	linkrt.handlers[name] = fn
@@ -202,18 +193,24 @@ func (linkrt *LinkRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) 
 	if !ok {
 		return nil, dasherr.ErrWithCode(dasherr.ErrCodeNoHandler, fmt.Errorf("No handler found for %s:%s", info.Path, info.PathFrag))
 	}
-	rtn, err := mwLinkHelper(req, hval, mws, 0)
+	rtn, err := mwHelper(req, hval, mws, 0)
 	if err != nil {
 		return nil, err
 	}
 	return rtn, nil
 }
 
-func (linkrt *LinkRuntimeImpl) SetRawHandler(handlerName string, handlerFn func(req Request) (interface{}, error)) error {
+func (linkrt *LinkRuntimeImpl) SetRawHandler(handlerName string, handlerFn func(req Request) (interface{}, error), opts *HandlerOpts) error {
+	if opts == nil {
+		opts = &HandlerOpts{}
+	}
 	if !dashutil.IsPathFragValid(handlerName) {
 		return fmt.Errorf("Invalid handler name")
 	}
-	linkrt.setHandler(handlerName, linkHandlerType{HandlerFn: handlerFn})
+	whfn := func(req *AppRequest) (interface{}, error) {
+		return handlerFn(req)
+	}
+	linkrt.setHandler(handlerName, handlerType{HandlerFn: whfn, Opts: *opts})
 	return nil
 }
 
