@@ -550,7 +550,7 @@ func (pc *DashCloudClient) runRequestStream() (bool, dasherr.ErrCode) {
 				break
 			}
 		}
-		pc.logV("Dashborg gRPC got request %s\n", requestMsgStr(reqMsg))
+		pc.logV("Dashborg gRPC request %s\n", requestMsgStr(reqMsg))
 		go func() {
 			atomic.AddInt64(&reqCounter, 1)
 			timeoutMs := reqMsg.TimeoutMs
@@ -989,9 +989,9 @@ func requestMsgStr(reqMsg *dashproto.RequestMessage) string {
 		return fmt.Sprintf("%s://[no-path]", reqMsg.RequestType)
 	}
 	if reqMsg.AppId != nil {
-		return fmt.Sprintf("%s://%s%s", reqMsg.RequestType, reqMsg.AppId.AppName, pathStr(reqMsg.Path))
+		return fmt.Sprintf("%4s %s://%s%s", reqMsg.RequestMethod, reqMsg.RequestType, reqMsg.AppId.AppName, pathStr(reqMsg.Path))
 	}
-	return fmt.Sprintf("%s:/%s", reqMsg.RequestType, pathStr(reqMsg.Path))
+	return fmt.Sprintf("%4s %s:/%s", reqMsg.RequestMethod, reqMsg.RequestType, pathStr(reqMsg.Path))
 }
 
 func pathStr(path *dashproto.PathId) string {

@@ -57,6 +57,7 @@ type Request interface {
 	RequestInfo() RequestInfo
 	RawData() RawRequestData
 	BindData(obj interface{}) error
+	BindAppState(obj interface{}) error
 }
 
 type AppRequest struct {
@@ -299,13 +300,14 @@ func (req *AppRequest) IsDone() bool {
 func makeAppRequest(ctx context.Context, reqMsg *dashproto.RequestMessage, client *DashCloudClient) *AppRequest {
 	preq := &AppRequest{
 		info: RequestInfo{
-			StartTime:   time.Now(),
-			ReqId:       reqMsg.ReqId,
-			RequestType: reqMsg.RequestType,
-			PathNs:      reqMsg.Path.PathNs,
-			Path:        reqMsg.Path.Path,
-			PathFrag:    reqMsg.Path.PathFrag,
-			FeClientId:  reqMsg.FeClientId,
+			StartTime:     time.Now(),
+			ReqId:         reqMsg.ReqId,
+			RequestType:   reqMsg.RequestType,
+			RequestMethod: reqMsg.RequestMethod,
+			PathNs:        reqMsg.Path.PathNs,
+			Path:          reqMsg.Path.Path,
+			PathFrag:      reqMsg.Path.PathFrag,
+			FeClientId:    reqMsg.FeClientId,
 		},
 		rawData: RawRequestData{
 			DataJson:     reqMsg.JsonData,

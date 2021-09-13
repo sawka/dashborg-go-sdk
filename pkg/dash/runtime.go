@@ -26,7 +26,7 @@ type LinkRuntime interface {
 }
 
 type HandlerOpts struct {
-	AllowGetMethod bool
+	PureHandler bool
 }
 
 type LinkRuntimeImpl struct {
@@ -44,6 +44,12 @@ type AppRuntimeImpl struct {
 	errs         []error
 }
 
+type runtimeImplIf interface {
+	addError(err error)
+	setHandler(path string, handler handlerType)
+	getStateType() reflect.Type
+}
+
 type HasErr interface {
 	Err() error
 }
@@ -56,10 +62,14 @@ func MakeAppRuntime() *AppRuntimeImpl {
 	return rtn
 }
 
-func (app *AppRuntimeImpl) setHandler(path string, handler handlerType) {
-	app.lock.Lock()
-	defer app.lock.Unlock()
-	app.handlers[path] = handler
+func (apprt *AppRuntimeImpl) setHandler(path string, handler handlerType) {
+	apprt.lock.Lock()
+	defer apprt.lock.Unlock()
+	apprt.handlers[path] = handler
+}
+
+func (apprt *AppRuntimeImpl) getStateType() reflect.Type {
+	return apprt.appStateType
 }
 
 func (apprt *AppRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) {
@@ -73,6 +83,9 @@ func (apprt *AppRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) {
 	apprt.lock.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("No handler found for %s", req.RequestInfo().FullPath())
+	}
+	if req.info.RequestMethod == RequestMethodGet && !hval.Opts.PureHandler {
+		return nil, dasherr.ValidateErr(fmt.Errorf("GET/data request to non-pure handler '%s'", req.info.PathFrag))
 	}
 	rtn, err := mwHelper(req, hval, mws, 0)
 	if err != nil {
@@ -95,6 +108,13 @@ func mwHelper(outerReq *AppRequest, hval handlerType, mws []middlewareType, mwPo
 }
 
 func (apprt *AppRuntimeImpl) SetAppStateType(appStateType reflect.Type) {
+	if appStateType != nil {
+		isStruct := appStateType.Kind() == reflect.Struct
+		isStructPtr := appStateType.Kind() == reflect.Ptr && appStateType.Elem().Kind() == reflect.Struct
+		if !isStruct && !isStructPtr {
+			apprt.addError(fmt.Errorf("AppStateType must be a struct or pointer to struct"))
+		}
+	}
 	apprt.appStateType = appStateType
 }
 
@@ -193,6 +213,9 @@ func (linkrt *LinkRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) 
 	if !ok {
 		return nil, dasherr.ErrWithCode(dasherr.ErrCodeNoHandler, fmt.Errorf("No handler found for %s:%s", info.Path, info.PathFrag))
 	}
+	if req.info.RequestMethod == RequestMethodGet && !hval.Opts.PureHandler {
+		return nil, dasherr.ValidateErr(fmt.Errorf("GET/Data request to non-pure handler"))
+	}
 	rtn, err := mwHelper(req, hval, mws, 0)
 	if err != nil {
 		return nil, err
@@ -242,4 +265,8 @@ func (linkrt *LinkRuntimeImpl) RemoveMiddleware(name string) {
 	linkrt.lock.Lock()
 	defer linkrt.lock.Unlock()
 	linkrt.middlewares = removeMiddleware(linkrt.middlewares, name)
+}
+
+func (linkrt *LinkRuntimeImpl) getStateType() reflect.Type {
+	return nil
 }

@@ -76,7 +76,7 @@ func ca_unmarshalMulti(hType reflect.Type, args []reflect.Value, argNum int, jso
 // * *Request
 // * AppStateType (if specified in App)
 // * data-array args
-func makeCallArgs(hType reflect.Type, req Request, appReq bool, stateType reflect.Type) ([]reflect.Value, error) {
+func makeCallArgs(hType reflect.Type, req Request, appReq bool, pureHandler bool, stateType reflect.Type) ([]reflect.Value, error) {
 	rtn := make([]reflect.Value, hType.NumIn())
 	if hType.NumIn() == 0 {
 		return rtn, nil
@@ -85,6 +85,9 @@ func makeCallArgs(hType reflect.Type, req Request, appReq bool, stateType reflec
 	if hType.In(argNum) == appReqType {
 		if !appReq {
 			return nil, fmt.Errorf("LinkRuntime functions must use dash.Request, not *dash.AppRequest")
+		}
+		if pureHandler {
+			return nil, fmt.Errorf("PureHandlers must use dash.Request, not *dash.AppRequest")
 		}
 		rtn[argNum] = reflect.ValueOf(req)
 		argNum++
@@ -125,6 +128,73 @@ func makeCallArgs(hType reflect.Type, req Request, appReq bool, stateType reflec
 	return rtn, nil
 }
 
+func validateHandler(hType reflect.Type, appReq bool, pureHandler bool, stateType reflect.Type) error {
+	if hType.Kind() != reflect.Func {
+		return fmt.Errorf("handlerFn must be a func")
+	}
+	if hType.NumOut() != 0 && !checkOutput(hType, errType) && !checkOutput(hType, interfaceType) && !checkOutput(hType, interfaceType, errType) {
+		return fmt.Errorf("Invalid handlerFn return, must return void, error, interface{}, or (interface{}, error)")
+	}
+	if hType.NumIn() == 0 {
+		return nil
+	}
+
+	argNum := 0
+
+	// check optional first argument: *dash.AppRequest / dash.Request
+	if hType.In(argNum) == appReqType {
+		if !appReq {
+			return fmt.Errorf("LinkRuntime functions must use dash.Request, not *dash.AppRequest")
+		}
+		if pureHandler {
+			return fmt.Errorf("PureHandlers must use dash.Request, not *dash.AppRequest")
+		}
+		argNum++
+	} else if hType.In(argNum) == reqType {
+		argNum++
+	}
+	if hType.NumIn() <= argNum {
+		return nil
+	}
+
+	// optional state type
+	if stateType != nil && hType.In(argNum) == stateType {
+		argNum++
+	} else if stateType != nil && stateType.Kind() == reflect.Ptr && hType.In(argNum) == stateType.Elem() {
+		return fmt.Errorf("StateType is %v (pointer), but argument is not a pointer: %v", stateType, hType.In(argNum))
+	} else if stateType != nil && stateType.Kind() == reflect.Struct && hType.In(argNum) == reflect.PtrTo(stateType) {
+		return fmt.Errorf("StateType is %v (struct), but argument a pointer: %v", stateType, hType.In(argNum))
+	}
+
+	if hType.NumIn() <= argNum {
+		return nil
+	}
+
+	// some basic static checking of the rest of the arguments
+	for ; argNum < hType.NumIn(); argNum++ {
+		inType := hType.In(argNum)
+		if inType == appReqType {
+			return fmt.Errorf("Invalid arg #%d, *dash.AppRequest must be first argument", argNum+1)
+		}
+		if inType == reqType {
+			return fmt.Errorf("Invalid arg #%d, dash.Request must be first argument", argNum+1)
+		}
+		if stateType != nil && inType == stateType {
+			return fmt.Errorf("Invalid arg #%d, state-type %v, must be first argument or second argument after dash.Request", argNum+1, stateType)
+		}
+		if inType.Kind() == reflect.Func || inType.Kind() == reflect.Chan || inType.Kind() == reflect.UnsafePointer {
+			return fmt.Errorf("Invalid arg #%d, cannot marshal into func/chan/unsafe.Pointer", argNum+1)
+		}
+		if inType.Kind() == reflect.Map {
+			if inType.Key().Kind() != reflect.String {
+				return fmt.Errorf("Invalid arg #%d (%v) map arguments must have string keys", argNum, inType)
+			}
+		}
+	}
+
+	return nil
+}
+
 func unmarshalToType(jsonData string, rtnType reflect.Type) (reflect.Value, error) {
 	if jsonData == "" {
 		return reflect.Zero(rtnType), nil
@@ -157,64 +227,52 @@ func unmarshalToType(jsonData string, rtnType reflect.Type) (reflect.Value, erro
 // it will be converted to a zero-element array.  The handler will throw an error if the Data or AppState
 // values cannot be converted to their respective go types (using json.Unmarshal).
 func (apprt *AppRuntimeImpl) Handler(name string, handlerFn interface{}) {
-	err := apprt.handlerInternal(name, handlerFn)
+	err := handlerInternal(apprt, name, handlerFn, true, HandlerOpts{})
 	if err != nil {
 		apprt.addError(fmt.Errorf("Error adding handler '%s': %w", name, err))
 	}
 }
 
-func (apprt *AppRuntimeImpl) handlerInternal(name string, handlerFn interface{}) error {
-	if !dashutil.IsPathFragValid(name) {
-		return fmt.Errorf("Invalid handler name")
+func (apprt *AppRuntimeImpl) PureHandler(name string, handlerFn interface{}) {
+	err := handlerInternal(apprt, name, handlerFn, true, HandlerOpts{PureHandler: true})
+	if err != nil {
+		apprt.addError(fmt.Errorf("Error adding handler '%s': %w", name, err))
 	}
-	hType := reflect.TypeOf(handlerFn)
-	if hType.Kind() != reflect.Func {
-		return fmt.Errorf("handlerFn must be a func")
-	}
-	if hType.NumOut() != 0 && !checkOutput(hType, errType) && !checkOutput(hType, interfaceType) && !checkOutput(hType, interfaceType, errType) {
-		return fmt.Errorf("Invalid handlerFn return, must return void, error, interface{}, or (interface{}, error)")
-	}
-	hVal := reflect.ValueOf(handlerFn)
-	hfn := func(req *AppRequest) (interface{}, error) {
-		args, err := makeCallArgs(hType, req, true, apprt.appStateType)
-		if err != nil {
-			return nil, err
-		}
-		rtnVals := hVal.Call(args)
-		return convertRtnVals(hType, rtnVals)
-	}
-	apprt.setHandler(name, handlerType{HandlerFn: hfn})
-	return nil
 }
 
 func (linkrt *LinkRuntimeImpl) Handler(name string, handlerFn interface{}) {
-	err := linkrt.handlerInternal(name, handlerFn)
+	err := handlerInternal(linkrt, name, handlerFn, false, HandlerOpts{})
 	if err != nil {
 		linkrt.addError(fmt.Errorf("Error adding handler '%s': %w", name, err))
 	}
 }
 
-func (linkrt *LinkRuntimeImpl) handlerInternal(name string, handlerFn interface{}) error {
+func (linkrt *LinkRuntimeImpl) PureHandler(name string, handlerFn interface{}) {
+	err := handlerInternal(linkrt, name, handlerFn, false, HandlerOpts{PureHandler: true})
+	if err != nil {
+		linkrt.addError(fmt.Errorf("Error adding handler '%s': %w", name, err))
+	}
+}
+
+func handlerInternal(rti runtimeImplIf, name string, handlerFn interface{}, isAppRuntime bool, opts HandlerOpts) error {
 	if !dashutil.IsPathFragValid(name) {
 		return fmt.Errorf("Invalid handler name")
 	}
 	hType := reflect.TypeOf(handlerFn)
-	if hType.Kind() != reflect.Func {
-		return fmt.Errorf("handlerFn must be a func")
-	}
-	if hType.NumOut() != 0 && !checkOutput(hType, errType) && !checkOutput(hType, interfaceType) && !checkOutput(hType, interfaceType, errType) {
-		return fmt.Errorf("Invalid handlerFn return, must return void, error, interface{}, or (interface{}, error)")
+	err := validateHandler(hType, isAppRuntime, opts.PureHandler, rti.getStateType())
+	if err != nil {
+		return err
 	}
 	hVal := reflect.ValueOf(handlerFn)
 	hfn := func(req *AppRequest) (interface{}, error) {
-		args, err := makeCallArgs(hType, req, false, nil)
+		args, err := makeCallArgs(hType, req, isAppRuntime, opts.PureHandler, rti.getStateType())
 		if err != nil {
 			return nil, err
 		}
 		rtnVals := hVal.Call(args)
 		return convertRtnVals(hType, rtnVals)
 	}
-	linkrt.setHandler(name, handlerType{HandlerFn: hfn})
+	rti.setHandler(name, handlerType{HandlerFn: hfn, Opts: opts})
 	return nil
 }
 
@@ -222,18 +280,13 @@ func convertRtnVals(hType reflect.Type, rtnVals []reflect.Value) (interface{}, e
 	if len(rtnVals) == 0 {
 		return nil, nil
 	} else if len(rtnVals) == 1 {
-		if rtnVals[0].IsNil() {
-			return nil, nil
-		}
 		if checkOutput(hType, errType) {
 			if rtnVals[0].IsNil() {
 				return nil, nil
 			}
 			return nil, rtnVals[0].Interface().(error)
-		} else {
-			return rtnVals[0].Interface(), nil
 		}
-
+		return rtnVals[0].Interface(), nil
 	} else {
 		// (interface{}, error)
 		var errRtn error
