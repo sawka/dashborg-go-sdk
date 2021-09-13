@@ -77,6 +77,7 @@ message ConnectClientMessage {
     string ZoneName = 4;
     bool AnonAcc = 5;
     string ProcName = 6;
+    string ProcIKey = 10;
     map<string,string> ProcTags = 7;
     map<string,string> HostData = 8;
     int64 StartTs = 9;

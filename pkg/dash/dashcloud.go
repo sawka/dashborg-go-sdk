@@ -21,6 +21,7 @@ func MakeClient(config *Config) (*DashCloudClient, error) {
 type ReflectProcType struct {
 	StartTs   int64             `json:"startts"`
 	ProcName  string            `json:"procname"`
+	ProcIKey  string            `json:"procikey"`
 	ProcTags  map[string]string `json:"proctags"`
 	ProcRunId string            `json:"procrunid"`
 }

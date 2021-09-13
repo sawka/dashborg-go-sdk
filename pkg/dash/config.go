@@ -54,6 +54,7 @@ type Config struct {
 
 	// Process Name Attributes.  Only ProcName is required
 	ProcName string // DASHBORG_PROCNAME (set from executable filename if not set)
+	ProcIKey string // DASHBORG_PROCIKEY (optional, user-specified key to identify procs in a cluster)
 	ProcTags map[string]string
 
 	KeyFileName  string // DASHBORG_KEYFILE private key file (defaults to dashborg-client.key)
@@ -118,6 +119,7 @@ func (c *Config) setDefaults() {
 		cmdName = cmdRegexp.ReplaceAllString(os.Args[0], "")
 	}
 	c.ProcName = dashutil.DefaultString(c.ProcName, os.Getenv("DASHBORG_PROCNAME"), cmdName, DefaultProcName)
+	c.ProcIKey = dashutil.DefaultString(c.ProcIKey, os.Getenv("DASHBORG_PROCIKEY"), "")
 	c.KeyFileName = dashutil.DefaultString(c.KeyFileName, os.Getenv("DASHBORG_KEYFILE"), TlsKeyFileName)
 	c.CertFileName = dashutil.DefaultString(c.CertFileName, os.Getenv("DASHBORG_CERTFILE"), TlsCertFileName)
 	c.Verbose = dashutil.EnvOverride(c.Verbose, "DASHBORG_VERBOSE")

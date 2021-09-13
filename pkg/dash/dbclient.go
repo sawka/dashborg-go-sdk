@@ -208,6 +208,7 @@ func (pc *DashCloudClient) sendConnectClientMessage(isReconnect bool) error {
 		ZoneName:  pc.Config.ZoneName,
 		AnonAcc:   pc.Config.AnonAcc,
 		ProcName:  pc.Config.ProcName,
+		ProcIKey:  pc.Config.ProcIKey,
 		ProcTags:  pc.Config.ProcTags,
 		HostData:  hostData,
 		StartTs:   dashutil.DashTime(pc.StartTime),

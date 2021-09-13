@@ -12,6 +12,7 @@ const (
 	AppNameMax       = 50
 	AppTitleMax      = 80
 	ProcNameMax      = 20
+	ProcIKeyMax      = 50
 	FileNameMax      = 80
 	EmailMax         = 80
 	PasswordMax      = 80
@@ -46,6 +47,7 @@ var (
 	controlNameRe    = regexp.MustCompile("^[a-zA-Z0-9_.:#/-]+$")
 	appNameRe        = regexp.MustCompile("^[a-zA-Z][a-zA-Z0-9_./-]*$")
 	procNameRe       = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
+	procIKeyRe       = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
 	uuidRe           = regexp.MustCompile("^[a-fA-F0-9-]{36}$")
 	handlerPathRe    = regexp.MustCompile("^/@?[a-zA-Z0-9_-][a-zA-Z0-9_/-]*$")
 	fileDisplayRe    = regexp.MustCompile("^@[a-zA-Z0-9_-]+$")
@@ -119,6 +121,13 @@ func IsProcNameValid(procName string) bool {
 		return false
 	}
 	return procNameRe.MatchString(procName)
+}
+
+func IsProcIKeyValid(procIKey string) bool {
+	if len(procIKey) > ProcIKeyMax {
+		return false
+	}
+	return procIKeyRe.MatchString(procIKey)
 }
 
 func IsUUIDValid(uuid string) bool {
