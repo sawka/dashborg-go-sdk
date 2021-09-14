@@ -8,7 +8,7 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
-func MakeClient(config *Config) (*DashCloudClient, error) {
+func ConnectClient(config *Config) (*DashCloudClient, error) {
 	config.setDefaultsAndLoadKeys()
 	container := makeCloudClient(config)
 	err := container.startClient()

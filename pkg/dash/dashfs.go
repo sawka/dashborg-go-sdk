@@ -177,9 +177,9 @@ func UpdateFileOptsFromReadSeeker(r io.ReadSeeker, fileOpts *FileOpts) error {
 func (fs *DashFSClient) runWatchedSetPath(path string, fileName string, fileOpts *FileOpts) {
 	err := fs.SetPathFromFile(path, fileName, fileOpts)
 	if err != nil {
-		log.Printf("Error calling SetPathFromFile (watched file) path=%s file=%s err=%v\n", path, fileName, err)
+		log.Printf("Error calling SetPathFromFile (watched file) path=%s file=%s err=%v\n", dashutil.SimplifyPath(path, nil), fileName, err)
 	} else {
-		log.Printf("Watcher called SetPathFromFile path=%s file=%s size=%d hash=%s\n", path, fileName, fileOpts.Size, fileOpts.Sha256)
+		log.Printf("Watcher called SetPathFromFile path=%s file=%s size=%d hash=%s\n", dashutil.SimplifyPath(path, nil), fileName, fileOpts.Size, fileOpts.Sha256)
 	}
 }
 
@@ -235,7 +235,7 @@ func (fs *DashFSClient) WatchFile(path string, fileName string, fileOpts *FileOp
 				if !ok {
 					return
 				}
-				log.Printf("DashFS Watch Error path=%s file=%s err=%v\n", path, fileName, err)
+				log.Printf("DashFS Watch Error path=%s file=%s err=%v\n", dashutil.SimplifyPath(path, nil), fileName, err)
 				return
 
 			case <-timerCh:
