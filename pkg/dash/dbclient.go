@@ -929,7 +929,7 @@ func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts
 	return nil
 }
 
-func (pc *DashCloudClient) FSClient() *DashFSClient {
+func (pc *DashCloudClient) GlobalFSClient() *DashFSClient {
 	return &DashFSClient{client: pc}
 }
 

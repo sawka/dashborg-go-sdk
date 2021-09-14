@@ -56,7 +56,7 @@ var (
 	simpleFileNameRe = regexp.MustCompile("^[a-zA-Z0-9._-]+$")
 	pathRe           = regexp.MustCompile("^/[a-zA-Z0-9._/-]*$")
 	pathFragRe       = regexp.MustCompile("^@?[a-zA-Z_][a-zA-Z0-9_-]*$")
-	fullPathRe       = regexp.MustCompile("^(?:/@([a-zA-Z_][a-zA-Z0-9=_]*))?(/[a-zA-Z0-9._/-]*)?(?:[:](@?[a-zA-Z][a-zA-Z0-9_-]*))?$")
+	fullPathRe       = regexp.MustCompile("^(?:/@([a-zA-Z_][a-zA-Z0-9=_.-]*))?(/[a-zA-Z0-9._/-]*)?(?:[:](@?[a-zA-Z][a-zA-Z0-9_-]*))?$")
 	tagRe            = regexp.MustCompile("^[a-zA-Z0-9._:/-]+$")
 	roleRe           = regexp.MustCompile("^(\\*|-|[a-z][a-z0-9-]+)$")
 	simpleIdRe       = regexp.MustCompile("^[a-zA-Z][a-zA-Z0-9_-]*")

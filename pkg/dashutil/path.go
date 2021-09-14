@@ -10,6 +10,7 @@ import (
 const (
 	rootAppPath       = "/_/apps"
 	appRuntimeSubPath = "/_/runtime"
+	appPathNs         = "app"
 )
 
 func PathNoFrag(fullPath string) (string, error) {
@@ -34,7 +35,7 @@ func AppNameFromPath(path string) string {
 	return matches[1]
 }
 
-type SimplifyPathOpts struct {
+type FormatPathOpts struct {
 	AppName string
 }
 
@@ -42,9 +43,51 @@ func appPathFromName(appName string) string {
 	return rootAppPath + "/" + appName
 }
 
-func SimplifyPath(fullPath string, opts *SimplifyPathOpts) string {
+func CanonicalizePath(fullPath string, opts *FormatPathOpts) (string, error) {
 	if opts == nil {
-		opts = &SimplifyPathOpts{}
+		opts = &FormatPathOpts{}
+	}
+	pathNs, path, pathFrag, err := ParseFullPath(fullPath, true)
+	if err != nil {
+		return "", err
+	}
+	if pathNs == "" {
+		return fullPath, nil
+	}
+	fragStr := ""
+	if pathFrag != "" {
+		fragStr = ":" + pathFrag
+	}
+	if pathNs == "app" {
+		if opts.AppName == "" {
+			return "", fmt.Errorf("Cannot canonicalize /@app path without an app context (use canonical path or /@app=[appname]/ format)")
+		}
+		if path == "/" && pathFrag != "" {
+			return fmt.Sprintf("/_/apps/%s/_/runtime:%s", opts.AppName, pathFrag), nil
+		}
+		return fmt.Sprintf("/_/apps/%s%s%s", opts.AppName, path, fragStr), nil
+	}
+	if strings.HasPrefix(pathNs, "app=") {
+		appName := pathNs[4:]
+		if !IsAppNameValid(appName) {
+			return "", fmt.Errorf("Cannot canonicalize /%s path, invalid app name", pathNs)
+		}
+		if path == "/" && pathFrag != "" {
+			return fmt.Sprintf("/_/apps/%s/_/runtime:%s", appName, pathFrag), nil
+		}
+		return fmt.Sprintf("/_/apps/%s%s%s", appName, path, fragStr), nil
+	}
+	return fullPath, nil
+}
+
+func GetPathNs(fullPath string) string {
+	pathNs, _, _, _ := ParseFullPath(fullPath, true)
+	return pathNs
+}
+
+func SimplifyPath(fullPath string, opts *FormatPathOpts) string {
+	if opts == nil {
+		opts = &FormatPathOpts{}
 	}
 	pathNs, path, pathFrag, err := ParseFullPath(fullPath, true)
 	if err != nil || pathNs != "" {

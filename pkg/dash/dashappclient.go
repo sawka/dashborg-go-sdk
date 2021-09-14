@@ -107,7 +107,7 @@ func (dac *DashAppClient) MakeAppUrl(appNameOrPath string, jwtOpts *JWTOpts) (st
 		return "", fmt.Errorf("Invalid App Path")
 	}
 	if appNameOrPath[0] == '/' {
-		return dac.client.FSClient().MakePathUrl(appNameOrPath, jwtOpts)
+		return dac.client.GlobalFSClient().MakePathUrl(appNameOrPath, jwtOpts)
 	}
 	appName := appNameOrPath
 	accHost := dac.client.getAccHost()
@@ -138,7 +138,7 @@ func (dac *DashAppClient) baseWriteApp(app *App, shouldConnect bool) error {
 	if err != nil {
 		return dasherr.JsonMarshalErr("AppConfig", err)
 	}
-	fs := dac.client.FSClient()
+	fs := dac.client.GlobalFSClient()
 	err = fs.SetRawPath(app.AppPath(), nil, &FileOpts{FileType: FileTypeApp, MimeType: MimeTypeDashborgApp, AllowedRoles: roles, AppConfigJson: appConfigJson}, nil)
 	if err != nil {
 		return err

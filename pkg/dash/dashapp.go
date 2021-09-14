@@ -317,5 +317,8 @@ func (app *App) AppPath() string {
 }
 
 func (app *App) AppFSClient() *DashFSClient {
+	if !dashutil.IsAppNameValid(app.appName) {
+		return &DashFSClient{client: app.client, rootPath: "@error:InvalidAppName"}
+	}
 	return &DashFSClient{client: app.client, rootPath: app.AppPath()}
 }
