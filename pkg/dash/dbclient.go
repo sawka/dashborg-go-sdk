@@ -383,6 +383,30 @@ func (pc *DashCloudClient) connectLinkRuntime(path string, rt LinkRuntime) {
 	pc.LinkRtMap[path] = rt
 }
 
+func (pc *DashCloudClient) removeAppPath(appName string) error {
+	if !pc.IsConnected() {
+		return NotConnectedErr
+	}
+	if !dashutil.IsAppNameValid(appName) {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid app name"))
+	}
+	appPath := AppPathFromName(appName)
+	m := &dashproto.RemovePathMessage{
+		Ts:            dashutil.Ts(),
+		Path:          appPath,
+		RemoveFullApp: true,
+	}
+	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
+	defer cancelFn()
+	resp, respErr := pc.DBService.RemovePath(ctx, m)
+	dashErr := pc.handleStatusErrors(fmt.Sprintf("RemoveApp(%s)", appName), resp, respErr, true)
+	if dashErr != nil {
+		return dashErr
+	}
+	pc.log("DashborgCloudClient removed app %s\n", appName)
+	return nil
+}
+
 func (pc *DashCloudClient) removePath(path string) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr

@@ -100,6 +100,7 @@ message SetPathResponse {
 message RemovePathMessage {
     int64 Ts = 1;
     string Path = 2;
+    bool RemoveFullApp = 3;
 }
 
 message RemovePathResponse {

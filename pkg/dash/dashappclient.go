@@ -66,16 +66,7 @@ func (dac *DashAppClient) RemoveApp(appName string) error {
 	if !dashutil.IsAppNameValid(appName) {
 		return dasherr.ValidateErr(fmt.Errorf("Invalid App Name"))
 	}
-	appPath := AppPathFromName(appName)
-	err := dac.client.removePath(appPath)
-	if err != nil {
-		return err
-	}
-	err = dac.client.removePath(appPath + AppRuntimeSubPath)
-	if err != nil {
-		return err
-	}
-	err = dac.client.removePath(appPath + AppHtmlSubPath)
+	err := dac.client.removeAppPath(appName)
 	if err != nil {
 		return err
 	}
