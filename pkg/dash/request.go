@@ -26,23 +26,9 @@ type RequestInfo struct {
 	ReqId         string // unique request id
 	RequestType   string // "data", "handler", or "stream"
 	RequestMethod string // GET or POST
-	PathNs        string
-	Path          string // handler or data path
-	PathFrag      string
+	Path          string
 	AppName       string // app name
 	FeClientId    string // unique id for client
-}
-
-func (info RequestInfo) FullPath() string {
-	pathNs := ""
-	if info.PathNs != "" {
-		pathNs = "/@" + info.PathNs
-	}
-	pathFrag := ""
-	if info.PathFrag != "" {
-		pathFrag = ":" + info.PathFrag
-	}
-	return fmt.Sprintf("%s%s%s", pathNs, info.Path, pathFrag)
 }
 
 type RawRequestData struct {
@@ -188,7 +174,7 @@ func (req *AppRequest) SetBlobFromFile(path string, mimeType string, fileName st
 }
 
 func (req *AppRequest) reqInfoStr() string {
-	return fmt.Sprintf("%s://%s%s", req.info.RequestType, req.info.AppName, req.info.Path)
+	return fmt.Sprintf("%s://%s", req.info.RequestType, req.info.Path)
 }
 
 // SetData is used to return data to the client.  Will replace the contents of path with data.
@@ -304,9 +290,7 @@ func makeAppRequest(ctx context.Context, reqMsg *dashproto.RequestMessage, clien
 			ReqId:         reqMsg.ReqId,
 			RequestType:   reqMsg.RequestType,
 			RequestMethod: reqMsg.RequestMethod,
-			PathNs:        reqMsg.Path.PathNs,
-			Path:          reqMsg.Path.Path,
-			PathFrag:      reqMsg.Path.PathFrag,
+			Path:          reqMsg.Path,
 			FeClientId:    reqMsg.FeClientId,
 		},
 		rawData: RawRequestData{
@@ -318,9 +302,7 @@ func makeAppRequest(ctx context.Context, reqMsg *dashproto.RequestMessage, clien
 		lock:   &sync.Mutex{},
 		client: client,
 	}
-	if reqMsg.AppId != nil {
-		preq.info.AppName = reqMsg.AppId.AppName
-	}
+	preq.info.AppName = dashutil.AppNameFromPath(reqMsg.Path)
 	if !dashutil.IsRequestTypeValid(reqMsg.RequestType) {
 		preq.err = fmt.Errorf("Invalid RequestMessage.RequestType [%s]", reqMsg.RequestType)
 		return preq

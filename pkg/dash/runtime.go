@@ -73,19 +73,22 @@ func (apprt *AppRuntimeImpl) getStateType() reflect.Type {
 }
 
 func (apprt *AppRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) {
-	pathFrag := req.info.PathFrag
+	_, _, pathFrag, err := dashutil.ParseFullPath(req.info.Path, true)
+	if err != nil {
+		return nil, dasherr.ValidateErr(fmt.Errorf("Invalid Path: %w", err))
+	}
 	if pathFrag == "" {
-		return nil, dasherr.ValidateErr(fmt.Errorf("PathFrag cannot be empty for linked request"))
+		pathFrag = pathFragDefault
 	}
 	apprt.lock.Lock()
 	hval, ok := apprt.handlers[pathFrag]
 	mws := apprt.middlewares
 	apprt.lock.Unlock()
 	if !ok {
-		return nil, fmt.Errorf("No handler found for %s", req.RequestInfo().FullPath())
+		return nil, fmt.Errorf("No handler found for %s", req.RequestInfo().Path)
 	}
 	if req.info.RequestMethod == RequestMethodGet && !hval.Opts.PureHandler {
-		return nil, dasherr.ValidateErr(fmt.Errorf("GET/data request to non-pure handler '%s'", req.info.PathFrag))
+		return nil, dasherr.ValidateErr(fmt.Errorf("GET/data request to non-pure handler '%s'", pathFrag))
 	}
 	rtn, err := mwHelper(req, hval, mws, 0)
 	if err != nil {
@@ -202,16 +205,19 @@ func (linkrt *LinkRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) 
 	if info.RequestType != requestTypePath {
 		return nil, dasherr.ValidateErr(fmt.Errorf("Invalid RequestType for linked runtime"))
 	}
-	pathFrag := info.PathFrag
+	_, _, pathFrag, err := dashutil.ParseFullPath(req.info.Path, true)
+	if err != nil {
+		return nil, dasherr.ValidateErr(fmt.Errorf("Invalid Path: %w", err))
+	}
 	if pathFrag == "" {
-		return nil, dasherr.ValidateErr(fmt.Errorf("PathFrag cannot be empty for linked request"))
+		pathFrag = pathFragDefault
 	}
 	linkrt.lock.Lock()
 	hval, ok := linkrt.handlers[pathFrag]
 	mws := linkrt.middlewares
 	linkrt.lock.Unlock()
 	if !ok {
-		return nil, dasherr.ErrWithCode(dasherr.ErrCodeNoHandler, fmt.Errorf("No handler found for %s:%s", info.Path, info.PathFrag))
+		return nil, dasherr.ErrWithCode(dasherr.ErrCodeNoHandler, fmt.Errorf("No handler found for %s", info.Path))
 	}
 	if req.info.RequestMethod == RequestMethodGet && !hval.Opts.PureHandler {
 		return nil, dasherr.ValidateErr(fmt.Errorf("GET/Data request to non-pure handler"))

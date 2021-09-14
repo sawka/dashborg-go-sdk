@@ -10,21 +10,32 @@ import (
 )
 
 const (
-	AppRuntimeSubPath = "/_runtime"
-	AppHtmlSubPath    = "/_html"
+	AppRuntimeSubPath = "/_/runtime"
+	AppHtmlSubPath    = "/_/html"
 )
 
 type DashAppClient struct {
 	client *DashCloudClient
 }
 
-func (dac *DashAppClient) LoadApp(appName string) (*App, error) {
+func (dac *DashAppClient) NewApp(appName string) *App {
+	return makeApp(dac.client, appName)
+}
+
+func (dac *DashAppClient) NewAppFromConfig(cfg AppConfig) (*App, error) {
+	return makeAppFromConfig(dac.client, cfg)
+}
+
+func (dac *DashAppClient) LoadApp(appName string, createIfNotFound bool) (*App, error) {
 	appPath := AppPathFromName(appName)
 	finfos, _, err := dac.client.fileInfo(appPath, nil, false)
 	if err != nil {
 		return nil, err
 	}
 	if finfos == nil || len(finfos) == 0 {
+		if createIfNotFound {
+			return dac.NewApp(appName), nil
+		}
 		return nil, nil
 	}
 	finfo := finfos[0]
@@ -36,7 +47,7 @@ func (dac *DashAppClient) LoadApp(appName string) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	return MakeAppFromConfig(config)
+	return makeAppFromConfig(dac.client, config)
 }
 
 func (dac *DashAppClient) WriteApp(app *App) error {
@@ -48,7 +59,7 @@ func (dac *DashAppClient) WriteAndConnectApp(app *App) error {
 }
 
 func AppPathFromName(appName string) string {
-	return "/@app/" + appName
+	return RootAppPath + "/" + appName
 }
 
 func (dac *DashAppClient) RemoveApp(appName string) error {

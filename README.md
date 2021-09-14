@@ -19,14 +19,14 @@ go get github.com/sawka/dashborg-go-sdk
 
 Connect to the Dashborg Cloud Service (no account required):
 ```golang
-config := &dashcloud.Config{AutoKeygen: true, AnonAcc: true}
-client, _ := dashcloud.MakeClient(config)
+config := &dash.Config{AutoKeygen: true, AnonAcc: true}
+client, _ := dash.MakeClient(config)
 ```
 
-Open your first app, and allow offline access:
+Create your first app, and allow offline access:
 ```golang
-app, _ := client.OpenApp("hello-world")
-app.SetOfflineModeType(dash.OfflineModeEnable)
+app := dash.MakeApp("hello-world")
+app.SetOfflineAccess(true)
 ```
 
 Create a declarative HTML view to render in your App.  Most HTML is supported as-is,
@@ -44,9 +44,13 @@ Set your app's HTML (can also be set using a raw string using app.SetHtml):
 app.SetHtmlFromFile("./hello-world.html")
 ```
 
-Write the app to the Dashborg Cloud Service:
+Write the app to the Dashborg Cloud Service (and check for errors):
 ```
-client.WriteApp(app)
+err := client.AppClient().WriteApp(app)
+if err != nil {
+    fmt.Printf("Error writing app: %v\n", err)
+    return
+}
 ```
 
 Here's the complete code:
@@ -54,17 +58,22 @@ Here's the complete code:
 package main
 
 import (
+    "fmt"
+    
     "github.com/sawka/dashborg-go-sdk/pkg/dash"
-    "github.com/sawka/dashborg-go-sdk/pkg/dashcloud"
 )
 
 func main() {
-    config := &dashcloud.Config{AutoKeygen: true, AnonAcc: true}
-    client, _ := dashcloud.MakeClient(config)
-    app, _ := client.OpenApp("hello-world")
-    app.SetOfflineModeType(dash.OfflineModeEnable)
-    app.SetHtmlFromFile("./hello-world.html")
-    client.WriteApp(app)
+    config := &dash.Config{AutoKeygen: true, AnonAcc: true}
+    client, _ := dash.MakeClient(config)
+    app := dash.MakeApp("hello-world")
+    app.SetOfflineAccess(true)
+    app.SetHtmlFromFile("./panels/hello-world.html")
+    err := client.AppClient().WriteApp(app)
+    if err != nil {
+        fmt.Printf("Error writing app: %v\n", err)
+        return
+    }
 }
 ```
 
@@ -81,33 +90,45 @@ we've hooked up a Dashborg Button control to the handler "/test-handler".  Using
 it look nice, but you can add a click handler to any HTML element.  The ```d-dataview``` element can
 show data as formatted JSON:
 ```html
-  <app ui="dashborg">
-    <d-button onclickhandler="$.output = /test-handler">Run Test Handler</d-button>
-    <d-dataview bind="$.output"/>
-  </app>
+<app ui="dashborg">
+  <d-button onclickhandler="$.output = /@app:test-handler">Run Test Handler</d-button>
+  <d-dataview bind="$.output"/>
+</app>
 ```
 
 When you click the button you'll get an error since we don't have any handlers registered.
 
 Let's modify our backend code
 to add our handler.  First we'll add our handler function to our app's Runtime().  Then instead of calling
-WriteApp(), we'll call ConnectApp() to connect the runtime.  WaitForShutdown() will keep our program
+WriteApp(), we'll call WriteAndConnectApp() to connect the runtime.  WaitForShutdown() will keep our program
 running while we listen for events.
 
 ```golang
+package main
+
+import (
+    "fmt"
+
+    "github.com/sawka/dashborg-go-sdk/pkg/dash"
+)
+
 func TestFn() (interface{}, error) {
     fmt.Printf("Calling TestFn!\n")
     return map[string]interface{}{"success": true, "message": "TestFn Output!"}, nil
 }
 
 func main() {
-    config := &dashcloud.Config{AutoKeygen: true, AnonAcc: true}
-    client, _ := dashcloud.MakeClient(config)
-    app, _ := client.OpenApp("hello-world")
-    app.SetOfflineModeType(dash.OfflineModeEnable)
-    app.SetHtmlFromFile("./hello-world.html")
-    app.Runtime().Handler("/test-handler", TestFn)
-    client.ConnectApp(app)
+    config := &dash.Config{AutoKeygen: true, AnonAcc: true}
+    client, _ := dash.MakeClient(config)
+    app := dash.MakeApp("hello-world")
+    app.SetOfflineAccess(true)
+    app.SetHtmlFromFile("./panels/hello-world.html")
+    app.Runtime().PureHandler("test-handler", TestFn)
+    err := client.AppClient().WriteAndConnectApp(app)
+    if err != nil {
+        fmt.Printf("Error writing app: %v\n", err)
+        return
+    }
     client.WaitForShutdown()
 }
 ```
@@ -122,24 +143,24 @@ code.
 
 Want to show an image, or add a CSV file your end users to download, here's how to do it:
 ```
-    // first argument is the key-name of the BLOB in your app, 2nd is mime-type, 3rd is filename
-    app.Blobs().SetBlobDataFromFile("myimage.jpg", "image/jpeg", "./path-to-image.jpg")
-    app.Blobs().SetBlobDataFromFile("data.csv", "text/csv", "./path-to-csv-on-filesystem.csv")
+    client.FSClient().SetPathFromFile("/image/myimage.jpg", "./path-to-image.jpg", &dash.FileOpts{MimeType: "image/jpeg"})
+    client.FSClient().SetPathFromFile("/mydata.csv", "./path-to-csv.csv", &dash.FileOpts{MimeType: "text/csv"})
 ```
 
-Show the image using a regular &lt;img&gt; tag in your HTML template.  Using a ```*``` as the first character in any HTML attribute makes it dynamic.  BLOB metadata is held in the special frontend variable ```$blobs```.
+Show the image using a regular &lt;img&gt; tag in your HTML template.  Using the path prefix "/@raw/"
+allows for raw http GET access to your uploaded content:
 ```
-    <img src="* $blobs['myimage.jpg'].url"/>
+    <img src="/@raw/image/myimage.jpg" style="max-width: 500px;"/>
 ```
 
 Download the CSV using a standard HTML download link:
 ```
-    <a href="* $blobs['data.csv'].url" download>Download CSV</a>
+    <a href="/@raw/mydata.csv" download>Download CSV</a>
 ```
 
-Or use a Dashborg download control to make it look nice (defined in the standard Dashborg UI package):
+Or use a Dashborg download control (defined in the standard Dashborg UI package) to make it look nice:
 ```
-    <d-download blob="data.csv">Download CSV</d-download>
+    <d-download path="/mydata.csv">Download CSV</d-download>
 ```
 
 ### Adding Static Data
@@ -159,21 +180,21 @@ colors := make([]FavColor, 0)
 colors = append(colors, FavColor{"Mike", "blue", "#007fff"})
 colors = append(colors, FavColor{"Chris", "red", "#ee0000"})
 colors = append(colors, FavColor{"Jenny", "purple", "#a020f0"})
-app.Blobs().SetJsonBlob("colors", colors, nil)
+client.FSClient().SetJsonPath("/colors.json", colors, nil)
 ```
 
 Load the data into our datamodel using the &lt;d-data&gt; tag.  Read from blob "colors", set it into the 
 frontend data model at ```$.colors```:
 ```html
-<d-data blob="colors" output.bindpath="$.colors"/>
+<d-data query="/colors.json" output.bindpath="$.colors"/>
 ```
 
 Show the first color name as text using ```<d-text>```.  Use the hex color to show a
-small color square using a background-color style (style is dynamic when it starts with ```*```):
+small color square using a background-color style (attributes and styles are dynamic when they starts with ```*```):
 ```html
-<div>
-    <d-text bind="$.colors[0].name"/>'s favorite color is <d-text bind="$.colors[0].color"/>
-    <div style="width: 100px; height: 100px; background-color: *$.color[0].hex"/>
+<div class="row">
+    <d-text bind="$.colors[0].name"/>'s favorite color is <d-text bind="$.colors[0].color"/>:
+    <div style="width: 100px; height: 100px; background-color: *$.colors[0].hex"/>
 </div>
 ```
 
@@ -198,7 +219,7 @@ Or use a Dashborg Table Control (@index is bound to the loop counter):
    <d-col label="Name" bind=".name"/>
    <d-col label="Color" bind=".color"/>
    <d-col label="Swatch">
-       <div style="width: 100px; height: 100px; background-color: * .hex"/>
+       <div style="width: 50px; height: 50px; background-color: * .hex"/>
    </d-col>
 </d-table>
 ```
@@ -206,22 +227,22 @@ Or use a Dashborg Table Control (@index is bound to the loop counter):
 ### Advanced Handlers / Forms
 
 Dashborg handlers are registered with reflection.  The first argument is an optional
-```*dash.Request``` struct.  The rest of the arguments come from the frontend code.  Functions 
+```dash.Request``` interface or ```*dash.AppRequest``` struct.  The rest of the arguments come from the frontend code.  Functions 
 return void, interface{}, error, or (interface{}, error).  Errors are shown in the application (or handled by special
 error handlers), and the interface{} return value can be consumed by the calling code.
 
-Handlers can also manipulate the frontend directly (aside from their return value) by calling
+Handlers that use ```*dash.AppRequest``` can also manipulate the frontend directly (aside from their return value) by calling
 SetData() to set or change values in the frontend data-model.
 
 Here's a handler that manipulates the frontend's data model (data is automatically marshaled as JSON):
 ```golang
-func Multiply2(req *dash.Request, num int) error {
+func Multiply2(req *dash.AppRequest, num int) error {
     req.SetData("$.output", num*2)
     return nil
 }
 
 ...
-app.Runtime().Handler("/mult2", Multiply2)
+app.Runtime().Handler("mult2", Multiply2)
 ```
 
 Now we'll use a button to call the function, and a div to show the return color.  Note that HTML inputs
@@ -230,7 +251,7 @@ produce strings, so we must convert the string to a number using fn:int().
 <app>
     <div class="row">
         <d-input type="number" min="0" max="100" value.bindpath="$.inputnumber" defaultvalue="0"/>
-        <d-button onclickhandler="/mult2(fn:int($.inputnumber))">Multiply</d-button>
+        <d-button onclickhandler="/@app:mult2(fn:int($.inputnumber))">Multiply</d-button>
     </div>
     <div>
         Output is <d-text bind="$.output || 0"/>

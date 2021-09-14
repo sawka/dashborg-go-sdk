@@ -203,43 +203,10 @@ func (v ClientVersion) String() string {
 	return fmt.Sprintf("%s-%d.%d.%d", v.ClientType, v.MajorVersion, v.MinorVersion, v.PatchVersion)
 }
 
-// returns key-namespace (can be ""), key, err
-func ParseExtBlobKey(extBlobKey string) (string, string, error) {
-	match := extBlobKeyRe.FindStringSubmatch(extBlobKey)
-	if match == nil {
-		return "", "", fmt.Errorf("Invalid BlobKey")
-	}
-	return match[1], match[2], nil
-}
-
 func Sha256Base64(barr []byte) string {
 	hashVal := sha256.Sum256(barr)
 	hashValStr := base64.StdEncoding.EncodeToString(hashVal[:])
 	return hashValStr
-}
-
-func ParseFullPath(fullPath string, allowFrag bool) (string, string, string, error) {
-	if fullPath == "" {
-		return "", "", "", fmt.Errorf("Path cannot be empty")
-	}
-	if len(fullPath) > FullPathMax {
-		return "", "", "", fmt.Errorf("Path too long")
-	}
-	if fullPath[0] != '/' {
-		return "", "", "", fmt.Errorf("Path must begin with '/'")
-	}
-	match := fullPathRe.FindStringSubmatch(fullPath)
-	if match == nil {
-		return "", "", "", fmt.Errorf("Invalid Path '%s'", fullPath)
-	}
-	path := match[2]
-	if path == "" {
-		path = "/"
-	}
-	if match[3] != "" && !allowFrag {
-		return "", "", "", fmt.Errorf("Path does not allow path-fragment")
-	}
-	return match[1], path, match[3], nil
 }
 
 type MultiErr struct {

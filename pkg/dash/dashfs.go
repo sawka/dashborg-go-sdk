@@ -103,11 +103,15 @@ type WatchOpts struct {
 }
 
 type DashFSClient struct {
-	client *DashCloudClient
+	rootPath string
+	client   *DashCloudClient
 }
 
 func (fs *DashFSClient) SetRawPath(path string, r io.Reader, fileOpts *FileOpts, runtime LinkRuntime) error {
-	return fs.client.setRawPath(path, r, fileOpts, runtime)
+	if path == "" || path[0] != '/' {
+		return fmt.Errorf("Path must begin with '/'")
+	}
+	return fs.client.setRawPath(fs.rootPath+path, r, fileOpts, runtime)
 }
 
 func (fs *DashFSClient) SetJsonPath(path string, data interface{}, fileOpts *FileOpts) error {
@@ -251,11 +255,17 @@ func (fs *DashFSClient) WatchFile(path string, fileName string, fileOpts *FileOp
 }
 
 func (fs *DashFSClient) RemovePath(path string) error {
-	return fs.client.removePath(path)
+	if path == "" || path[0] != '/' {
+		return fmt.Errorf("Path must begin with '/'")
+	}
+	return fs.client.removePath(fs.rootPath + path)
 }
 
 func (fs *DashFSClient) FileInfo(path string) (*FileInfo, error) {
-	rtn, _, err := fs.client.fileInfo(path, nil, false)
+	if path == "" || path[0] != '/' {
+		return nil, fmt.Errorf("Path must begin with '/'")
+	}
+	rtn, _, err := fs.client.fileInfo(fs.rootPath+path, nil, false)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +279,10 @@ func (fs *DashFSClient) DirInfo(path string, dirOpts *DirOpts) ([]*FileInfo, err
 	if dirOpts == nil {
 		dirOpts = &DirOpts{}
 	}
-	rtn, _, err := fs.client.fileInfo(path, dirOpts, false)
+	if path == "" || path[0] != '/' {
+		return nil, fmt.Errorf("Path must begin with '/'")
+	}
+	rtn, _, err := fs.client.fileInfo(fs.rootPath+path, dirOpts, false)
 	return rtn, err
 }
 
@@ -284,7 +297,10 @@ func (fs *DashFSClient) LinkRuntime(path string, rt LinkRuntime, fileOpts *FileO
 		fileOpts = &FileOpts{}
 	}
 	fileOpts.FileType = FileTypeRuntimeLink
-	return fs.client.setRawPath(path, nil, fileOpts, rt)
+	if path == "" || path[0] != '/' {
+		return fmt.Errorf("Path must begin with '/'")
+	}
+	return fs.client.setRawPath(fs.rootPath+path, nil, fileOpts, rt)
 }
 
 func (fs *DashFSClient) LinkAppRuntime(path string, apprt LinkRuntime, fileOpts *FileOpts) error {
@@ -298,7 +314,10 @@ func (fs *DashFSClient) LinkAppRuntime(path string, apprt LinkRuntime, fileOpts 
 		fileOpts = &FileOpts{}
 	}
 	fileOpts.FileType = FileTypeAppRuntimeLink
-	return fs.client.setRawPath(path, nil, fileOpts, apprt)
+	if path == "" || path[0] != '/' {
+		return fmt.Errorf("Path must begin with '/'")
+	}
+	return fs.client.setRawPath(fs.rootPath+path, nil, fileOpts, apprt)
 }
 
 func (fs *DashFSClient) SetStaticPath(path string, r io.ReadSeeker, fileOpts *FileOpts) error {
@@ -320,7 +339,7 @@ func (fs *DashFSClient) MakePathUrl(path string, jwtOpts *JWTOpts) (string, erro
 	if jwtOpts == nil {
 		jwtOpts = fs.client.Config.GetJWTOpts()
 	}
-	pathLink := fs.client.getAccHost() + "/@fs" + path
+	pathLink := fs.client.getAccHost() + "/@fs" + fs.rootPath + path
 	if jwtOpts.NoJWT {
 		return pathLink, nil
 	}

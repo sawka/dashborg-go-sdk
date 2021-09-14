@@ -10,9 +10,10 @@ import (
 
 var notAuthorizedErr = fmt.Errorf("Not Authorized")
 
+const RootAppPath = "/_/apps"
+const RootProcPath = "/_/procs"
 const MaxAppConfigSize = 10000
 const htmlMimeType = "text/html"
-const appBlobNs = "app"
 const htmlBlobNs = "html"
 const rootHtmlKey = htmlBlobNs + ":" + "root"
 const jsonMimeType = "application/json"
@@ -66,6 +67,7 @@ type ProcInfo struct {
 }
 
 type App struct {
+	client            *DashCloudClient
 	appName           string
 	appConfig         AppConfig
 	appRuntime        *AppRuntimeImpl
@@ -88,12 +90,13 @@ func (app *App) SetRuntime(apprt *AppRuntimeImpl) {
 	app.appRuntime = apprt
 }
 
-func MakeApp(appName string) *App {
+func makeApp(client *DashCloudClient, appName string) *App {
 	var appNameErr error
 	if !dashutil.IsAppNameValid(appName) {
 		appNameErr = dasherr.ValidateErr(fmt.Errorf("MakeApp: Invalid appName '%s'", appName))
 	}
 	rtn := &App{
+		client:  client,
 		appName: appName,
 		appConfig: AppConfig{
 			ClientVersion: ClientVersion,
@@ -108,13 +111,14 @@ func MakeApp(appName string) *App {
 	return rtn
 }
 
-func MakeAppFromConfig(cfg AppConfig) (*App, error) {
+func makeAppFromConfig(client *DashCloudClient, cfg AppConfig) (*App, error) {
 	cfg.ClientVersion = ClientVersion
 	err := cfg.Validate()
 	if err != nil {
 		return nil, err
 	}
 	rtn := &App{
+		client:     client,
 		appName:    cfg.AppName,
 		appConfig:  cfg,
 		appRuntime: MakeAppRuntime(),
@@ -310,4 +314,8 @@ func (app *App) Err() error {
 
 func (app *App) AppPath() string {
 	return AppPathFromName(app.appName)
+}
+
+func (app *App) AppFSClient() *DashFSClient {
+	return &DashFSClient{client: app.client, rootPath: app.AppPath()}
 }

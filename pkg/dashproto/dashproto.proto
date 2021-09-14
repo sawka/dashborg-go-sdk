@@ -9,17 +9,6 @@ message RtnStatus {
     bool PermErr = 4;
 }
 
-message AppId {
-    string AppName = 3;
-    string AppVersion = 4;
-}
-
-message PathId {
-    string PathNs = 1;
-    string Path = 2;
-    string PathFrag = 3;
-}
-
 message RRAction {
     int64 Ts = 1;
     string ActionType = 2;
@@ -37,8 +26,7 @@ message SendResponseMessage {
     int64 Ts = 1;
     string ReqId = 2;
     string RequestType = 3;
-    AppId AppId = 4;
-    PathId Path = 9;
+    string Path = 4;
     string FeClientId = 5;
     bool ResponseDone = 6;
     repeated RRAction Actions = 7;
@@ -54,20 +42,18 @@ message RequestMessage {
     int64 Ts = 1;
     string AccId = 2;
     string ZoneName = 3;
-    AppId AppId = 4;
-    string RequestType = 5;
-    PathId Path = 6;
-    string ReqId = 7;
-    string FeClientId = 8;
-    string ControlId = 9;
-    string JsonData = 10;
-    string AuthData = 11;
-    string AppStateData = 12;
-    RtnStatus Status = 13;     // only used for server-side errors
-    int64 TimeoutMs = 14;
-    bool IsBackendCall = 15;
-    bool AppRequest = 16;
-    string RequestMethod = 17;
+    string RequestType = 4;
+    string Path = 5;
+    string ReqId = 6;
+    string FeClientId = 7;
+    string JsonData = 8;
+    string AuthData = 9;
+    string AppStateData = 10;
+    RtnStatus Status = 11;     // only used for server-side errors
+    int64 TimeoutMs = 12;
+    bool IsBackendCall = 13;
+    bool AppRequest = 14;
+    string RequestMethod = 15;
 }
 
 message ConnectClientMessage {
@@ -77,10 +63,10 @@ message ConnectClientMessage {
     string ZoneName = 4;
     bool AnonAcc = 5;
     string ProcName = 6;
-    string ProcIKey = 10;
-    map<string,string> ProcTags = 7;
-    map<string,string> HostData = 8;
-    int64 StartTs = 9;
+    string ProcIKey = 7;
+    map<string,string> ProcTags = 8;
+    map<string,string> HostData = 9;
+    int64 StartTs = 10;
 }
 
 message ConnectClientResponse {
@@ -95,7 +81,7 @@ message RequestStreamMessage {
 
 message SetPathMessage {
     int64 Ts = 1;
-    PathId Path = 2;
+    string Path = 2;
     string TxId = 3;
     bool HasBody = 4;
     bool ConnectRuntime = 5;
@@ -113,7 +99,7 @@ message SetPathResponse {
 
 message RemovePathMessage {
     int64 Ts = 1;
-    PathId Path = 2;
+    string Path = 2;
 }
 
 message RemovePathResponse {
@@ -122,7 +108,7 @@ message RemovePathResponse {
 
 message FileInfoMessage {
     int64 Ts = 1;
-    PathId Path = 2;
+    string Path = 2;
     string DirOptsJson = 3;
     bool RtnContents = 4;
 }
@@ -136,7 +122,7 @@ message FileInfoResponse {
 
 message ConnectLinkMessage {
     int64 Ts = 1;
-    PathId Path = 2;
+    string Path = 2;
 }
 
 message ConnectLinkResponse {

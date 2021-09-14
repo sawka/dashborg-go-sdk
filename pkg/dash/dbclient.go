@@ -274,13 +274,13 @@ func (pc *DashCloudClient) connectLinkRpc(path string) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
-	pathId, err := parsePathToPathId(path, false)
+	err := dashutil.ValidateFullPath(path, false)
 	if err != nil {
-		return err
+		return dasherr.ValidateErr(err)
 	}
 	m := &dashproto.ConnectLinkMessage{
 		Ts:   dashutil.Ts(),
-		Path: pathId,
+		Path: path,
 	}
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
@@ -292,16 +292,6 @@ func (pc *DashCloudClient) connectLinkRpc(path string) error {
 	return nil
 }
 
-func parsePathToPathId(path string, allowFrag bool) (*dashproto.PathId, error) {
-	var err error
-	rtn := &dashproto.PathId{}
-	rtn.PathNs, rtn.Path, rtn.PathFrag, err = dashutil.ParseFullPath(path, allowFrag)
-	if err != nil {
-		return nil, dasherr.ValidateErr(err)
-	}
-	return rtn, nil
-}
-
 func (pc *DashCloudClient) reconnectLinks() {
 	linkPaths := pc.getLinkPaths()
 	for _, linkPath := range linkPaths {
@@ -309,7 +299,7 @@ func (pc *DashCloudClient) reconnectLinks() {
 		if err != nil {
 			pc.log("DashborgCloudClient %v\n", err)
 		} else {
-			pc.logV("DashborgCloudClient reconnected link:%s\n", linkPath)
+			pc.logV("DashborgCloudClient ReConnected link:%s\n", dashutil.SimplifyPath(linkPath, nil))
 		}
 	}
 }
@@ -397,13 +387,13 @@ func (pc *DashCloudClient) removePath(path string) error {
 	if !pc.IsConnected() {
 		return NotConnectedErr
 	}
-	pathId, err := parsePathToPathId(path, false)
+	err := dashutil.ValidateFullPath(path, false)
 	if err != nil {
-		return err
+		return dasherr.ValidateErr(err)
 	}
 	m := &dashproto.RemovePathMessage{
 		Ts:   dashutil.Ts(),
-		Path: pathId,
+		Path: path,
 	}
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
@@ -420,13 +410,13 @@ func (pc *DashCloudClient) fileInfo(path string, dirOpts *DirOpts, rtnContents b
 	if !pc.IsConnected() {
 		return nil, nil, NotConnectedErr
 	}
-	pathId, err := parsePathToPathId(path, false)
+	err := dashutil.ValidateFullPath(path, false)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, dasherr.ValidateErr(err)
 	}
 	m := &dashproto.FileInfoMessage{
 		Ts:          dashutil.Ts(),
-		Path:        pathId,
+		Path:        path,
 		RtnContents: rtnContents,
 	}
 	if dirOpts != nil {
@@ -502,7 +492,6 @@ func (pc *DashCloudClient) sendErrResponse(reqMsg *dashproto.RequestMessage, err
 		Ts:           dashutil.Ts(),
 		ReqId:        reqMsg.ReqId,
 		RequestType:  reqMsg.RequestType,
-		AppId:        reqMsg.AppId,
 		Path:         reqMsg.Path,
 		FeClientId:   reqMsg.FeClientId,
 		ResponseDone: true,
@@ -559,12 +548,15 @@ func (pc *DashCloudClient) runRequestStream() (bool, dasherr.ErrCode) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
 			defer cancel()
-			if reqMsg.Path == nil {
+			if reqMsg.Path == "" {
 				pc.sendErrResponse(reqMsg, "Bad Request - No Path")
 				return
 			}
 			if reqMsg.RequestType == "path" {
-				fullPath := pathWithNs(reqMsg.Path, false)
+				fullPath, err := dashutil.PathNoFrag(reqMsg.Path)
+				if err != nil {
+					pc.sendErrResponse(reqMsg, fmt.Sprintf("Error parsing path: %v", err))
+				}
 				pc.Lock.Lock()
 				runtimeVal := pc.LinkRtMap[fullPath]
 				pc.Lock.Unlock()
@@ -589,21 +581,13 @@ func (pc *DashCloudClient) sendPathResponse(preq *AppRequest, rtnVal interface{}
 		return
 	}
 	m := &dashproto.SendResponseMessage{
-		Ts:          dashutil.Ts(),
-		ReqId:       preq.RequestInfo().ReqId,
-		RequestType: preq.RequestInfo().RequestType,
-		Path: &dashproto.PathId{
-			PathNs:   preq.RequestInfo().PathNs,
-			Path:     preq.RequestInfo().Path,
-			PathFrag: preq.RequestInfo().PathFrag,
-		},
+		Ts:           dashutil.Ts(),
+		ReqId:        preq.RequestInfo().ReqId,
+		RequestType:  preq.RequestInfo().RequestType,
+		Path:         preq.RequestInfo().Path,
 		FeClientId:   preq.RequestInfo().FeClientId,
 		ResponseDone: true,
 	}
-	if preq.RequestInfo().AppName != "" {
-		m.AppId = &dashproto.AppId{AppName: preq.RequestInfo().AppName}
-	}
-
 	defer pc.sendResponseProtoRpc(m)
 	rtnErr := preq.GetError()
 	if rtnErr != nil {
@@ -624,37 +608,6 @@ func (pc *DashCloudClient) sendPathResponse(preq *AppRequest, rtnVal interface{}
 	}
 	m.Actions = append(m.Actions, rtnValRRA...)
 	return
-}
-
-func (pc *DashCloudClient) sendAppResponse(preq *AppRequest, rtnVal interface{}) {
-	if preq.IsDone() {
-		return
-	}
-	m := &dashproto.SendResponseMessage{
-		Ts:          dashutil.Ts(),
-		ReqId:       preq.RequestInfo().ReqId,
-		AppId:       &dashproto.AppId{AppName: preq.RequestInfo().AppName},
-		RequestType: preq.RequestInfo().RequestType,
-		Path: &dashproto.PathId{
-			PathNs:   preq.RequestInfo().PathNs,
-			Path:     preq.RequestInfo().Path,
-			PathFrag: preq.RequestInfo().PathFrag,
-		},
-		FeClientId:   preq.RequestInfo().FeClientId,
-		ResponseDone: true,
-	}
-	rtnErr := preq.GetError()
-	if rtnErr != nil {
-		m.Err = rtnErr.Error()
-	} else if rtnVal != nil {
-		rtnValRRA, err := rtnValToRRA(rtnVal)
-		if err != nil {
-			m.Err = err.Error()
-		} else {
-			m.Actions = append(preq.getRRA(), rtnValRRA...)
-		}
-	}
-	pc.sendResponseProtoRpc(m)
 }
 
 func (pc *DashCloudClient) dispatchRtRequest(ctx context.Context, linkrt LinkRuntime, reqMsg *dashproto.RequestMessage) {
@@ -844,10 +797,10 @@ func (opts *FileOpts) Validate() error {
 func (pc *DashCloudClient) setRawPath(fullPath string, r io.Reader, fileOpts *FileOpts, linkRt LinkRuntime) error {
 	err := pc.setRawPathWrap(fullPath, r, fileOpts, linkRt)
 	if err != nil {
-		pc.logV("Dashborg SetPath ERROR %s => %s | %v\n", fullPath, shortFileOptsStr(fileOpts), err)
+		pc.logV("Dashborg SetPath ERROR %s => %s | %v\n", dashutil.SimplifyPath(fullPath, nil), shortFileOptsStr(fileOpts), err)
 		return err
 	}
-	pc.logV("Dashborg SetPath %s => %s\n", fullPath, shortFileOptsStr(fileOpts))
+	pc.logV("Dashborg SetPath %s => %s\n", dashutil.SimplifyPath(fullPath, nil), shortFileOptsStr(fileOpts))
 	return nil
 }
 
@@ -861,9 +814,9 @@ func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts
 	if !dashutil.IsFullPathValid(fullPath) {
 		return dasherr.ValidateErr(fmt.Errorf("Invalid Path '%s'", fullPath))
 	}
-	pathId, err := parsePathToPathId(fullPath, false)
+	err := dashutil.ValidateFullPath(fullPath, false)
 	if err != nil {
-		return err
+		return dasherr.ValidateErr(err)
 	}
 	if len(fileOpts.AllowedRoles) == 0 {
 		fileOpts.AllowedRoles = []string{RoleUser}
@@ -892,7 +845,7 @@ func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts
 
 	m := &dashproto.SetPathMessage{
 		Ts:             dashutil.Ts(),
-		Path:           pathId,
+		Path:           fullPath,
 		HasBody:        (r != nil),
 		ConnectRuntime: (linkRt != nil),
 		FileOptsJson:   optsJson,
@@ -977,7 +930,21 @@ func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts
 }
 
 func (pc *DashCloudClient) FSClient() *DashFSClient {
-	return &DashFSClient{pc}
+	return &DashFSClient{client: pc}
+}
+
+func (pc *DashCloudClient) FSClientAtRoot(rootPath string) (*DashFSClient, error) {
+	if rootPath != "" {
+		_, _, _, err := dashutil.ParseFullPath(rootPath, false)
+		if err != nil {
+			return nil, err
+		}
+		// remove trailing slash
+		if rootPath[len(rootPath)-1] == '/' {
+			rootPath = rootPath[0 : len(rootPath)-1]
+		}
+	}
+	return &DashFSClient{client: pc, rootPath: rootPath}, nil
 }
 
 func (pc *DashCloudClient) AppClient() *DashAppClient {
@@ -985,28 +952,10 @@ func (pc *DashCloudClient) AppClient() *DashAppClient {
 }
 
 func requestMsgStr(reqMsg *dashproto.RequestMessage) string {
-	if reqMsg.Path == nil {
-		return fmt.Sprintf("%s://[no-path]", reqMsg.RequestType)
+	if reqMsg.Path == "" {
+		return fmt.Sprintf("[no-path]")
 	}
-	if reqMsg.AppId != nil {
-		return fmt.Sprintf("%4s %s://%s%s", reqMsg.RequestMethod, reqMsg.RequestType, reqMsg.AppId.AppName, pathStr(reqMsg.Path))
-	}
-	return fmt.Sprintf("%4s %s:/%s", reqMsg.RequestMethod, reqMsg.RequestType, pathStr(reqMsg.Path))
-}
-
-func pathStr(path *dashproto.PathId) string {
-	if path == nil || path.Path == "" {
-		return "[no-path]"
-	}
-	nsStr := ""
-	if path.PathNs != "" {
-		nsStr = "/@" + path.PathNs
-	}
-	fragStr := ""
-	if path.PathFrag != "" {
-		fragStr = ":" + path.PathFrag
-	}
-	return fmt.Sprintf("%s%s%s", nsStr, path.Path, fragStr)
+	return fmt.Sprintf("%4s %s", reqMsg.RequestMethod, dashutil.SimplifyPath(reqMsg.Path, nil))
 }
 
 func rtnValToRRA(rtnVal interface{}) ([]*dashproto.RRAction, error) {
@@ -1077,23 +1026,4 @@ func shortFileOptsStr(fileOpts *FileOpts) string {
 		mimeType = ":" + fileOpts.MimeType
 	}
 	return fmt.Sprintf("%s%s", fileOpts.FileType, mimeType)
-}
-
-func pathWithNs(p *dashproto.PathId, includeFrag bool) string {
-	if p == nil {
-		return "[no-path]"
-	}
-	pathNs := ""
-	if p.PathNs != "" {
-		pathNs = "/@" + p.PathNs
-	}
-	if includeFrag {
-		pathFrag := ""
-		if p.PathFrag != "" {
-			pathFrag = ":" + p.PathFrag
-		}
-		return fmt.Sprintf("%s%s%s", pathNs, p.Path, pathFrag)
-	} else {
-		return fmt.Sprintf("%s%s", pathNs, p.Path)
-	}
 }

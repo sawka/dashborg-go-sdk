@@ -34,8 +34,6 @@ const (
 	ClientVersionMax = 20
 	ProcTagValMax    = 200
 	HostDataValMax   = 100
-	BlobKeyMax       = 100
-	BlobNsMax        = 20
 	SimpleIdMax      = 30
 	UserIdMax        = 100
 	AppConfigJsonMax = 2000
@@ -45,7 +43,7 @@ const (
 var (
 	zoneNameRe       = regexp.MustCompile("^[a-zA-Z][a-zA-Z0-9_.-]*$")
 	controlNameRe    = regexp.MustCompile("^[a-zA-Z0-9_.:#/-]+$")
-	appNameRe        = regexp.MustCompile("^[a-zA-Z][a-zA-Z0-9_./-]*$")
+	appNameRe        = regexp.MustCompile("^[a-zA-Z][a-zA-Z0-9_.-]*$")
 	procNameRe       = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
 	procIKeyRe       = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
 	uuidRe           = regexp.MustCompile("^[a-fA-F0-9-]{36}$")
@@ -58,12 +56,9 @@ var (
 	simpleFileNameRe = regexp.MustCompile("^[a-zA-Z0-9._-]+$")
 	pathRe           = regexp.MustCompile("^/[a-zA-Z0-9._/-]*$")
 	pathFragRe       = regexp.MustCompile("^@?[a-zA-Z_][a-zA-Z0-9_-]*$")
-	fullPathRe       = regexp.MustCompile("^(?:/@([a-zA-Z_][a-zA-Z0-9_]*))?(/[a-zA-Z0-9._/-]*)?(?:[:](@?[a-zA-Z][a-zA-Z0-9_-]*))?$")
+	fullPathRe       = regexp.MustCompile("^(?:/@([a-zA-Z_][a-zA-Z0-9=_]*))?(/[a-zA-Z0-9._/-]*)?(?:[:](@?[a-zA-Z][a-zA-Z0-9_-]*))?$")
 	tagRe            = regexp.MustCompile("^[a-zA-Z0-9._:/-]+$")
 	roleRe           = regexp.MustCompile("^(\\*|-|[a-z][a-z0-9-]+)$")
-	extBlobKeyRe     = regexp.MustCompile("^(?:([a-z][a-z0-9]*):)?([0-9a-zA-Z/_.-]+)$")
-	blobKeyRe        = regexp.MustCompile("^[0-9a-zA-Z/_.-]+$")
-	blobNsRe         = regexp.MustCompile("^[a-z][a-z0-9]*$")
 	simpleIdRe       = regexp.MustCompile("^[a-zA-Z][a-zA-Z0-9_-]*")
 	clientVersionRe  = regexp.MustCompile("^([a-z][a-z0-9_]*)-(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,4})$")
 	zoneAccessRe     = regexp.MustCompile("^[a-zA-Z0-9_.*-]+$")
@@ -77,7 +72,6 @@ var (
 
 var ValidRequestType = map[string]bool{"data": true, "handler": true, "stream": true, "auth": true, "html": true, "init": true, "path": true}
 var ValidActionType = map[string]bool{"setdata": true, "event": true, "invalidate": true, "html": true, "panelauth": true, "panelauthchallenge": true, "error": true, "blob": true, "blobext": true, "streamopen": true, "backendpush": true}
-var ValidBlobNs = map[string]bool{"app": true, "html": true}
 var ValidFileType = map[string]bool{"static": true, "dir": true, "rt-link": true, "rt-app-link": true, "app": true}
 var ValidRequestMethod = map[string]bool{"GET": true, "POST": true}
 
@@ -236,20 +230,6 @@ func IsTagValid(s string) bool {
 		return false
 	}
 	return tagRe.MatchString(s)
-}
-
-func IsBlobKeyValid(s string) bool {
-	if len(s) == 0 || len(s) > BlobKeyMax {
-		return false
-	}
-	return blobKeyRe.MatchString(s)
-}
-
-func IsBlobNsValid(s string) bool {
-	if len(s) == 0 || len(s) > BlobNsMax {
-		return false
-	}
-	return ValidBlobNs[s]
 }
 
 func IsRoleValid(s string) bool {
