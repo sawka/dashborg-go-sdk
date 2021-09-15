@@ -172,7 +172,8 @@ Or use a Dashborg download control (defined in the standard Dashborg UI package)
 Dashborg uses JSON to transfer data between your app and the Dashborg service.  You can send any
 static JSON-compatible data to Dashborg using app.Blobs().SetJsonBlob().  Static data is available to
 apps even when there is no backend connected.  For dynamic data, use Runtime().Handler().
-Here we'll send an HTML color table as a BLOB named "colors":
+Here we'll set favorite color table to the path "/colors.json".  We used the AppFSClient() instead of
+the GlobalFSClient().  That makes the data local to the app and is accessible at /@app/colors.json:
 ```golang
 type FavColor struct {
     Name  string `json:"name"`
