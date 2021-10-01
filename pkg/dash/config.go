@@ -27,11 +27,12 @@ const (
 	DefaultPanelName       = "default"
 	DefaultLocalServerAddr = "localhost:8082"
 	DefaultConsoleHost     = "console.dashborg.net"
-	DefaultProcHost        = "grpc.api.dashborg.net"
 	DefaultJWTValidFor     = 24 * time.Hour
 	DefaultJWTUserId       = "jwt-user"
 	DefaultJWTRole         = RoleUser
 )
+
+const consoleHostDev = "console.dashborg-dev.com:8080"
 
 var DefaultJWTOpts = &JWTOpts{
 	ValidFor: DefaultJWTValidFor,
@@ -71,10 +72,10 @@ type Config struct {
 	ShutdownCh chan struct{}
 
 	// These are for internal testing, should not normally be set by clients.
-	Env                 string // DASHBORG_ENV
-	DashborgSrvHost     string // DASHBORG_PROCHOST
-	DashborgSrvPort     int    // DASHBORG_PROCPORT
-	DashborgConsoleHost string // DASHBORG_CONSOLEHOST
+	Env         string // DASHBORG_ENV
+	GrpcHost    string // DASHBORG_GRPCHOST
+	GrpcPort    int    // DASHBORG_GRPCPORT
+	ConsoleHost string // DASHBORG_CONSOLEHOST
 
 	setupDone bool // internal
 
@@ -93,25 +94,25 @@ func (c *Config) setDefaults() {
 	c.ZoneName = dashutil.DefaultString(c.ZoneName, os.Getenv("DASHBORG_ZONE"), DefaultZoneName)
 	c.Env = dashutil.DefaultString(c.Env, os.Getenv("DASHBORG_ENV"), "prod")
 	if c.Env == "prod" {
-		c.DashborgSrvHost = dashutil.DefaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "")
+		c.GrpcHost = dashutil.DefaultString(c.GrpcHost, os.Getenv("DASHBORG_GRPCHOST"), "")
 	} else {
-		c.DashborgSrvHost = dashutil.DefaultString(c.DashborgSrvHost, os.Getenv("DASHBORG_PROCHOST"), "")
+		c.GrpcHost = dashutil.DefaultString(c.GrpcHost, os.Getenv("DASHBORG_GRPCHOST"), "")
 	}
 	if c.Env == "prod" {
-		c.DashborgConsoleHost = dashutil.DefaultString(c.DashborgConsoleHost, os.Getenv("DASHBORG_CONSOLEHOST"), DefaultConsoleHost)
+		c.ConsoleHost = dashutil.DefaultString(c.ConsoleHost, os.Getenv("DASHBORG_CONSOLEHOST"), DefaultConsoleHost)
 	} else {
-		c.DashborgConsoleHost = dashutil.DefaultString(c.DashborgConsoleHost, os.Getenv("DASHBORG_CONSOLEHOST"), consoleHostDev)
+		c.ConsoleHost = dashutil.DefaultString(c.ConsoleHost, os.Getenv("DASHBORG_CONSOLEHOST"), consoleHostDev)
 	}
-	if c.DashborgSrvPort == 0 {
-		if os.Getenv("DASHBORG_PROCPORT") != "" {
+	if c.GrpcPort == 0 {
+		if os.Getenv("DASHBORG_GRPCPORT") != "" {
 			var err error
-			c.DashborgSrvPort, err = strconv.Atoi(os.Getenv("DASHBORG_PROCPORT"))
+			c.GrpcPort, err = strconv.Atoi(os.Getenv("DASHBORG_GRPCPORT"))
 			if err != nil {
-				c.log("Invalid DASHBORG_PROCPORT environment variable: %v\n", err)
+				c.log("Invalid DASHBORG_GRPCPORT environment variable: %v\n", err)
 			}
 		}
-		if c.DashborgSrvPort == 0 {
-			c.DashborgSrvPort = 7632
+		if c.GrpcPort == 0 {
+			c.GrpcPort = 7632
 		}
 	}
 	var cmdName string

@@ -53,6 +53,18 @@ func MarshalJson(val interface{}) (string, error) {
 	return jsonBuf.String(), nil
 }
 
+func MarshalJsonIndent(val interface{}) (string, error) {
+	var jsonBuf bytes.Buffer
+	enc := json.NewEncoder(&jsonBuf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	err := enc.Encode(val)
+	if err != nil {
+		return "", err
+	}
+	return jsonBuf.String(), nil
+}
+
 func MarshalJsonNoError(val interface{}) string {
 	var jsonBuf bytes.Buffer
 	enc := json.NewEncoder(&jsonBuf)

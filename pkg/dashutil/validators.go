@@ -146,16 +146,8 @@ func IsPathValid(path string) bool {
 }
 
 func IsFullPathValid(path string) bool {
-	if path == "" {
-		return false
-	}
-	if len(path) > FullPathMax {
-		return false
-	}
-	if path[0] != '/' {
-		return false
-	}
-	return fullPathRe.MatchString(path)
+	err := ValidateFullPath(path, true)
+	return err == nil
 }
 
 func IsPathFragValid(pathFrag string) bool {

@@ -11,14 +11,40 @@ import (
 )
 
 const (
-	pathFragDefault = "@default"
-	pathFragInit    = "@init"
-	pathFragHtml    = "@html"
+	pathFragDefault  = "@default"
+	pathFragInit     = "@init"
+	pathFragHtml     = "@html"
+	pathFragTypeInfo = "@typeinfo"
+	pathFragDyn      = "@dyn"
 )
 
 type handlerType struct {
-	HandlerFn func(req *AppRequest) (interface{}, error)
-	Opts      HandlerOpts
+	HandlerFn   func(req *AppRequest) (interface{}, error)
+	HandlerInfo *runtimeHandlerInfo
+	Opts        HandlerOpts
+}
+
+// type = any, bool, int, float, string, map, array, struct, blob
+type runtimeTypeInfo struct {
+	Type       string             `json:"type"`
+	Strict     bool               `json:"strict"`
+	Name       string             `json:"name,omitempty"`
+	MimeType   string             `json:"mimetype,omitempty"`
+	ElemType   *runtimeTypeInfo   `json:"elemtype,omitempty"`
+	FieldTypes []*runtimeTypeInfo `json:"structtype,omitempty"`
+}
+
+type runtimeHandlerInfo struct {
+	Name          string            `json:"name"`
+	Display       string            `json:"display,omitempty"`
+	Description   string            `json:"description,omitempty"`
+	Hidden        bool              `json:"hidden,omitempty"`
+	Pure          bool              `json:"pure,omitempty"`
+	AutoCall      bool              `json:"autocall,omitempty"`
+	ReqParam      bool              `json:"reqparam,omitempty"`
+	AppStateParam bool              `json:"appstateparam,omitempty"`
+	RtnType       *runtimeTypeInfo  `json:"rtntype,omitempty"`
+	ParamsType    []runtimeTypeInfo `json:"paramstype,omitempty"`
 }
 
 type LinkRuntime interface {
@@ -72,6 +98,19 @@ func (apprt *AppRuntimeImpl) getStateType() reflect.Type {
 	return apprt.appStateType
 }
 
+func (apprt *AppRuntimeImpl) GetHandlerInfo() (interface{}, error) {
+	apprt.lock.Lock()
+	defer apprt.lock.Unlock()
+	var rtn []*runtimeHandlerInfo
+	for _, hval := range apprt.handlers {
+		rtn = append(rtn, hval.HandlerInfo)
+	}
+	sort.Slice(rtn, func(i int, j int) bool {
+		return rtn[i].Name < rtn[j].Name
+	})
+	return rtn, nil
+}
+
 func (apprt *AppRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) {
 	_, _, pathFrag, err := dashutil.ParseFullPath(req.info.Path, true)
 	if err != nil {
@@ -80,12 +119,15 @@ func (apprt *AppRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) {
 	if pathFrag == "" {
 		pathFrag = pathFragDefault
 	}
+	if pathFrag == pathFragTypeInfo {
+		return apprt.GetHandlerInfo()
+	}
 	apprt.lock.Lock()
 	hval, ok := apprt.handlers[pathFrag]
 	mws := apprt.middlewares
 	apprt.lock.Unlock()
 	if !ok {
-		return nil, fmt.Errorf("No handler found for %s", req.RequestInfo().Path)
+		return nil, dasherr.ErrWithCode(dasherr.ErrCodeNoHandler, fmt.Errorf("No handler found for %s", dashutil.SimplifyPath(req.RequestInfo().Path, nil)))
 	}
 	if req.info.RequestMethod == RequestMethodGet && !hval.Opts.PureHandler {
 		return nil, dasherr.ValidateErr(fmt.Errorf("GET/data request to non-pure handler '%s'", pathFrag))
@@ -165,7 +207,11 @@ func (apprt *AppRuntimeImpl) SetRawHandler(handlerName string, handlerFn func(re
 	if !dashutil.IsPathFragValid(handlerName) {
 		return fmt.Errorf("Invalid handler name")
 	}
-	apprt.setHandler(handlerName, handlerType{HandlerFn: handlerFn, Opts: *opts})
+	hinfo, err := makeHandlerInfo(apprt, handlerName, handlerFn, *opts)
+	if err != nil {
+		return err
+	}
+	apprt.setHandler(handlerName, handlerType{HandlerFn: handlerFn, Opts: *opts, HandlerInfo: hinfo})
 	return nil
 }
 
@@ -194,6 +240,19 @@ func MakeSingleFnRuntime(handlerFn interface{}) *LinkRuntimeImpl {
 	return rtn
 }
 
+func (linkrt *LinkRuntimeImpl) GetHandlerInfo() (interface{}, error) {
+	linkrt.lock.Lock()
+	defer linkrt.lock.Unlock()
+	var rtn []*runtimeHandlerInfo
+	for _, hval := range linkrt.handlers {
+		rtn = append(rtn, hval.HandlerInfo)
+	}
+	sort.Slice(rtn, func(i int, j int) bool {
+		return rtn[i].Name < rtn[j].Name
+	})
+	return rtn, nil
+}
+
 func (linkrt *LinkRuntimeImpl) setHandler(name string, fn handlerType) {
 	linkrt.lock.Lock()
 	defer linkrt.lock.Unlock()
@@ -212,12 +271,15 @@ func (linkrt *LinkRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) 
 	if pathFrag == "" {
 		pathFrag = pathFragDefault
 	}
+	if pathFrag == pathFragTypeInfo {
+		return linkrt.GetHandlerInfo()
+	}
 	linkrt.lock.Lock()
 	hval, ok := linkrt.handlers[pathFrag]
 	mws := linkrt.middlewares
 	linkrt.lock.Unlock()
 	if !ok {
-		return nil, dasherr.ErrWithCode(dasherr.ErrCodeNoHandler, fmt.Errorf("No handler found for %s", info.Path))
+		return nil, dasherr.ErrWithCode(dasherr.ErrCodeNoHandler, fmt.Errorf("No handler found for %s", dashutil.SimplifyPath(info.Path, nil)))
 	}
 	if req.info.RequestMethod == RequestMethodGet && !hval.Opts.PureHandler {
 		return nil, dasherr.ValidateErr(fmt.Errorf("GET/Data request to non-pure handler"))

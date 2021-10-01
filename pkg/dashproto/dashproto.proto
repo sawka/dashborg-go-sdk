@@ -86,15 +86,13 @@ message SetPathMessage {
     bool HasBody = 4;
     bool ConnectRuntime = 5;
     string FileOptsJson = 6;
-    string BlobBytesKey = 7;
-    bytes BlobBytes = 8;
-    bool ClientErr = 9;
 }
 
 message SetPathResponse {
     RtnStatus Status = 1;
     bool BlobFound = 2;
-    string BlobBytesKey = 3;
+    string BlobUploadId = 3;
+    string BlobUploadKey = 4;
 }
 
 message RemovePathMessage {
@@ -134,7 +132,7 @@ service DashborgService {
     rpc ConnectClient(ConnectClientMessage) returns (ConnectClientResponse) {}
     rpc RequestStream(RequestStreamMessage) returns (stream RequestMessage) {} // backwards
     rpc SendResponse(SendResponseMessage) returns (SendResponseResponse) {}
-    rpc SetPath(stream SetPathMessage) returns (stream SetPathResponse) {}
+    rpc SetPath(SetPathMessage) returns (SetPathResponse) {}
     rpc RemovePath(RemovePathMessage) returns (RemovePathResponse) {}
     rpc FileInfo(FileInfoMessage) returns (FileInfoResponse) {}
     rpc ConnectLink(ConnectLinkMessage) returns (ConnectLinkResponse) {}

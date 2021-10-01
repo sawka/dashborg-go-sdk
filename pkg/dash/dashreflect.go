@@ -272,8 +272,152 @@ func handlerInternal(rti runtimeImplIf, name string, handlerFn interface{}, isAp
 		rtnVals := hVal.Call(args)
 		return convertRtnVals(hType, rtnVals)
 	}
-	rti.setHandler(name, handlerType{HandlerFn: hfn, Opts: opts})
+	hinfo, err := makeHandlerInfo(rti, name, handlerFn, opts)
+	if err != nil {
+		return err
+	}
+	rti.setHandler(name, handlerType{HandlerFn: hfn, Opts: opts, HandlerInfo: hinfo})
 	return nil
+}
+
+func isIntType(t reflect.Type) bool {
+	switch t.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return true
+
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return true
+
+	default:
+		return false
+	}
+}
+
+func makeTypeInfo(t reflect.Type) (*runtimeTypeInfo, error) {
+	if isIntType(t) {
+		return &runtimeTypeInfo{Type: "int", Strict: true}, nil
+	}
+	switch t.Kind() {
+	case reflect.Float32, reflect.Float64:
+		return &runtimeTypeInfo{Type: "float", Strict: true}, nil
+
+	case reflect.String:
+		return &runtimeTypeInfo{Type: "string", Strict: true}, nil
+
+	case reflect.Bool:
+		return &runtimeTypeInfo{Type: "bool", Strict: true}, nil
+
+	case reflect.Interface:
+		return &runtimeTypeInfo{Type: "any", Strict: false}, nil
+
+	case reflect.Ptr:
+		return makeTypeInfo(t.Elem())
+
+	case reflect.Array, reflect.Slice:
+		elemType, err := makeTypeInfo(t.Elem())
+		if err != nil {
+			return nil, err
+		}
+		return &runtimeTypeInfo{Type: "array", Strict: true, ElemType: elemType}, nil
+
+	case reflect.Map:
+		elemType, err := makeTypeInfo(t.Elem())
+		if err != nil {
+			return nil, err
+		}
+		keyType := t.Key()
+		if keyType.Kind() != reflect.String {
+			return nil, fmt.Errorf("Invalid map type, key must be type string")
+		}
+		return &runtimeTypeInfo{Type: "map", Strict: true, ElemType: elemType}, nil
+
+	case reflect.Struct:
+		numField := t.NumField()
+		var fieldTypes []*runtimeTypeInfo
+		for i := 0; i < numField; i++ {
+			field := t.Field(i)
+			if field.PkgPath != "" {
+				continue
+			}
+			fieldType, err := makeTypeInfo(field.Type)
+			if err != nil {
+				return nil, err
+			}
+			fieldTypes = append(fieldTypes, fieldType)
+		}
+		return &runtimeTypeInfo{Type: "struct", Strict: true, FieldTypes: fieldTypes}, nil
+
+	case reflect.Invalid, reflect.Complex64, reflect.Complex128, reflect.Chan, reflect.UnsafePointer, reflect.Func:
+		return nil, fmt.Errorf("Invalid Type: %v", t)
+	}
+	return nil, fmt.Errorf("Invalid Type: %v", t)
+}
+
+func makeTypeInfoFromReturn(hType reflect.Type) (*runtimeTypeInfo, error) {
+	if hType.NumOut() == 0 {
+		return nil, nil
+	}
+	if hType.NumOut() == 1 {
+		if hType.Out(0) == errType {
+			return nil, nil
+		}
+		return makeTypeInfo(hType.Out(0))
+	}
+	if hType.NumOut() == 2 {
+		if hType.Out(1) != errType {
+			return nil, fmt.Errorf("Invalid func return type, if a func returns 2 values, second value must be type 'error'")
+		}
+		return makeTypeInfo(hType.Out(0))
+	}
+	return nil, fmt.Errorf("Invalid func return type (can only return a maximum of 2 values)")
+}
+
+func checkReqArg(hType reflect.Type, argNum *int) bool {
+	if *argNum >= hType.NumIn() {
+		return false
+	}
+	argType := hType.In(*argNum)
+	if argType == reqType || argType == appReqType {
+		(*argNum)++
+		return true
+	}
+	return false
+}
+
+func checkAppStateArg(hType reflect.Type, argNum *int, appStateType reflect.Type) bool {
+	if *argNum >= hType.NumIn() {
+		return false
+	}
+	argType := hType.In(*argNum)
+	if argType == appStateType {
+		(*argNum)++
+		return true
+	}
+	return false
+}
+
+func makeHandlerInfo(rti runtimeImplIf, name string, handlerFn interface{}, opts HandlerOpts) (*runtimeHandlerInfo, error) {
+	rtn := &runtimeHandlerInfo{
+		Name: name,
+		Pure: opts.PureHandler,
+	}
+	var err error
+	hType := reflect.TypeOf(handlerFn)
+	rtn.RtnType, err = makeTypeInfoFromReturn(hType)
+	if err != nil {
+		return nil, err
+	}
+	argNum := 0
+	rtn.ReqParam = checkReqArg(hType, &argNum)
+	rtn.AppStateParam = checkAppStateArg(hType, &argNum, rti.getStateType())
+	for ; argNum < hType.NumIn(); argNum++ {
+		typeInfo, err := makeTypeInfo(hType.In(argNum))
+		if err != nil {
+			return nil, err
+		}
+		rtn.ParamsType = append(rtn.ParamsType, *typeInfo)
+	}
+	return rtn, nil
 }
 
 func convertRtnVals(hType reflect.Type, rtnVals []reflect.Value) (interface{}, error) {

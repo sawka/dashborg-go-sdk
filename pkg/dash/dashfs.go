@@ -32,6 +32,8 @@ const (
 )
 
 type FileInfo struct {
+	ParentDir     string   `json:"parentdir"`
+	FileName      string   `json:"filename"`
 	Path          string   `json:"path"`
 	Size          int64    `json:"size"`
 	CreatedTs     int64    `json:"createdts"`
@@ -55,6 +57,10 @@ func (finfo *FileInfo) BindMetadata(obj interface{}) error {
 	return json.Unmarshal([]byte(finfo.MetadataJson), obj)
 }
 
+func (finfo *FileInfo) IsLinkType() bool {
+	return finfo.FileType == FileTypeRuntimeLink || finfo.FileType == FileTypeAppRuntimeLink
+}
+
 type BlobReturn struct {
 	Reader   io.Reader
 	MimeType string
@@ -70,7 +76,7 @@ type FileOpts struct {
 	Display       string   `json:"display,omitempty"`
 	MetadataJson  string   `json:"metadata,omitempty"`
 	Description   string   `json:"description,omitempty"`
-	MkDirs        bool     `json:"mkdirs,omitempty"`
+	NoMkDirs      bool     `json:"nomkdirs,omitempty"`
 	Hidden        bool     `json:"hidden,omitempty"`
 	AppConfigJson string   `json:"appconfig"` // json-string
 }
@@ -109,7 +115,7 @@ type DashFSClient struct {
 
 func (fs *DashFSClient) SetRawPath(path string, r io.Reader, fileOpts *FileOpts, runtime LinkRuntime) error {
 	if path == "" || path[0] != '/' {
-		return fmt.Errorf("Path must begin with '/'")
+		return dasherr.ValidateErr(fmt.Errorf("Path must begin with '/'"))
 	}
 	return fs.client.setRawPath(fs.rootPath+path, r, fileOpts, runtime)
 }
@@ -153,6 +159,9 @@ func (fs *DashFSClient) SetPathFromFile(path string, fileName string, fileOpts *
 // the reader will be reset to the beginning.
 // A []byte can be wrapped in a bytes.Buffer to use this function (error will always be nil)
 func UpdateFileOptsFromReadSeeker(r io.ReadSeeker, fileOpts *FileOpts) error {
+	if fileOpts == nil {
+		return dasherr.ValidateErr(fmt.Errorf("Must pass non-nil FileOpts (set at least MimeType)"))
+	}
 	_, err := r.Seek(0, 0)
 	if err != nil {
 		return err
@@ -352,4 +361,27 @@ func (fs *DashFSClient) MakePathUrl(path string, jwtOpts *JWTOpts) (string, erro
 		return "", err
 	}
 	return fmt.Sprintf("%s?jwt=%s", pathLink, jwtToken), nil
+}
+
+func (fs *DashFSClient) MustMakePathUrl(path string, jwtOpts *JWTOpts) string {
+	rtn, err := fs.MakePathUrl(path, jwtOpts)
+	if err != nil {
+		panic(err)
+	}
+	return rtn
+}
+
+func (fs *DashFSClient) ConnectLinkRuntime(path string, runtime LinkRuntime) error {
+	if !dashutil.IsFullPathValid(path) {
+		return fmt.Errorf("Invalid Path")
+	}
+	if runtime == nil {
+		return fmt.Errorf("LinkRuntime() error, runtime must not be nil")
+	}
+	err := fs.client.connectLinkRpc(path)
+	if err != nil {
+		return err
+	}
+	fs.client.connectLinkRuntime(path, runtime)
+	return nil
 }

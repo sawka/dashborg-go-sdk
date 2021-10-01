@@ -128,38 +128,12 @@ func (req *AppRequest) SetBlob(path string, mimeType string, reader io.Reader) e
 	if req.isDone {
 		return fmt.Errorf("Cannot call SetBlob(), path=%s, Request is already done", path)
 	}
-	if !dashutil.IsMimeTypeValid(mimeType) {
-		return fmt.Errorf("Invalid Mime-Type passed to SetBlobData mime-type=%s", mimeType)
+	actions, err := blobToRRA(mimeType, reader)
+	if err != nil {
+		return err
 	}
-	first := true
-	for {
-		buffer := make([]byte, blobReadSize)
-		n, err := io.ReadFull(reader, buffer)
-		if err == io.EOF {
-			break
-		}
-		if (err == nil || err == io.ErrUnexpectedEOF) && n > 0 {
-			// write
-			rrAction := &dashproto.RRAction{
-				Ts:        dashutil.Ts(),
-				Selector:  path,
-				BlobBytes: buffer[0:n],
-			}
-			if first {
-				rrAction.ActionType = "blob"
-				rrAction.BlobMimeType = mimeType
-				first = false
-			} else {
-				rrAction.ActionType = "blobext"
-			}
-			req.appendRR(rrAction)
-		}
-		if err == io.ErrUnexpectedEOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
+	for _, rrAction := range actions {
+		req.appendRR(rrAction)
 	}
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -33,8 +34,11 @@ import (
 // must be divisible by 3 (for base64 encoding)
 const blobReadSize = 3 * 340 * 1024
 
+const maxRRABlobSize = 3 * 1024 * 1024 // 3M
+
 const grpcServerPath = "/grpc-server"
 const mbConst = 1000000
+const uploadTimeout = 5 * time.Minute
 
 const stdGrpcTimeout = 10 * time.Second
 const streamGrpcTimeout = 0
@@ -44,11 +48,6 @@ const maxBlobBytes = 5000000
 const (
 	mdConnIdKey        = "dashborg-connid"
 	mdClientVersionKey = "dashborg-clientversion"
-)
-
-const (
-	consoleHostProd = "console.dashborg.net"
-	consoleHostDev  = "console.dashborg-dev.com:8080"
 )
 
 var NotConnectedErr = dasherr.ErrWithCodeStr(dasherr.ErrCodeNotConnected, "DashborgCloudClient is not Connected")
@@ -104,7 +103,7 @@ type grpcServerRtn struct {
 }
 
 func (pc *DashCloudClient) getGrpcServer() (*grpcConfig, error) {
-	urlVal := fmt.Sprintf("https://%s%s?accid=%s", pc.Config.DashborgConsoleHost, grpcServerPath, pc.Config.AccId)
+	urlVal := fmt.Sprintf("https://%s%s?accid=%s", pc.Config.ConsoleHost, grpcServerPath, pc.Config.AccId)
 	resp, err := http.Get(urlVal)
 	if err != nil {
 		return nil, fmt.Errorf("Cannot get gRPC Server Host: %w", err)
@@ -126,16 +125,16 @@ func (pc *DashCloudClient) getGrpcServer() (*grpcConfig, error) {
 }
 
 func (pc *DashCloudClient) startClient() error {
-	if pc.Config.DashborgSrvHost == "" {
+	if pc.Config.GrpcHost == "" {
 		grpcConfig, err := pc.getGrpcServer()
 		if err != nil {
 			pc.logV("DashborgCloudClient error starting: %v\n", err)
 			return err
 		}
-		pc.Config.DashborgSrvHost = grpcConfig.GrpcServer
-		pc.Config.DashborgSrvPort = grpcConfig.GrpcPort
+		pc.Config.GrpcHost = grpcConfig.GrpcServer
+		pc.Config.GrpcPort = grpcConfig.GrpcPort
 		if pc.Config.Verbose {
-			pc.log("Dashborg Using gRPC host %s:%d\n", pc.Config.DashborgSrvHost, pc.Config.DashborgSrvPort)
+			pc.log("Dashborg Using gRPC host %s:%d\n", pc.Config.GrpcHost, pc.Config.GrpcPort)
 		}
 	}
 	err := pc.connectGrpc()
@@ -335,7 +334,7 @@ func (pc *DashCloudClient) handleStatusErrors(fnName string, resp interface{}, r
 }
 
 func (pc *DashCloudClient) connectGrpc() error {
-	addr := pc.Config.DashborgSrvHost + ":" + strconv.Itoa(pc.Config.DashborgSrvPort)
+	addr := pc.Config.GrpcHost + ":" + strconv.Itoa(pc.Config.GrpcPort)
 	backoffConfig := backoff.Config{
 		BaseDelay:  1.0 * time.Second,
 		Multiplier: 1.6,
@@ -709,10 +708,7 @@ func (pc *DashCloudClient) getAccHost() string {
 		return fmt.Sprintf("https://%s", pc.AccInfo.AccCName)
 	}
 	accId := pc.Config.AccId
-	if pc.Config.Env != "prod" {
-		return fmt.Sprintf("https://acc-%s.%s", accId, consoleHostDev)
-	}
-	return fmt.Sprintf("https://acc-%s.%s", accId, consoleHostProd)
+	return fmt.Sprintf("https://acc-%s.%s", accId, pc.Config.ConsoleHost)
 }
 
 // SendResponseProtoRpc is for internal use by the Dashborg AppClient, not to be called by the end user.
@@ -742,23 +738,6 @@ func (pc *DashCloudClient) log(fmtStr string, args ...interface{}) {
 		pc.Config.Logger.Printf(fmtStr, args...)
 	} else {
 		log.Printf(fmtStr, args...)
-	}
-}
-
-func (pc *DashCloudClient) drainSetPathStream(client dashproto.DashborgService_SetPathClient) {
-	client.CloseSend()
-	for {
-		_, err := client.Recv()
-		if err == nil {
-			continue
-		}
-		if err == io.EOF {
-			return
-		}
-		if err != nil {
-			pc.logV("drainSetPathStream error: %v\n", err)
-			return
-		}
 	}
 }
 
@@ -859,14 +838,6 @@ func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts
 	if err != nil {
 		return dasherr.JsonMarshalErr("FileOpts", err)
 	}
-	ctx, cancelFn := pc.ctxWithMd(streamGrpcTimeout)
-	defer cancelFn()
-	client, err := pc.DBService.SetPath(ctx)
-	if err != nil {
-		return err
-	}
-	defer pc.drainSetPathStream(client)
-
 	m := &dashproto.SetPathMessage{
 		Ts:             dashutil.Ts(),
 		Path:           fullPath,
@@ -874,81 +845,30 @@ func (pc *DashCloudClient) setRawPathWrap(fullPath string, r io.Reader, fileOpts
 		ConnectRuntime: (linkRt != nil),
 		FileOptsJson:   optsJson,
 	}
-	err = client.Send(m)
-	if err != nil {
-		return err
-	}
-	metaResp, respErr := client.Recv()
-	dashErr := pc.handleStatusErrors("SetPath", metaResp, respErr, true)
+	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
+	defer cancelFn()
+	resp, respErr := pc.DBService.SetPath(ctx, m)
+	dashErr := pc.handleStatusErrors("SetPath", resp, respErr, false)
 	if dashErr != nil {
 		return dashErr
 	}
-	if metaResp.BlobFound || !m.HasBody {
+	if resp.BlobFound || !m.HasBody {
 		if fileOpts.IsLinkType() && linkRt != nil {
 			pc.connectLinkRuntime(fullPath, linkRt)
 		}
 		return nil
 	}
-	maxBytes := maxBlobBytes
-	if int64(maxBytes) > fileOpts.Size {
-		maxBytes = int(fileOpts.Size)
+	if resp.BlobUploadId == "" || resp.BlobUploadKey == "" {
+		return dasherr.NoRetryErrWithCode(dasherr.ErrCodeProtocol, fmt.Errorf("Invalid Server Response, no UploadId/UploadKey specified"))
 	}
-	readBuf := make([]byte, maxBytes)
-	var lastErr error
-	var totalRead int64
-	for {
-		if r == nil {
-			lastErr = dasherr.ValidateErr(fmt.Errorf("Nil Reader passed to SetPath"))
-		}
-		bytesRead, readErr := io.ReadFull(r, readBuf)
-		if bytesRead == 0 && readErr == io.EOF {
-			break
-		}
-		if readErr != nil && readErr != io.ErrUnexpectedEOF {
-			lastErr = readErr
-			break
-		}
-		totalRead += int64(bytesRead)
-		if totalRead > fileOpts.Size {
-			break
-		}
-		m := &dashproto.SetPathMessage{
-			Ts:           dashutil.Ts(),
-			BlobBytesKey: metaResp.BlobBytesKey,
-			BlobBytes:    readBuf[0:bytesRead],
-		}
-		clientErr := client.Send(m)
-		if clientErr != nil {
-			return clientErr
-		}
-		if readErr == io.ErrUnexpectedEOF {
-			break
-		}
+	if r == nil {
+		return dasherr.ValidateErr(fmt.Errorf("Nil Reader passed to SetPath"))
 	}
-	if lastErr != nil || totalRead != fileOpts.Size {
-		m := &dashproto.SetPathMessage{
-			Ts:        dashutil.Ts(),
-			ClientErr: true,
-		}
-		err := client.Send(m)
-		if err != nil {
-			return err
-		}
-	}
-	if totalRead > fileOpts.Size {
-		return dasherr.ValidateErr(fmt.Errorf("Invalid FileOpts.Size, does not match io.Reader.  Reader has more bytes."))
-	}
-	if totalRead < fileOpts.Size {
-		return dasherr.ValidateErr(fmt.Errorf("Invalid FileOpts.Size, does not match io.Reader.  Reader has less bytes. (%d vs %d)", fileOpts.Size, totalRead))
-	}
-	err = client.CloseSend()
+	uploadCtx, uploadCancelFn := context.WithTimeout(context.Background(), uploadTimeout)
+	defer uploadCancelFn()
+	err = pc.UploadFile(uploadCtx, r, pc.Config.AccId, resp.BlobUploadId, resp.BlobUploadKey)
 	if err != nil {
 		return err
-	}
-	resp, respErr := client.Recv()
-	dashErr = pc.handleStatusErrors("SetPath", resp, respErr, false)
-	if dashErr != nil {
-		return dashErr
 	}
 	return nil
 }
@@ -1005,9 +925,10 @@ func rtnValToRRA(rtnVal interface{}) ([]*dashproto.RRAction, error) {
 // convert to streaming
 func blobToRRA(mimeType string, reader io.Reader) ([]*dashproto.RRAction, error) {
 	if !dashutil.IsMimeTypeValid(mimeType) {
-		return nil, fmt.Errorf("Invalid Mime-Type passed to SetBlobData mime-type=%s", mimeType)
+		return nil, dasherr.ValidateErr(fmt.Errorf("Invalid Mime-Type passed to SetBlobData mime-type=%s", mimeType))
 	}
 	first := true
+	totalSize := 0
 	var rra []*dashproto.RRAction
 	for {
 		buffer := make([]byte, blobReadSize)
@@ -1015,6 +936,7 @@ func blobToRRA(mimeType string, reader io.Reader) ([]*dashproto.RRAction, error)
 		if err == io.EOF {
 			break
 		}
+		totalSize += n
 		if (err == nil || err == io.ErrUnexpectedEOF) && n > 0 {
 			// write
 			rrAction := &dashproto.RRAction{
@@ -1038,6 +960,9 @@ func blobToRRA(mimeType string, reader io.Reader) ([]*dashproto.RRAction, error)
 			return nil, err
 		}
 	}
+	if totalSize > maxRRABlobSize {
+		return nil, dasherr.ValidateErr(fmt.Errorf("BLOB too large, max-size:%d, blob-size:%d", maxRRABlobSize, totalSize))
+	}
 	return rra, nil
 }
 
@@ -1050,4 +975,58 @@ func shortFileOptsStr(fileOpts *FileOpts) string {
 		mimeType = ":" + fileOpts.MimeType
 	}
 	return fmt.Sprintf("%s%s", fileOpts.FileType, mimeType)
+}
+
+type uploadRespType struct {
+	Success bool   `json:"success"`
+	Error   string `json:"error"`
+	ErrCode string `json:"errcode"`
+	PermErr bool   `json:"permerr"`
+}
+
+func (c *Config) getRawUploadUrl() string {
+	return fmt.Sprintf("https://%s/api2/raw-upload", c.ConsoleHost)
+}
+
+func (pc *DashCloudClient) UploadFile(ctx context.Context, r io.Reader, accId string, uploadId string, uploadKey string) error {
+	if !dashutil.IsUUIDValid(accId) {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid AccId"))
+	}
+	if !dashutil.IsUUIDValid(uploadId) || uploadKey == "" {
+		return dasherr.ValidateErr(fmt.Errorf("Invalid UploadId/UploadKey"))
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, pc.Config.getRawUploadUrl(), r)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("X-Dashborg-AccId", accId)
+	req.Header.Set("X-Dashborg-UploadId", uploadId)
+	req.Header.Set("X-Dashborg-UploadKey", uploadKey)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return dasherr.ErrWithCode(dasherr.ErrCodeUpload, err)
+	}
+	defer resp.Body.Close()
+	bodyContent, err := ioutil.ReadAll(resp.Body)
+	var uploadResp uploadRespType
+	err = json.Unmarshal(bodyContent, &uploadResp)
+	if err != nil {
+		return dasherr.JsonUnmarshalErr("UploadResponse", err)
+	}
+	if !uploadResp.Success {
+		errMsg := uploadResp.Error
+		if errMsg == "" {
+			return errors.New("Unknown Error")
+		}
+		if uploadResp.ErrCode != "" {
+			if uploadResp.PermErr {
+				return dasherr.NoRetryErrWithCode(dasherr.ErrCode(uploadResp.ErrCode), errors.New(errMsg))
+			} else {
+				return dasherr.ErrWithCode(dasherr.ErrCode(uploadResp.ErrCode), errors.New(errMsg))
+			}
+		}
+		return errors.New(errMsg)
+	}
+	return nil
 }

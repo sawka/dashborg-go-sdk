@@ -18,11 +18,14 @@ const (
 	ErrCodeAccAccess    ErrCode = "ACCACCESS"
 	ErrCodeNoHandler    ErrCode = "NOHANDLER"
 	ErrCodeBadAuth      ErrCode = "BADAUTH"
+	ErrCodeRoleAuth     ErrCode = "BADROLE"
+	ErrCodeBadZone      ErrCode = "BADZONE"
 	ErrCodeNoAcc        ErrCode = "NOACC"
-	ErrCodeNoApp        ErrCode = "NOAPP"
+	ErrCodeOffline      ErrCode = "OFFLINE"
 	ErrCodePanic        ErrCode = "PANIC"
 	ErrCodeJson         ErrCode = "JSON"
 	ErrCodeRpc          ErrCode = "RPC"
+	ErrCodeUpload       ErrCode = "UPLOAD"
 	ErrCodeLimit        ErrCode = "LIMIT"
 	ErrCodeNotConnected ErrCode = "NOCONN"
 	ErrCodeValidation   ErrCode = "NOTVALID"
@@ -30,6 +33,10 @@ const (
 	ErrCodeTimeout      ErrCode = "TIMEOUT"
 	ErrCodeNotImpl      ErrCode = "NOTIMPL"
 	ErrCodePathNotFound ErrCode = "NOTFOUND"
+	ErrCodeBadPath      ErrCode = "BADPATH"
+	ErrCodeNoApp        ErrCode = "NOAPP"
+	ErrCodeProtocol     ErrCode = "PROTOCOL"
+	ErrCodeInitErr      ErrCode = "INITERR"
 )
 
 type DashErr struct {
@@ -70,12 +77,28 @@ func CanRetry(err error) bool {
 	return true
 }
 
+func GetMessage(err error) string {
+	var dashErr *DashErr
+	if errors.As(err, &dashErr) {
+		return dashErr.err.Error()
+	}
+	return err.Error()
+}
+
 func GetErrCode(err error) ErrCode {
 	var dashErr *DashErr
 	if errors.As(err, &dashErr) {
 		return dashErr.ErrCode()
 	}
 	return ErrCodeNone
+}
+
+func GetCanRetry(err error) bool {
+	var dashErr *DashErr
+	if errors.As(err, &dashErr) {
+		return dashErr.CanRetry()
+	}
+	return true
 }
 
 func AsDashErr(err error) *DashErr {
