@@ -518,7 +518,7 @@ func (pc *DashCloudClient) sendErrResponse(reqMsg *dashproto.RequestMessage, err
 		Path:         reqMsg.Path,
 		FeClientId:   reqMsg.FeClientId,
 		ResponseDone: true,
-		Err:          errMsg,
+		Err:          &dashproto.ErrorType{Err: errMsg},
 	}
 	ctx, cancelFn := pc.ctxWithMd(stdGrpcTimeout)
 	defer cancelFn()
@@ -614,7 +614,7 @@ func (pc *DashCloudClient) sendPathResponse(preq *AppRequest, rtnVal interface{}
 	defer pc.sendResponseProtoRpc(m)
 	rtnErr := preq.GetError()
 	if rtnErr != nil {
-		m.Err = rtnErr.Error()
+		m.Err = dasherr.AsProtoErr(rtnErr)
 		return
 	}
 	var rtnValRRA []*dashproto.RRAction
@@ -622,7 +622,7 @@ func (pc *DashCloudClient) sendPathResponse(preq *AppRequest, rtnVal interface{}
 		var err error
 		rtnValRRA, err = rtnValToRRA(rtnVal)
 		if err != nil {
-			m.Err = err.Error()
+			m.Err = dasherr.AsProtoErr(err)
 			return
 		}
 	}

@@ -242,3 +242,44 @@ func ConvertErrArray(errs []error) error {
 	}
 	return MultiErr{Errs: errs}
 }
+
+func MakeHtmlPage(path string, pageName string) string {
+	if path == "" {
+		return pageName
+	}
+	if pageName == "" {
+		return path
+	}
+	return fmt.Sprintf("%s | %s", path, pageName)
+}
+
+// returns (path, pageName, error)
+func ParseHtmlPage(displayStr string) (string, string, error) {
+	fields := strings.Split(displayStr, "|")
+	if len(fields) != 1 && len(fields) != 2 {
+		return "", "", fmt.Errorf("Invalid display, format as either [path], [pagename], or [path]|[pagename]")
+	}
+	var pathStr, pageName string
+	if len(fields) == 1 {
+		f1 := strings.TrimSpace(fields[0])
+		if strings.HasPrefix(f1, "/") {
+			pathStr = f1
+			pageName = "default"
+		} else {
+			pageName = f1
+		}
+	} else {
+		pathStr = strings.TrimSpace(fields[0])
+		pageName = strings.TrimSpace(fields[1])
+	}
+	if pathStr != "" {
+		err := ValidateFullPath(pathStr, true)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	if !IsSimpleIdValid(pageName) {
+		return "", "", fmt.Errorf("Invalid page name '%s'", pageName)
+	}
+	return pathStr, pageName, nil
+}
