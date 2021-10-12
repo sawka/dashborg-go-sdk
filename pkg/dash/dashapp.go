@@ -17,6 +17,7 @@ const htmlMimeType = "text/html"
 const htmlBlobNs = "html"
 const rootHtmlKey = htmlBlobNs + ":" + "root"
 const jsonMimeType = "application/json"
+const initialHtmlPageDefault = "default"
 
 const (
 	requestTypeHtml    = "html"
@@ -149,7 +150,9 @@ func (app *App) AppConfig() (AppConfig, error) {
 		return AppConfig{}, err
 	}
 	app.appConfig.HtmlPath = app.getHtmlPath()
-	app.appConfig.InitialHtmlPage = "default"
+	if app.appConfig.InitialHtmlPage == "" {
+		app.appConfig.InitialHtmlPage = initialHtmlPageDefault
+	}
 	app.appConfig.RuntimePath = app.getRuntimePath()
 	app.appConfig.ClientVersion = ClientVersion
 	return app.appConfig, nil
@@ -231,6 +234,10 @@ func (app *App) SetHtmlFromFile(fileName string) {
 	app.ClearHtml()
 	app.htmlFileName = fileName
 	return
+}
+
+func (app *App) SetInitialHtmlPage(htmlPage string) {
+	app.appConfig.InitialHtmlPage = htmlPage
 }
 
 func (app *App) WatchHtmlFile(fileName string, watchOpts *WatchOpts) {
