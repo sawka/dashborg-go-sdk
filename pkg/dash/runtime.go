@@ -35,16 +35,19 @@ type runtimeTypeInfo struct {
 }
 
 type runtimeHandlerInfo struct {
-	Name          string            `json:"name"`
-	Display       string            `json:"display,omitempty"`
-	Description   string            `json:"description,omitempty"`
-	Hidden        bool              `json:"hidden,omitempty"`
-	Pure          bool              `json:"pure,omitempty"`
-	AutoCall      bool              `json:"autocall,omitempty"`
-	ReqParam      bool              `json:"reqparam,omitempty"`
-	AppStateParam bool              `json:"appstateparam,omitempty"`
-	RtnType       *runtimeTypeInfo  `json:"rtntype,omitempty"`
-	ParamsType    []runtimeTypeInfo `json:"paramstype,omitempty"`
+	Name           string            `json:"name"`
+	Display        string            `json:"display,omitempty"`
+	FormDisplay    string            `json:"formdisplay,omitempty"`
+	ResultsDisplay string            `json:"resultsdisplay,omitempty"`
+	Description    string            `json:"description,omitempty"`
+	Hidden         bool              `json:"hidden,omitempty"`
+	Pure           bool              `json:"pure,omitempty"`
+	AutoCall       bool              `json:"autocall,omitempty"`
+	ContextParam   bool              `json:"contextparam,omitempty"`
+	ReqParam       bool              `json:"reqparam,omitempty"`
+	AppStateParam  bool              `json:"appstateparam,omitempty"`
+	RtnType        *runtimeTypeInfo  `json:"rtntype,omitempty"`
+	ParamsType     []runtimeTypeInfo `json:"paramstype,omitempty"`
 }
 
 type LinkRuntime interface {
@@ -52,7 +55,11 @@ type LinkRuntime interface {
 }
 
 type HandlerOpts struct {
-	PureHandler bool
+	Hidden         bool
+	PureHandler    bool
+	Display        string
+	FormDisplay    string
+	ResultsDisplay string
 }
 
 type LinkRuntimeImpl struct {
@@ -216,11 +223,11 @@ func (apprt *AppRuntimeImpl) SetRawHandler(handlerName string, handlerFn func(re
 }
 
 func (apprt *AppRuntimeImpl) SetInitHandler(handlerFn interface{}) {
-	apprt.Handler(pathFragInit, handlerFn)
+	apprt.Handler(pathFragInit, handlerFn, nil)
 }
 
 func (apprt *AppRuntimeImpl) SetHtmlHandler(handlerFn interface{}) {
-	apprt.Handler(pathFragHtml, handlerFn)
+	apprt.Handler(pathFragHtml, handlerFn, nil)
 }
 
 func MakeRuntime() *LinkRuntimeImpl {
@@ -236,7 +243,7 @@ func MakeSingleFnRuntime(handlerFn interface{}) *LinkRuntimeImpl {
 		lock:     &sync.Mutex{},
 		handlers: make(map[string]handlerType),
 	}
-	rtn.Handler(pathFragDefault, handlerFn)
+	rtn.Handler(pathFragDefault, handlerFn, nil)
 	return rtn
 }
 

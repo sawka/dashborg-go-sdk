@@ -151,6 +151,34 @@ func FromRtnStatus(apiName string, rtnStatus *dashproto.RtnStatus) error {
 	return rtnErr
 }
 
+func AsProtoErr(err error) *dashproto.ErrorType {
+	if err == nil {
+		return nil
+	}
+	return &dashproto.ErrorType{
+		Err:     GetMessage(err),
+		ErrCode: string(GetErrCode(err)),
+		PermErr: !CanRetry(err),
+	}
+}
+
+func FromProtoErr(perr *dashproto.ErrorType) error {
+	if perr == nil {
+		return nil
+	}
+	var statusErr error
+	if perr.Err != "" {
+		statusErr = errors.New(perr.Err)
+	} else {
+		statusErr = errors.New("Unspecified Error")
+	}
+	return &DashErr{
+		err:       statusErr,
+		code:      ErrCode(perr.ErrCode),
+		permanent: perr.PermErr,
+	}
+}
+
 func RpcErr(apiName string, respErr error) error {
 	if respErr == nil {
 		return nil

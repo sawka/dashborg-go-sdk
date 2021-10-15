@@ -17,6 +17,7 @@ const htmlMimeType = "text/html"
 const htmlBlobNs = "html"
 const rootHtmlKey = htmlBlobNs + ":" + "root"
 const jsonMimeType = "application/json"
+const initialHtmlPageDefault = "default"
 
 const (
 	requestTypeHtml    = "html"
@@ -37,16 +38,17 @@ const (
 // AppConfig is passed as JSON to the container.  this struct
 // helps with marshaling/unmarshaling the structure.
 type AppConfig struct {
-	AppName       string   `json:"appname"`
-	ClientVersion string   `json:"clientversion"`
-	AppTitle      string   `json:"apptitle"`
-	AppVisType    string   `json:"appvistype"`
-	AppVisOrder   float64  `json:"appvisorder"`
-	AllowedRoles  []string `json:"allowedroles"`
-	InitRequired  bool     `json:"initrequired"`
-	OfflineAccess bool     `json:"offlineaccess"`
-	HtmlPath      string   `json:"htmlpath,omitempty"`    // empty for ./html
-	RuntimePath   string   `json:"runtimepath,omitempty"` // empty for ./runtime
+	AppName         string   `json:"appname"`
+	ClientVersion   string   `json:"clientversion"`
+	AppTitle        string   `json:"apptitle"`
+	AppVisType      string   `json:"appvistype"`
+	AppVisOrder     float64  `json:"appvisorder"`
+	AllowedRoles    []string `json:"allowedroles"`
+	InitRequired    bool     `json:"initrequired"`
+	OfflineAccess   bool     `json:"offlineaccess"`
+	HtmlPath        string   `json:"htmlpath"`
+	InitialHtmlPage string   `json:"initialhtmlpage"`
+	RuntimePath     string   `json:"runtimepath,omitempty"` // empty for ./runtime
 }
 
 type middlewareType struct {
@@ -148,6 +150,9 @@ func (app *App) AppConfig() (AppConfig, error) {
 		return AppConfig{}, err
 	}
 	app.appConfig.HtmlPath = app.getHtmlPath()
+	if app.appConfig.InitialHtmlPage == "" {
+		app.appConfig.InitialHtmlPage = initialHtmlPageDefault
+	}
 	app.appConfig.RuntimePath = app.getRuntimePath()
 	app.appConfig.ClientVersion = ClientVersion
 	return app.appConfig, nil
@@ -158,6 +163,10 @@ func (config *AppConfig) Validate() error {
 		return dasherr.ValidateErr(fmt.Errorf("Invalid AppName: '%s'", config.AppName))
 	}
 	_, _, _, err := dashutil.ParseFullPath(config.HtmlPath, true)
+	if err != nil {
+		return dasherr.ValidateErr(err)
+	}
+	_, _, err = dashutil.ParseHtmlPage(config.InitialHtmlPage)
 	if err != nil {
 		return dasherr.ValidateErr(err)
 	}
@@ -212,6 +221,7 @@ func (app *App) ClearHtml() {
 	app.htmlFromRuntime = false
 	app.htmlExtPath = ""
 	app.appConfig.HtmlPath = ""
+	app.appConfig.InitialHtmlPage = ""
 }
 
 func (app *App) SetHtml(htmlStr string) {
@@ -224,6 +234,10 @@ func (app *App) SetHtmlFromFile(fileName string) {
 	app.ClearHtml()
 	app.htmlFileName = fileName
 	return
+}
+
+func (app *App) SetInitialHtmlPage(htmlPage string) {
+	app.appConfig.InitialHtmlPage = htmlPage
 }
 
 func (app *App) WatchHtmlFile(fileName string, watchOpts *WatchOpts) {

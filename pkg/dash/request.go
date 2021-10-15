@@ -16,6 +16,8 @@ import (
 	"github.com/sawka/dashborg-go-sdk/pkg/dashutil"
 )
 
+const htmlPagePath = "$state.dashborg.htmlpage"
+
 // Request encapsulates all the data about a Dashborg request.  Normally the only
 // fields that a handler needs to access are "Data" and "appState" in order to read
 // the parameters and UI state associated with this request.  The other fields are
@@ -312,4 +314,13 @@ func (req *AppRequest) GetError() error {
 
 func (req *AppRequest) SetError(err error) {
 	req.err = err
+}
+
+func (req *AppRequest) SetHtmlPage(htmlPage string) error {
+	_, _, err := dashutil.ParseHtmlPage(htmlPage)
+	if err != nil {
+		return err
+	}
+	req.SetData(htmlPagePath, htmlPage)
+	return nil
 }

@@ -1,6 +1,7 @@
 package dash
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -12,6 +13,7 @@ var errType = reflect.TypeOf((*error)(nil)).Elem()
 var interfaceType = reflect.TypeOf((*interface{})(nil)).Elem()
 var appReqType = reflect.TypeOf(&AppRequest{})
 var reqType = reflect.TypeOf((*Request)(nil)).Elem()
+var contextType = reflect.TypeOf((*context.Context)(nil)).Elem()
 
 func checkOutput(mType reflect.Type, outputTypes ...reflect.Type) bool {
 	if mType.NumOut() != len(outputTypes) {
@@ -73,6 +75,7 @@ func ca_unmarshalMulti(hType reflect.Type, args []reflect.Value, argNum int, jso
 }
 
 // params:
+// * Context
 // * *Request
 // * AppStateType (if specified in App)
 // * data-array args
@@ -82,6 +85,13 @@ func makeCallArgs(hType reflect.Type, req Request, appReq bool, pureHandler bool
 		return rtn, nil
 	}
 	argNum := 0
+	if hType.In(argNum) == contextType {
+		rtn[argNum] = reflect.ValueOf(req.Context())
+		argNum++
+	}
+	if argNum == hType.NumIn() {
+		return rtn, nil
+	}
 	if hType.In(argNum) == appReqType {
 		if !appReq {
 			return nil, fmt.Errorf("LinkRuntime functions must use dash.Request, not *dash.AppRequest")
@@ -140,7 +150,13 @@ func validateHandler(hType reflect.Type, appReq bool, pureHandler bool, stateTyp
 	}
 
 	argNum := 0
-
+	// check optional context
+	if hType.In(argNum) == contextType {
+		argNum++
+	}
+	if hType.NumIn() <= argNum {
+		return nil
+	}
 	// check optional first argument: *dash.AppRequest / dash.Request
 	if hType.In(argNum) == appReqType {
 		if !appReq {
@@ -226,32 +242,45 @@ func unmarshalToType(jsonData string, rtnType reflect.Type) (reflect.Value, erro
 // If request Data is not an array, it will be converted to a single element array, if request Data is null
 // it will be converted to a zero-element array.  The handler will throw an error if the Data or AppState
 // values cannot be converted to their respective go types (using json.Unmarshal).
-func (apprt *AppRuntimeImpl) Handler(name string, handlerFn interface{}) {
-	err := handlerInternal(apprt, name, handlerFn, true, HandlerOpts{})
+func (apprt *AppRuntimeImpl) Handler(name string, handlerFn interface{}, opts ...*HandlerOpts) {
+	singleOpt := getSingleOpt(opts)
+	err := handlerInternal(apprt, name, handlerFn, true, singleOpt)
 	if err != nil {
 		apprt.addError(fmt.Errorf("Error adding handler '%s': %w", name, err))
 	}
 }
 
-func (apprt *AppRuntimeImpl) PureHandler(name string, handlerFn interface{}) {
-	err := handlerInternal(apprt, name, handlerFn, true, HandlerOpts{PureHandler: true})
+func (apprt *AppRuntimeImpl) PureHandler(name string, handlerFn interface{}, opts ...*HandlerOpts) {
+	singleOpt := getSingleOpt(opts)
+	singleOpt.PureHandler = true
+	err := handlerInternal(apprt, name, handlerFn, true, singleOpt)
 	if err != nil {
 		apprt.addError(fmt.Errorf("Error adding handler '%s': %w", name, err))
 	}
 }
 
-func (linkrt *LinkRuntimeImpl) Handler(name string, handlerFn interface{}) {
-	err := handlerInternal(linkrt, name, handlerFn, false, HandlerOpts{})
+func (linkrt *LinkRuntimeImpl) Handler(name string, handlerFn interface{}, opts ...*HandlerOpts) {
+	singleOpt := getSingleOpt(opts)
+	err := handlerInternal(linkrt, name, handlerFn, false, singleOpt)
 	if err != nil {
 		linkrt.addError(fmt.Errorf("Error adding handler '%s': %w", name, err))
 	}
 }
 
-func (linkrt *LinkRuntimeImpl) PureHandler(name string, handlerFn interface{}) {
-	err := handlerInternal(linkrt, name, handlerFn, false, HandlerOpts{PureHandler: true})
+func (linkrt *LinkRuntimeImpl) PureHandler(name string, handlerFn interface{}, opts ...*HandlerOpts) {
+	singleOpt := getSingleOpt(opts)
+	singleOpt.PureHandler = true
+	err := handlerInternal(linkrt, name, handlerFn, false, singleOpt)
 	if err != nil {
 		linkrt.addError(fmt.Errorf("Error adding handler '%s': %w", name, err))
 	}
+}
+
+func getSingleOpt(opts []*HandlerOpts) HandlerOpts {
+	if len(opts) == 0 || opts[0] == nil {
+		return HandlerOpts{}
+	}
+	return *opts[0]
 }
 
 func handlerInternal(rti runtimeImplIf, name string, handlerFn interface{}, isAppRuntime bool, opts HandlerOpts) error {
@@ -372,6 +401,18 @@ func makeTypeInfoFromReturn(hType reflect.Type) (*runtimeTypeInfo, error) {
 	return nil, fmt.Errorf("Invalid func return type (can only return a maximum of 2 values)")
 }
 
+func checkContextArg(hType reflect.Type, argNum *int) bool {
+	if *argNum >= hType.NumIn() {
+		return false
+	}
+	argType := hType.In(*argNum)
+	if argType == contextType {
+		(*argNum)++
+		return true
+	}
+	return false
+}
+
 func checkReqArg(hType reflect.Type, argNum *int) bool {
 	if *argNum >= hType.NumIn() {
 		return false
@@ -398,8 +439,12 @@ func checkAppStateArg(hType reflect.Type, argNum *int, appStateType reflect.Type
 
 func makeHandlerInfo(rti runtimeImplIf, name string, handlerFn interface{}, opts HandlerOpts) (*runtimeHandlerInfo, error) {
 	rtn := &runtimeHandlerInfo{
-		Name: name,
-		Pure: opts.PureHandler,
+		Name:           name,
+		Pure:           opts.PureHandler,
+		Hidden:         opts.Hidden,
+		Display:        opts.Display,
+		FormDisplay:    opts.FormDisplay,
+		ResultsDisplay: opts.ResultsDisplay,
 	}
 	var err error
 	hType := reflect.TypeOf(handlerFn)
@@ -408,6 +453,7 @@ func makeHandlerInfo(rti runtimeImplIf, name string, handlerFn interface{}, opts
 		return nil, err
 	}
 	argNum := 0
+	rtn.ContextParam = checkContextArg(hType, &argNum)
 	rtn.ReqParam = checkReqArg(hType, &argNum)
 	rtn.AppStateParam = checkAppStateArg(hType, &argNum, rti.getStateType())
 	for ; argNum < hType.NumIn(); argNum++ {

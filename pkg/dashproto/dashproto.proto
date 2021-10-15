@@ -9,6 +9,12 @@ message RtnStatus {
     bool PermErr = 4;
 }
 
+message ErrorType {
+    string Err = 1;
+    string ErrCode = 2;
+    bool PermErr = 3;
+}
+
 message RRAction {
     int64 Ts = 1;
     string ActionType = 2;
@@ -16,7 +22,7 @@ message RRAction {
     string JsonData = 4;
     string OpType = 5;
     string Html = 6;
-    string Err = 7;
+    ErrorType Err = 7;
     bytes BlobBytes = 8;        // for "blob" / "blobext" ActionType
     string BlobMimeType = 9;    // for "blob" ActionType
     string ReqId = 10;          // transient for LocalServer
@@ -30,7 +36,7 @@ message SendResponseMessage {
     string FeClientId = 5;
     bool ResponseDone = 6;
     repeated RRAction Actions = 7;
-    string Err = 8;
+    ErrorType Err = 8;
 }
 
 message SendResponseResponse {
