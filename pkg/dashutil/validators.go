@@ -7,6 +7,7 @@ import (
 
 const (
 	ZoneNameMax      = 20
+	PageNameMax      = 20
 	ZoneAccessMax    = 50
 	ControlNameMax   = 30
 	AppNameMax       = 50
@@ -44,6 +45,7 @@ var (
 	zoneNameRe       = regexp.MustCompile("^[a-zA-Z][a-zA-Z0-9_.-]*$")
 	controlNameRe    = regexp.MustCompile("^[a-zA-Z0-9_.:#/-]+$")
 	appNameRe        = regexp.MustCompile("^[a-zA-Z][a-zA-Z0-9_.-]*$")
+	pageNameRe       = regexp.MustCompile("^[a-zA-Z][a-zA-Z0-9_.-]*$")
 	procNameRe       = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
 	procIKeyRe       = regexp.MustCompile("^[a-zA-Z0-9_.-]+$")
 	uuidRe           = regexp.MustCompile("^[a-fA-F0-9-]{36}$")
@@ -71,7 +73,7 @@ var (
 )
 
 var ValidRequestType = map[string]bool{"data": true, "handler": true, "stream": true, "auth": true, "html": true, "init": true, "path": true}
-var ValidActionType = map[string]bool{"setdata": true, "event": true, "invalidate": true, "html": true, "panelauth": true, "panelauthchallenge": true, "error": true, "blob": true, "blobext": true, "streamopen": true, "backendpush": true}
+var ValidActionType = map[string]bool{"setdata": true, "event": true, "invalidate": true, "html": true, "panelauth": true, "panelauthchallenge": true, "error": true, "blob": true, "blobext": true, "streamopen": true, "backendpush": true, "navto": true}
 var ValidFileType = map[string]bool{"static": true, "dir": true, "rt-link": true, "rt-app-link": true, "app": true}
 var ValidRequestMethod = map[string]bool{"GET": true, "POST": true}
 
@@ -80,6 +82,13 @@ func IsZoneNameValid(zoneName string) bool {
 		return false
 	}
 	return zoneNameRe.MatchString(zoneName)
+}
+
+func IsPageNameValid(pageName string) bool {
+	if len(pageName) > PageNameMax {
+		return false
+	}
+	return pageNameRe.MatchString(pageName)
 }
 
 func IsZoneAccessValid(zoneAccess string) bool {
