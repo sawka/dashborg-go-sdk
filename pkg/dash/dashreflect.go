@@ -287,10 +287,23 @@ func handlerInternal(rti runtimeImplIf, name string, handlerFn interface{}, isAp
 	if !dashutil.IsPathFragValid(name) {
 		return fmt.Errorf("Invalid handler name")
 	}
+	hfn, err := convertHandlerFn(rti, handlerFn, isAppRuntime, opts)
+	if err != nil {
+		return err
+	}
+	hinfo, err := makeHandlerInfo(rti, name, handlerFn, opts)
+	if err != nil {
+		return err
+	}
+	rti.setHandler(name, handlerType{HandlerFn: hfn, Opts: opts, HandlerInfo: hinfo})
+	return nil
+}
+
+func convertHandlerFn(rti runtimeImplIf, handlerFn interface{}, isAppRuntime bool, opts HandlerOpts) (handlerFuncType, error) {
 	hType := reflect.TypeOf(handlerFn)
 	err := validateHandler(hType, isAppRuntime, opts.PureHandler, rti.getStateType())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	hVal := reflect.ValueOf(handlerFn)
 	hfn := func(req *AppRequest) (interface{}, error) {
@@ -301,12 +314,7 @@ func handlerInternal(rti runtimeImplIf, name string, handlerFn interface{}, isAp
 		rtnVals := hVal.Call(args)
 		return convertRtnVals(hType, rtnVals)
 	}
-	hinfo, err := makeHandlerInfo(rti, name, handlerFn, opts)
-	if err != nil {
-		return err
-	}
-	rti.setHandler(name, handlerType{HandlerFn: hfn, Opts: opts, HandlerInfo: hinfo})
-	return nil
+	return hfn, nil
 }
 
 func isIntType(t reflect.Type) bool {

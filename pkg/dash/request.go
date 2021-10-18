@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"net/url"
 	"os"
 	"sync"
 	"time"
@@ -17,6 +16,7 @@ import (
 )
 
 const htmlPagePath = "$state.dashborg.htmlpage"
+const pageNameKey = "apppage"
 
 // Request encapsulates all the data about a Dashborg request.  Normally the only
 // fields that a handler needs to access are "Data" and "appState" in order to read
@@ -28,7 +28,7 @@ type RequestInfo struct {
 	ReqId         string // unique request id
 	RequestType   string // "data", "handler", or "stream"
 	RequestMethod string // GET or POST
-	Path          string
+	Path          string // request path
 	AppName       string // app name
 	FeClientId    string // unique id for client
 }
@@ -46,6 +46,12 @@ type Request interface {
 	RawData() RawRequestData
 	BindData(obj interface{}) error
 	BindAppState(obj interface{}) error
+}
+
+type dashborgState struct {
+	UrlParams  map[string]interface{} `json:"urlparams"`
+	PostParams map[string]interface{} `json:"postparams"`
+	Dashborg   map[string]interface{} `json:"dashborg"`
 }
 
 type AppRequest struct {
@@ -76,22 +82,6 @@ func (req *AppRequest) Context() context.Context {
 
 func (req *AppRequest) AuthData() *AuthAtom {
 	return req.authData
-}
-
-func (req *AppRequest) UrlParams() url.Values {
-	type UrlParamsState struct {
-		UrlParams map[string]string `json:"urlparams"`
-	}
-	values := url.Values(make(map[string][]string))
-	var state UrlParamsState
-	err := req.BindAppState(&state)
-	if err != nil {
-		return values
-	}
-	for key, val := range state.UrlParams {
-		values.Add(key, val)
-	}
-	return values
 }
 
 func (req *AppRequest) BindData(obj interface{}) error {
@@ -322,5 +312,35 @@ func (req *AppRequest) SetHtmlPage(htmlPage string) error {
 		return err
 	}
 	req.SetData(htmlPagePath, htmlPage)
+	return nil
+}
+
+func (req *AppRequest) GetPageName() string {
+	var state dashborgState
+	err := req.BindAppState(&state)
+	if err != nil {
+		return ""
+	}
+	strRtn, ok := state.Dashborg[pageNameKey].(string)
+	if !ok {
+		return ""
+	}
+	return strRtn
+}
+
+func (req *AppRequest) NavToPage(pageName string, params interface{}) error {
+	rrAction := &dashproto.RRAction{
+		Ts:         dashutil.Ts(),
+		ActionType: "navto",
+		Selector:   pageName,
+	}
+	if params != nil {
+		jsonData, err := dashutil.MarshalJson(params)
+		if err != nil {
+			return fmt.Errorf("Error marshaling json for NavToPage, pageName:%s, err:%v\n", pageName, err)
+		}
+		rrAction.JsonData = jsonData
+	}
+	req.appendRR(rrAction)
 	return nil
 }

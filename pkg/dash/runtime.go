@@ -16,6 +16,7 @@ const (
 	pathFragHtml     = "@html"
 	pathFragTypeInfo = "@typeinfo"
 	pathFragDyn      = "@dyn"
+	pathFragPageInit = "@pageinit"
 )
 
 type handlerType struct {
@@ -69,10 +70,13 @@ type LinkRuntimeImpl struct {
 	errs        []error
 }
 
+type handlerFuncType = func(req *AppRequest) (interface{}, error)
+
 type AppRuntimeImpl struct {
 	lock         *sync.Mutex
 	appStateType reflect.Type
 	handlers     map[string]handlerType
+	pageHandlers map[string]handlerFuncType
 	middlewares  []middlewareType
 	errs         []error
 }
@@ -89,9 +93,13 @@ type HasErr interface {
 
 func MakeAppRuntime() *AppRuntimeImpl {
 	rtn := &AppRuntimeImpl{
-		lock:     &sync.Mutex{},
-		handlers: make(map[string]handlerType),
+		lock:         &sync.Mutex{},
+		handlers:     make(map[string]handlerType),
+		pageHandlers: make(map[string]handlerFuncType),
 	}
+	rtn.SetInitHandler(func() {}, &HandlerOpts{Hidden: true})
+	rtn.Handler(pathFragPageInit, rtn.pageInitHandler, &HandlerOpts{Hidden: true})
+	rtn.PureHandler(pathFragTypeInfo, rtn.GetHandlerInfo, &HandlerOpts{Hidden: true})
 	return rtn
 }
 
@@ -110,12 +118,32 @@ func (apprt *AppRuntimeImpl) GetHandlerInfo() (interface{}, error) {
 	defer apprt.lock.Unlock()
 	var rtn []*runtimeHandlerInfo
 	for _, hval := range apprt.handlers {
+		if hval.HandlerInfo.Hidden {
+			continue
+		}
 		rtn = append(rtn, hval.HandlerInfo)
 	}
 	sort.Slice(rtn, func(i int, j int) bool {
 		return rtn[i].Name < rtn[j].Name
 	})
 	return rtn, nil
+}
+
+func (apprt *AppRuntimeImpl) pageInitHandler(req *AppRequest, pageName string) (interface{}, error) {
+	handlerFn := apprt.pageHandlers[pageName]
+	if handlerFn == nil {
+		return nil, nil
+	}
+	return handlerFn(req)
+}
+
+func (apprt *AppRuntimeImpl) SetPageHandler(pageName string, handlerFn interface{}) {
+	hfn, err := convertHandlerFn(apprt, handlerFn, true, HandlerOpts{})
+	if err != nil {
+		apprt.addError(fmt.Errorf("Error in SetPageHandler(%s): %v", pageName, err))
+		return
+	}
+	apprt.pageHandlers[pageName] = hfn
 }
 
 func (apprt *AppRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) {
@@ -125,9 +153,6 @@ func (apprt *AppRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) {
 	}
 	if pathFrag == "" {
 		pathFrag = pathFragDefault
-	}
-	if pathFrag == pathFragTypeInfo {
-		return apprt.GetHandlerInfo()
 	}
 	apprt.lock.Lock()
 	hval, ok := apprt.handlers[pathFrag]
@@ -222,12 +247,12 @@ func (apprt *AppRuntimeImpl) SetRawHandler(handlerName string, handlerFn func(re
 	return nil
 }
 
-func (apprt *AppRuntimeImpl) SetInitHandler(handlerFn interface{}) {
-	apprt.Handler(pathFragInit, handlerFn, nil)
+func (apprt *AppRuntimeImpl) SetInitHandler(handlerFn interface{}, opts ...*HandlerOpts) {
+	apprt.Handler(pathFragInit, handlerFn, opts...)
 }
 
-func (apprt *AppRuntimeImpl) SetHtmlHandler(handlerFn interface{}) {
-	apprt.Handler(pathFragHtml, handlerFn, nil)
+func (apprt *AppRuntimeImpl) SetHtmlHandler(handlerFn interface{}, opts ...*HandlerOpts) {
+	apprt.Handler(pathFragHtml, handlerFn, opts...)
 }
 
 func MakeRuntime() *LinkRuntimeImpl {
@@ -235,6 +260,7 @@ func MakeRuntime() *LinkRuntimeImpl {
 		lock:     &sync.Mutex{},
 		handlers: make(map[string]handlerType),
 	}
+	rtn.PureHandler(pathFragTypeInfo, rtn.GetHandlerInfo)
 	return rtn
 }
 
@@ -252,6 +278,9 @@ func (linkrt *LinkRuntimeImpl) GetHandlerInfo() (interface{}, error) {
 	defer linkrt.lock.Unlock()
 	var rtn []*runtimeHandlerInfo
 	for _, hval := range linkrt.handlers {
+		if hval.HandlerInfo.Hidden {
+			continue
+		}
 		rtn = append(rtn, hval.HandlerInfo)
 	}
 	sort.Slice(rtn, func(i int, j int) bool {
@@ -277,9 +306,6 @@ func (linkrt *LinkRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) 
 	}
 	if pathFrag == "" {
 		pathFrag = pathFragDefault
-	}
-	if pathFrag == pathFragTypeInfo {
-		return linkrt.GetHandlerInfo()
 	}
 	linkrt.lock.Lock()
 	hval, ok := linkrt.handlers[pathFrag]

@@ -49,6 +49,7 @@ type AppConfig struct {
 	HtmlPath        string   `json:"htmlpath"`
 	InitialHtmlPage string   `json:"initialhtmlpage"`
 	RuntimePath     string   `json:"runtimepath,omitempty"` // empty for ./runtime
+	PagesEnabled    bool     `json:"pagesenabled,omitempty"`
 }
 
 type middlewareType struct {
@@ -236,10 +237,6 @@ func (app *App) SetHtmlFromFile(fileName string) {
 	return
 }
 
-func (app *App) SetInitialHtmlPage(htmlPage string) {
-	app.appConfig.InitialHtmlPage = htmlPage
-}
-
 func (app *App) WatchHtmlFile(fileName string, watchOpts *WatchOpts) {
 	app.ClearHtml()
 	app.htmlFileName = fileName
@@ -250,19 +247,17 @@ func (app *App) WatchHtmlFile(fileName string, watchOpts *WatchOpts) {
 	return
 }
 
-func (app *App) SetHtmlExternalPath(path string) {
-	app.ClearHtml()
-	app.htmlExtPath = path
-}
-
 func (app *App) SetHtmlFromRuntime() {
 	app.ClearHtml()
 	app.htmlFromRuntime = true
 }
 
-// initType is either InitHandlerRequired, InitHandlerRequiredWhenConnected, or InitHandlerNone
 func (app *App) SetInitRequired(initRequired bool) {
 	app.appConfig.InitRequired = initRequired
+}
+
+func (app *App) SetPagesEnabled(pagesEnabled bool) {
+	app.appConfig.PagesEnabled = pagesEnabled
 }
 
 func (app *App) AppName() string {
