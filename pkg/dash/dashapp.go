@@ -40,9 +40,9 @@ const (
 type AppConfig struct {
 	AppName         string   `json:"appname"`
 	ClientVersion   string   `json:"clientversion"`
-	AppTitle        string   `json:"apptitle"`
-	AppVisType      string   `json:"appvistype"`
-	AppVisOrder     float64  `json:"appvisorder"`
+	AppTitle        string   `json:"apptitle,omitempty"`
+	AppVisType      string   `json:"appvistype,omitempty"`
+	AppVisOrder     float64  `json:"appvisorder,omitempty"`
 	AllowedRoles    []string `json:"allowedroles"`
 	InitRequired    bool     `json:"initrequired"`
 	OfflineAccess   bool     `json:"offlineaccess"`

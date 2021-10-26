@@ -464,6 +464,7 @@ func makeHandlerInfo(rti runtimeImplIf, name string, handlerFn interface{}, opts
 	rtn.ContextParam = checkContextArg(hType, &argNum)
 	rtn.ReqParam = checkReqArg(hType, &argNum)
 	rtn.AppStateParam = checkAppStateArg(hType, &argNum, rti.getStateType())
+	rtn.ParamsType = []runtimeTypeInfo{}
 	for ; argNum < hType.NumIn(); argNum++ {
 		typeInfo, err := makeTypeInfo(hType.In(argNum))
 		if err != nil {

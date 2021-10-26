@@ -47,8 +47,8 @@ type runtimeHandlerInfo struct {
 	ContextParam   bool              `json:"contextparam,omitempty"`
 	ReqParam       bool              `json:"reqparam,omitempty"`
 	AppStateParam  bool              `json:"appstateparam,omitempty"`
-	RtnType        *runtimeTypeInfo  `json:"rtntype,omitempty"`
-	ParamsType     []runtimeTypeInfo `json:"paramstype,omitempty"`
+	RtnType        *runtimeTypeInfo  `json:"rtntype"`
+	ParamsType     []runtimeTypeInfo `json:"paramstype"`
 }
 
 type LinkRuntime interface {
