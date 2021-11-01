@@ -351,7 +351,6 @@ func (pc *DashCloudClient) connectGrpc() error {
 		MinVersion:               tls.VersionTLS13,
 		CurvePreferences:         []tls.CurveID{tls.CurveP384},
 		PreferServerCipherSuites: true,
-		InsecureSkipVerify:       true,
 		Certificates:             []tls.Certificate{clientCert},
 		CipherSuites: []uint16{
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,

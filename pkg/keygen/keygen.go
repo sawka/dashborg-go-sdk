@@ -1,3 +1,4 @@
+// Utility functions for generating and reading public/private keypairs.
 package keygen
 
 import (
@@ -16,6 +17,8 @@ import (
 
 const p384Params = "BgUrgQQAIg=="
 
+// Creates a keypair with CN=[accId], private key at keyFileName, and
+// public key certificate at certFileName.
 func CreateKeyPair(keyFileName string, certFileName string, accId string) error {
 	privateKey, err := CreatePrivateKey(keyFileName)
 	if err != nil {
@@ -28,6 +31,7 @@ func CreateKeyPair(keyFileName string, certFileName string, accId string) error 
 	return nil
 }
 
+// Creates a private key at keyFileName (ECDSA, secp384r1 (P-384)), PEM format
 func CreatePrivateKey(keyFileName string) (*ecdsa.PrivateKey, error) {
 	curve := elliptic.P384() // secp384r1
 	privateKey, err := ecdsa.GenerateKey(curve, rand.Reader)
@@ -66,6 +70,7 @@ func CreatePrivateKey(keyFileName string) (*ecdsa.PrivateKey, error) {
 	return privateKey, nil
 }
 
+// Creates a public key certificate at certFileName using privateKey with CN=[accId].
 func CreateCertificate(certFileName string, privateKey *ecdsa.PrivateKey, accId string) error {
 	serialNumber, err := rand.Int(rand.Reader, big.NewInt(1000000000000))
 	if err != nil {

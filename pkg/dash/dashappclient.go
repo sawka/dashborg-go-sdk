@@ -18,14 +18,22 @@ type DashAppClient struct {
 	client *DashCloudClient
 }
 
+// Create a new app with the given name.  The app is just created
+// client side, it is not written to the server.
+// Invalid names will be reported in App.Err()
 func (dac *DashAppClient) NewApp(appName string) *App {
 	return makeApp(dac.client, appName)
 }
 
+// Create a new app from the passed in AppConfig.  Config must be valid and complete.
+// Normal end users should use LoadApp(), not this function.
 func (dac *DashAppClient) NewAppFromConfig(cfg AppConfig) (*App, error) {
 	return makeAppFromConfig(dac.client, cfg)
 }
 
+// Tries to load an app from the Dashborg service with the given name.  If no existing
+// app is found then if createIfNotFound is false will return nil, nil.  If createIfNotFound
+// is true, will return NewApp(appName).
 func (dac *DashAppClient) LoadApp(appName string, createIfNotFound bool) (*App, error) {
 	appPath := AppPathFromName(appName)
 	finfos, _, err := dac.client.fileInfo(appPath, nil, false)
@@ -50,18 +58,28 @@ func (dac *DashAppClient) LoadApp(appName string, createIfNotFound bool) (*App, 
 	return makeAppFromConfig(dac.client, config)
 }
 
+// Writes the app to the Dashborg service.  Note that the app runtime will
+// *not* be connected.  This is used to create or update an app's settings,
+// offline apps, or apps with external runtimes.
 func (dac *DashAppClient) WriteApp(app *App) error {
 	return dac.baseWriteApp(app, false)
 }
 
+// Writes the app to the Dashborg service and connects the app's runtime to
+// receive requests.  If an app uses an external runtime, you should call
+// WriteApp(), not WriteAndConnectApp().
 func (dac *DashAppClient) WriteAndConnectApp(app *App) error {
 	return dac.baseWriteApp(app, true)
 }
 
+// Given an app name, returns the canonical path (e.g. /_/apps/[appName])
 func AppPathFromName(appName string) string {
 	return RootAppPath + "/" + appName
 }
 
+// Removes the app and any static data/runtimes/files under the canonical app root.
+// So any file that was created using the AppFSClient() will also be removed.
+// Any connected runtimes will also be disconnected.
 func (dac *DashAppClient) RemoveApp(appName string) error {
 	if !dashutil.IsAppNameValid(appName) {
 		return dasherr.ValidateErr(fmt.Errorf("Invalid App Name"))
@@ -73,6 +91,9 @@ func (dac *DashAppClient) RemoveApp(appName string) error {
 	return nil
 }
 
+// Connects the app's runtime without modifying any settings (does not write
+// the app config to the Dashborg service).  Note that a different WriteApp
+// or WriteAndConenctApp must have already created the app.
 func (dac *DashAppClient) ConnectAppRuntime(app *App) error {
 	appConfig, err := app.AppConfig()
 	if err != nil {
@@ -93,6 +114,8 @@ func (dac *DashAppClient) ConnectAppRuntime(app *App) error {
 	return nil
 }
 
+// Creates a URL to link to an app given its name.  Optional jwtOpts to override the
+// config's default jwt options.
 func (dac *DashAppClient) MakeAppUrl(appNameOrPath string, jwtOpts *JWTOpts) (string, error) {
 	if appNameOrPath == "" {
 		return "", fmt.Errorf("Invalid App Path")

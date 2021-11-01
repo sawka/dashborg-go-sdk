@@ -91,6 +91,9 @@ type HasErr interface {
 	Err() error
 }
 
+// Creates an app runtime.  Normally you should
+// use the App class to manage applications which creates
+// an AppRuntime automatically.  This is for special low-level use cases.
 func MakeAppRuntime() *AppRuntimeImpl {
 	rtn := &AppRuntimeImpl{
 		lock:         &sync.Mutex{},
@@ -99,7 +102,7 @@ func MakeAppRuntime() *AppRuntimeImpl {
 	}
 	rtn.SetInitHandler(func() {}, &HandlerOpts{Hidden: true})
 	rtn.Handler(pathFragPageInit, rtn.pageInitHandler, &HandlerOpts{Hidden: true})
-	rtn.PureHandler(pathFragTypeInfo, rtn.GetHandlerInfo, &HandlerOpts{Hidden: true})
+	rtn.PureHandler(pathFragTypeInfo, rtn.getHandlerInfo, &HandlerOpts{Hidden: true})
 	return rtn
 }
 
@@ -113,7 +116,7 @@ func (apprt *AppRuntimeImpl) getStateType() reflect.Type {
 	return apprt.appStateType
 }
 
-func (apprt *AppRuntimeImpl) GetHandlerInfo() (interface{}, error) {
+func (apprt *AppRuntimeImpl) getHandlerInfo() (interface{}, error) {
 	apprt.lock.Lock()
 	defer apprt.lock.Unlock()
 	var rtn []*runtimeHandlerInfo
@@ -137,6 +140,7 @@ func (apprt *AppRuntimeImpl) pageInitHandler(req *AppRequest, pageName string) (
 	return handlerFn(req)
 }
 
+// Set the init function for an application page.  Only used when the app has PagesEnabled.
 func (apprt *AppRuntimeImpl) SetPageHandler(pageName string, handlerFn interface{}) {
 	hfn, err := convertHandlerFn(apprt, handlerFn, true, HandlerOpts{})
 	if err != nil {
@@ -146,6 +150,8 @@ func (apprt *AppRuntimeImpl) SetPageHandler(pageName string, handlerFn interface
 	apprt.pageHandlers[pageName] = hfn
 }
 
+// Runs an application handler given an AppRequest.  This method is not normally used by end users,
+// it is used by the Dashborg runtime to dispatch requests to this runtime.
 func (apprt *AppRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) {
 	_, _, pathFrag, err := dashutil.ParseFullPath(req.info.Path, true)
 	if err != nil {
@@ -184,6 +190,8 @@ func mwHelper(outerReq *AppRequest, hval handlerType, mws []middlewareType, mwPo
 	})
 }
 
+// Sets the type to unmarshal the application state into.  Must be set before the app
+// is connected to the Dashborg service.
 func (apprt *AppRuntimeImpl) SetAppStateType(appStateType reflect.Type) {
 	if appStateType != nil {
 		isStruct := appStateType.Kind() == reflect.Struct
@@ -218,6 +226,7 @@ func removeMiddleware(mws []middlewareType, name string) []middlewareType {
 	return newmws
 }
 
+// Adds a middleware function to this runtime.
 func (apprt *AppRuntimeImpl) AddRawMiddleware(name string, mwFunc MiddlewareFuncType, priority float64) {
 	apprt.RemoveMiddleware(name)
 	apprt.lock.Lock()
@@ -226,12 +235,14 @@ func (apprt *AppRuntimeImpl) AddRawMiddleware(name string, mwFunc MiddlewareFunc
 	apprt.middlewares = addMiddlewares(apprt.middlewares, newmw)
 }
 
+// Removes a middleware function from this runtime
 func (apprt *AppRuntimeImpl) RemoveMiddleware(name string) {
 	apprt.lock.Lock()
 	defer apprt.lock.Unlock()
 	apprt.middlewares = removeMiddleware(apprt.middlewares, name)
 }
 
+// Sets a raw handler.  Normal code should use Handler() or PureHandler() which internally calls this method.
 func (apprt *AppRuntimeImpl) SetRawHandler(handlerName string, handlerFn func(req *AppRequest) (interface{}, error), opts *HandlerOpts) error {
 	if opts == nil {
 		opts = &HandlerOpts{}
@@ -247,33 +258,43 @@ func (apprt *AppRuntimeImpl) SetRawHandler(handlerName string, handlerFn func(re
 	return nil
 }
 
+// Set the init handler.  Only called if InitRequired is set to true in the application.
+// Init handlers run before the application loads, and can set up the internal application state
+// or perform validation.  If an error is returned the app will not load.  The init handler is
+// often used to validate url parameters and convert them to application state.
 func (apprt *AppRuntimeImpl) SetInitHandler(handlerFn interface{}, opts ...*HandlerOpts) {
 	apprt.Handler(pathFragInit, handlerFn, opts...)
 }
 
+// Set the application's dynamic HTML handler.  Only used if app SetHtmlFromRuntime() has
+// been called.  Should return a BlobReturn struct with mime type of text/html.
 func (apprt *AppRuntimeImpl) SetHtmlHandler(handlerFn interface{}, opts ...*HandlerOpts) {
 	apprt.Handler(pathFragHtml, handlerFn, opts...)
 }
 
+// Creates a LinkRuntime structure.
 func MakeRuntime() *LinkRuntimeImpl {
 	rtn := &LinkRuntimeImpl{
 		lock:     &sync.Mutex{},
 		handlers: make(map[string]handlerType),
 	}
-	rtn.PureHandler(pathFragTypeInfo, rtn.GetHandlerInfo)
+	rtn.PureHandler(pathFragTypeInfo, rtn.getHandlerInfo)
 	return rtn
 }
 
-func MakeSingleFnRuntime(handlerFn interface{}) *LinkRuntimeImpl {
+// Creates a LinkRuntime structure with a single function.  This lets the handler
+// act like a dynamic file.  So if the application requests a path (without a fragment),
+// the handlerFn can return the result.
+func MakeSingleFnRuntime(handlerFn interface{}, opts ...*HandlerOpts) *LinkRuntimeImpl {
 	rtn := &LinkRuntimeImpl{
 		lock:     &sync.Mutex{},
 		handlers: make(map[string]handlerType),
 	}
-	rtn.Handler(pathFragDefault, handlerFn, nil)
+	rtn.Handler(pathFragDefault, handlerFn, opts...)
 	return rtn
 }
 
-func (linkrt *LinkRuntimeImpl) GetHandlerInfo() (interface{}, error) {
+func (linkrt *LinkRuntimeImpl) getHandlerInfo() (interface{}, error) {
 	linkrt.lock.Lock()
 	defer linkrt.lock.Unlock()
 	var rtn []*runtimeHandlerInfo
@@ -295,6 +316,8 @@ func (linkrt *LinkRuntimeImpl) setHandler(name string, fn handlerType) {
 	linkrt.handlers[name] = fn
 }
 
+// Runs an application handler given an AppRequest.  This method is not normally used by end users,
+// it is used by the Dashborg runtime to dispatch requests to this runtime.
 func (linkrt *LinkRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) {
 	info := req.RequestInfo()
 	if info.RequestType != requestTypePath {
@@ -324,6 +347,7 @@ func (linkrt *LinkRuntimeImpl) RunHandler(req *AppRequest) (interface{}, error) 
 	return rtn, nil
 }
 
+// Sets a raw handler.  Normal code should use Handler() or PureHandler() which internally calls this method.
 func (linkrt *LinkRuntimeImpl) SetRawHandler(handlerName string, handlerFn func(req Request) (interface{}, error), opts *HandlerOpts) error {
 	if opts == nil {
 		opts = &HandlerOpts{}
@@ -342,6 +366,7 @@ func (apprt *AppRuntimeImpl) addError(err error) {
 	apprt.errs = append(apprt.errs, err)
 }
 
+// Returns any setup errors that the runtime encountered.
 func (apprt *AppRuntimeImpl) Err() error {
 	return dashutil.ConvertErrArray(apprt.errs)
 }
@@ -350,10 +375,12 @@ func (linkrt *LinkRuntimeImpl) addError(err error) {
 	linkrt.errs = append(linkrt.errs, err)
 }
 
+// Returns any setup errors that the runtime encountered.
 func (linkrt *LinkRuntimeImpl) Err() error {
 	return dashutil.ConvertErrArray(linkrt.errs)
 }
 
+// Adds a middleware function to this runtime.
 func (linkrt *LinkRuntimeImpl) AddRawMiddleware(name string, mwFunc MiddlewareFuncType, priority float64) {
 	linkrt.RemoveMiddleware(name)
 	linkrt.lock.Lock()
@@ -362,6 +389,7 @@ func (linkrt *LinkRuntimeImpl) AddRawMiddleware(name string, mwFunc MiddlewareFu
 	linkrt.middlewares = addMiddlewares(linkrt.middlewares, newmw)
 }
 
+// Removes a middleware function from this runtime
 func (linkrt *LinkRuntimeImpl) RemoveMiddleware(name string) {
 	linkrt.lock.Lock()
 	defer linkrt.lock.Unlock()

@@ -31,6 +31,8 @@ const (
 	FileTypeApp            = "app"
 )
 
+// Represents the metadata for a "file" in the Dashborg FS.
+// Returned from DashFSClient.FileInfo() or DashFSClient.DirInfo().
 type FileInfo struct {
 	ParentDir     string   `json:"parentdir"`
 	FileName      string   `json:"filename"`
@@ -53,19 +55,24 @@ type FileInfo struct {
 	AppConfigJson string   `json:"appconfig"` // json-string
 }
 
+// Unmarshals the FileInfo's metadata into an object (like json.Unmarshal).
 func (finfo *FileInfo) BindMetadata(obj interface{}) error {
 	return json.Unmarshal([]byte(finfo.MetadataJson), obj)
 }
 
+// Returns true if this FileInfo is a RuntimeLink or AppRuntimeLink (can have an attached Runtime).
 func (finfo *FileInfo) IsLinkType() bool {
 	return finfo.FileType == FileTypeRuntimeLink || finfo.FileType == FileTypeAppRuntimeLink
 }
 
+// Special return value from handler functions to return BLOB data.
 type BlobReturn struct {
 	Reader   io.Reader
 	MimeType string
 }
 
+// Options that set or update a new file's FileInfo metadata.
+// Not all options are required for all file types.
 type FileOpts struct {
 	FileType      string   `json:"filetype"`
 	Sha256        string   `json:"sha256"`
@@ -81,6 +88,7 @@ type FileOpts struct {
 	AppConfigJson string   `json:"appconfig"` // json-string
 }
 
+// Marshals (json.Marshal) an object to the FileInfo.Metadata field.
 func (opts *FileOpts) SetMetadata(obj interface{}) error {
 	metaStr, err := dashutil.MarshalJson(obj)
 	if err != nil {
@@ -93,16 +101,19 @@ func (opts *FileOpts) SetMetadata(obj interface{}) error {
 	return nil
 }
 
+// Returns true if this FileOpts is a RuntimeLink or AppRuntimeLink (can have an attached Runtime).
 func (opts *FileOpts) IsLinkType() bool {
 	return opts.FileType == FileTypeRuntimeLink || opts.FileType == FileTypeAppRuntimeLink
 }
 
+// Options to pass to DashFSClient.DirInfo()
 type DirOpts struct {
 	RoleList   []string `json:"rolelist"`
 	ShowHidden bool     `json:"showhidden"`
 	Recursive  bool     `json:"recursive"`
 }
 
+// Options to pass to DashFSClient.WatchFile().  Controls how fsnotify watches the given file.
 type WatchOpts struct {
 	ThrottleTime time.Duration
 	ShutdownCh   chan struct{}
@@ -113,6 +124,8 @@ type DashFSClient struct {
 	client   *DashCloudClient
 }
 
+// Low-level function to set a Dashborg FS path.  Not normally called by end users.  This function
+// is called by SetJsonPath, LinkRuntime, LinkAppRuntime, SetPathFromFile, SetStaticPath, and WatchFile.
 func (fs *DashFSClient) SetRawPath(path string, r io.Reader, fileOpts *FileOpts, runtime LinkRuntime) error {
 	if path == "" || path[0] != '/' {
 		return dasherr.ValidateErr(fmt.Errorf("Path must begin with '/'"))
@@ -120,6 +133,8 @@ func (fs *DashFSClient) SetRawPath(path string, r io.Reader, fileOpts *FileOpts,
 	return fs.client.setRawPath(fs.rootPath+path, r, fileOpts, runtime)
 }
 
+// Sets static JSON data to the given path.  FileOpts is optional (type will be set to "static",
+// and mimeType to "application/json").
 func (fs *DashFSClient) SetJsonPath(path string, data interface{}, fileOpts *FileOpts) error {
 	var jsonBuf bytes.Buffer
 	enc := json.NewEncoder(&jsonBuf)
@@ -142,6 +157,8 @@ func (fs *DashFSClient) SetJsonPath(path string, data interface{}, fileOpts *Fil
 	return fs.SetRawPath(path, reader, fileOpts, nil)
 }
 
+// Sets the data from the given fileName as static data to the given Dashborg FS path.
+// fileOpts is required, and must specify at least a mimeType for the file contents.
 func (fs *DashFSClient) SetPathFromFile(path string, fileName string, fileOpts *FileOpts) error {
 	fd, err := os.Open(fileName)
 	if err != nil {
@@ -192,6 +209,11 @@ func (fs *DashFSClient) runWatchedSetPath(path string, fileName string, fileOpts
 	}
 }
 
+// First calls SetPathFromFile.  If that that fails, an error is returned and the file will *not* be watched
+// (watching only starts if this function returns nil).  The given file will be watched using fsnotify.
+// Every time fsnotify detects a file modification, the file will be be re-uploaded using SetPathFromFile.
+// watchOpts may be nil, which will use default settings (Throttle time of 1 second, no shutdown channel).
+// This is function is recommended for use in development environments.
 func (fs *DashFSClient) WatchFile(path string, fileName string, fileOpts *FileOpts, watchOpts *WatchOpts) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -263,6 +285,7 @@ func (fs *DashFSClient) WatchFile(path string, fileName string, fileOpts *FileOp
 	return nil
 }
 
+// Removes (deletes) the specified path from Dashborg FS.
 func (fs *DashFSClient) RemovePath(path string) error {
 	if path == "" || path[0] != '/' {
 		return fmt.Errorf("Path must begin with '/'")
@@ -270,6 +293,7 @@ func (fs *DashFSClient) RemovePath(path string) error {
 	return fs.client.removePath(fs.rootPath + path)
 }
 
+// Gets the FileInfo associated with path.  If the file is not found, will return nil, nil.
 func (fs *DashFSClient) FileInfo(path string) (*FileInfo, error) {
 	if path == "" || path[0] != '/' {
 		return nil, fmt.Errorf("Path must begin with '/'")
@@ -284,6 +308,8 @@ func (fs *DashFSClient) FileInfo(path string) (*FileInfo, error) {
 	return rtn[0], nil
 }
 
+// Gets the directory info assocaited with path.  dirOpts may be nil (in which case defaults are used).
+// If the directory does not exist, []*FileInfo will have length of 0, and error will be nil.
 func (fs *DashFSClient) DirInfo(path string, dirOpts *DirOpts) ([]*FileInfo, error) {
 	if dirOpts == nil {
 		dirOpts = &DirOpts{}
@@ -295,6 +321,7 @@ func (fs *DashFSClient) DirInfo(path string, dirOpts *DirOpts) ([]*FileInfo, err
 	return rtn, err
 }
 
+// Connects a LinkRuntime to the given path.
 func (fs *DashFSClient) LinkRuntime(path string, rt LinkRuntime, fileOpts *FileOpts) error {
 	if hasErr, ok := rt.(HasErr); ok {
 		err := hasErr.Err()
@@ -312,6 +339,8 @@ func (fs *DashFSClient) LinkRuntime(path string, rt LinkRuntime, fileOpts *FileO
 	return fs.client.setRawPath(fs.rootPath+path, nil, fileOpts, rt)
 }
 
+// Connects an AppRuntime to the given path.  Normally this function is not called directly.
+// When an app is connected to the Dashborg backend, its runtime is also linked.
 func (fs *DashFSClient) LinkAppRuntime(path string, apprt LinkRuntime, fileOpts *FileOpts) error {
 	if hasErr, ok := apprt.(HasErr); ok {
 		err := hasErr.Err()
@@ -329,6 +358,9 @@ func (fs *DashFSClient) LinkAppRuntime(path string, apprt LinkRuntime, fileOpts 
 	return fs.client.setRawPath(fs.rootPath+path, nil, fileOpts, apprt)
 }
 
+// Sets static data to the given Dashborg FS path, with data from an io.ReadSeeker.
+// Will always seek to the beginning of the stream (to compute the SHA-256 and size using
+// UpdateFileOptsFromReadSeeker).
 func (fs *DashFSClient) SetStaticPath(path string, r io.ReadSeeker, fileOpts *FileOpts) error {
 	if fileOpts == nil {
 		fileOpts = &FileOpts{}
@@ -341,6 +373,8 @@ func (fs *DashFSClient) SetStaticPath(path string, r io.ReadSeeker, fileOpts *Fi
 	return fs.SetRawPath(path, r, fileOpts, nil)
 }
 
+// Creates a /@fs/ URL link to the given path.  If jwtOpts are specified, it will override
+// the defaults in the config.
 func (fs *DashFSClient) MakePathUrl(path string, jwtOpts *JWTOpts) (string, error) {
 	if path == "" || !dashutil.IsFullPathValid(path) {
 		return "", fmt.Errorf("Invalid Path")
@@ -363,6 +397,7 @@ func (fs *DashFSClient) MakePathUrl(path string, jwtOpts *JWTOpts) (string, erro
 	return fmt.Sprintf("%s?jwt=%s", pathLink, jwtToken), nil
 }
 
+// Calls MakePathUrl, panics on error.
 func (fs *DashFSClient) MustMakePathUrl(path string, jwtOpts *JWTOpts) string {
 	rtn, err := fs.MakePathUrl(path, jwtOpts)
 	if err != nil {
@@ -371,6 +406,9 @@ func (fs *DashFSClient) MustMakePathUrl(path string, jwtOpts *JWTOpts) string {
 	return rtn
 }
 
+// Connects a link runtime *without* creating or updating its FileInfo.
+// Note the difference between this function and LinkRuntime().  LinkRuntime() takes
+// FileOpts and will create/update the path.
 func (fs *DashFSClient) ConnectLinkRuntime(path string, runtime LinkRuntime) error {
 	if !dashutil.IsFullPathValid(path) {
 		return fmt.Errorf("Invalid Path")

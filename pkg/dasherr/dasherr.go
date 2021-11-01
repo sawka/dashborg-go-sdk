@@ -1,3 +1,4 @@
+// Structured errors for Dashborg providing a wrapped error with error codes.
 package dasherr
 
 import (
@@ -69,6 +70,7 @@ func (e *DashErr) CanRetry() bool {
 	return !e.permanent
 }
 
+// If err is a DashErr, returns CanRetry(), otherwise returns true.
 func CanRetry(err error) bool {
 	var dashErr *DashErr
 	if errors.As(err, &dashErr) {
@@ -77,6 +79,8 @@ func CanRetry(err error) bool {
 	return true
 }
 
+// If err is a DashErr, unwraps it to return the inner error message, otherwise
+// just calls Error().
 func GetMessage(err error) string {
 	var dashErr *DashErr
 	if errors.As(err, &dashErr) {
@@ -85,6 +89,7 @@ func GetMessage(err error) string {
 	return err.Error()
 }
 
+// If err is a DashErr returns the error code, otherwise returns "" for non-DashErr errors.
 func GetErrCode(err error) ErrCode {
 	var dashErr *DashErr
 	if errors.As(err, &dashErr) {
@@ -93,14 +98,7 @@ func GetErrCode(err error) ErrCode {
 	return ErrCodeNone
 }
 
-func GetCanRetry(err error) bool {
-	var dashErr *DashErr
-	if errors.As(err, &dashErr) {
-		return dashErr.CanRetry()
-	}
-	return true
-}
-
+// If err is a DashErr, returns it, otherwise wraps it into a DashErr struct.
 func AsDashErr(err error) *DashErr {
 	var dashErr *DashErr
 	if errors.As(err, &dashErr) {
@@ -109,26 +107,32 @@ func AsDashErr(err error) *DashErr {
 	return &DashErr{err: err}
 }
 
+// Wraps err into a DashErr with the given error code
 func ErrWithCode(code ErrCode, err error) error {
 	return &DashErr{err: err, code: code}
 }
 
+// Wraps errStr into a DashErr with the given error code
 func ErrWithCodeStr(code ErrCode, errStr string) error {
 	return &DashErr{err: errors.New(errStr), code: code}
 }
 
+// Wraps err into a DashErr with no-retry set.
 func NoRetryErr(err error) error {
 	return &DashErr{err: err, permanent: true}
 }
 
+// Wraps err into a DashErr with the given error code and no-retry set.
 func NoRetryErrWithCode(code ErrCode, err error) error {
 	return &DashErr{code: code, err: err, permanent: true}
 }
 
+// Creates a DashErr
 func MakeDashErr(code ErrCode, isPermanent bool, err error) error {
 	return &DashErr{code: code, err: err, permanent: isPermanent}
 }
 
+// Creates a DashErr from a gRPC RtnStatus
 func FromRtnStatus(apiName string, rtnStatus *dashproto.RtnStatus) error {
 	if rtnStatus == nil {
 		return &DashErr{apiName: apiName, err: errors.New("No Return Status"), permanent: true}
@@ -151,6 +155,7 @@ func FromRtnStatus(apiName string, rtnStatus *dashproto.RtnStatus) error {
 	return rtnErr
 }
 
+// Creates a dashproto.ErrorType from the fields of DashErr
 func AsProtoErr(err error) *dashproto.ErrorType {
 	if err == nil {
 		return nil
@@ -162,6 +167,7 @@ func AsProtoErr(err error) *dashproto.ErrorType {
 	}
 }
 
+// Turns a dashproto.ErrorType into a DashErr
 func FromProtoErr(perr *dashproto.ErrorType) error {
 	if perr == nil {
 		return nil
@@ -179,6 +185,7 @@ func FromProtoErr(perr *dashproto.ErrorType) error {
 	}
 }
 
+// Creates a DashErr from a gRPC error
 func RpcErr(apiName string, respErr error) error {
 	if respErr == nil {
 		return nil
@@ -191,6 +198,7 @@ func RpcErr(apiName string, respErr error) error {
 	return rtnErr
 }
 
+// Creates a DashErr from a json.Marshal error
 func JsonMarshalErr(thing string, err error) error {
 	return &DashErr{
 		err:       fmt.Errorf("Error Marshaling %s to JSON: %w", thing, err),
@@ -199,6 +207,7 @@ func JsonMarshalErr(thing string, err error) error {
 	}
 }
 
+// Creates a DashErr from a json.Unmarshal error
 func JsonUnmarshalErr(thing string, err error) error {
 	return &DashErr{
 		err:       fmt.Errorf("Error Unmarshaling %s from JSON: %w", thing, err),
@@ -207,6 +216,7 @@ func JsonUnmarshalErr(thing string, err error) error {
 	}
 }
 
+// Creates a validation DashErr
 func ValidateErr(err error) error {
 	if GetErrCode(err) == ErrCodeValidation {
 		return err
@@ -218,6 +228,7 @@ func ValidateErr(err error) error {
 	}
 }
 
+// Creates a DashErr around an exceeded account limit.
 func LimitErr(message string, limitName string, limitMax float64) error {
 	limitUnit := ""
 	if strings.HasSuffix(limitName, "MB") {

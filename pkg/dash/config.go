@@ -47,22 +47,22 @@ type Config struct {
 	// If AccId is given, and the certificate does not match, this will cause a panic.
 	AccId string
 
-	// Set to true for unregistered/unclaimed accounts
+	// Set to true for unregistered/unclaimed accounts.  New accounts will only be created if this flag is set.
 	AnonAcc bool
 
 	// DASHBORG_ZONE defaults to "default"
 	ZoneName string
 
 	// Process Name Attributes.  Only ProcName is required
-	ProcName string // DASHBORG_PROCNAME (set from executable filename if not set)
-	ProcIKey string // DASHBORG_PROCIKEY (optional, user-specified key to identify procs in a cluster)
-	ProcTags map[string]string
+	ProcName string            // DASHBORG_PROCNAME (set from executable filename if not set)
+	ProcIKey string            // DASHBORG_PROCIKEY (optional, user-specified key to identify procs in a cluster)
+	ProcTags map[string]string // optional, user-specified key/values to identify this proc
 
 	KeyFileName  string // DASHBORG_KEYFILE private key file (defaults to dashborg-client.key)
 	CertFileName string // DASHBORG_CERTFILE certificate file, CN must be set to your Dashborg Account Id.  (defaults to dashborg-client.crt)
 
-	// Create a self-signed key/cert if they do not exist.  This will also create a random Account Id.
-	// Should only be used with AnonAcc is true.  If AccId is set, will create a key with that AccId
+	// Create a self-signed key/cert if they do not exist.
+	// If AccId is set, will create a key with that AccId, if AccId is not set, it will create a new random AccId.
 	AutoKeygen bool
 
 	// DASHBORG_VERBOSE, set to true for extra debugging information
@@ -79,6 +79,10 @@ type Config struct {
 
 	setupDone bool // internal
 
+	// Used to override the JWT keys (valid time, userid, and role) that are printed to the log when
+	// apps are connected to the Dashborg service.
+	// To suppress writing JWT keys to the log, set NoJWT in this structure.
+	// If left as nil, DefaultJWTOpts will be used.
 	JWTOpts *JWTOpts
 
 	Logger *log.Logger // use to override the SDK's logger object
@@ -232,7 +236,8 @@ func (c *Config) loadPrivateKey() (interface{}, error) {
 	return ecKey, nil
 }
 
-// Creates a JWT token from the public/private keypair
+// Creates a JWT token from the public/private keypair.
+// The jwtOpts parameter, if not nil, will override the config's JWTOpts field.
 func (c *Config) MakeAccountJWT(jwtOpts *JWTOpts) (string, error) {
 	c.setDefaultsAndLoadKeys()
 	if jwtOpts == nil {
@@ -278,6 +283,7 @@ func (c *Config) MakeAccountJWT(jwtOpts *JWTOpts) (string, error) {
 	return jwtStr, nil
 }
 
+// Calls MakeAccountJWT, and panics on error.
 func (c *Config) MustMakeAccountJWT(jwtOpts *JWTOpts) string {
 	rtn, err := c.MakeAccountJWT(jwtOpts)
 	if err != nil {
@@ -298,6 +304,8 @@ func (c *Config) copyJWTOpts() JWTOpts {
 	return *c.JWTOpts
 }
 
+// Returns the config's JWTOpts structure.  Does not return nil.
+// If config's JWTOpts is nil, will return DefaultJWTOpts
 func (c *Config) GetJWTOpts() *JWTOpts {
 	if c.JWTOpts == nil {
 		return DefaultJWTOpts

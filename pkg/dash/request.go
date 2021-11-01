@@ -18,11 +18,6 @@ import (
 const htmlPagePath = "$state.dashborg.htmlpage"
 const pageNameKey = "apppage"
 
-// Request encapsulates all the data about a Dashborg request.  Normally the only
-// fields that a handler needs to access are "Data" and "appState" in order to read
-// the parameters and UI state associated with this request.  The other fields are
-// exported, but subject to change and should not be used except in advanced use cases.
-
 type RequestInfo struct {
 	StartTime     time.Time
 	ReqId         string // unique request id
@@ -39,6 +34,9 @@ type RawRequestData struct {
 	AuthDataJson string
 }
 
+// For LinkRuntime requests and PureRequets, those functions get a Request interface
+// not an *AppRequest.  Pure requests cannot call SetData, NavTo, etc. or any method
+// that would cause side effects for the application UI outside of the return value.
 type Request interface {
 	Context() context.Context
 	AuthData() *AuthAtom
@@ -54,6 +52,11 @@ type dashborgState struct {
 	Dashborg   map[string]interface{} `json:"dashborg"`
 }
 
+// The full app request object.  All of the information about the request is
+// encapsulated in this struct.  Note that "pure" requests and link runtime requests
+// cannot access all of the functionality of the AppRequest (sepecifically the
+// parts that cause side effects in the UI).  The limited API for those requests
+// is encapsulated in the Request interface.
 type AppRequest struct {
 	lock      *sync.Mutex     // synchronizes RRActions
 	ctx       context.Context // gRPC context / streaming context
@@ -72,18 +75,24 @@ func (req *AppRequest) canSetHtml() bool {
 	return req.info.RequestType == requestTypeHandler || req.info.RequestType == requestTypeHtml
 }
 
+// Returns RequestInfo which contains basic information about this request (StartTime, Path, AppName, FeClientId, etc.)
 func (req *AppRequest) RequestInfo() RequestInfo {
 	return req.info
 }
 
+// Returns a context that controls this request.  This context comes from the initiating gRPC request.  When the
+// gRPC request times out, this context will expire.
 func (req *AppRequest) Context() context.Context {
 	return req.ctx
 }
 
+// Returns the authentication (AuthAtom) attached to this request.
 func (req *AppRequest) AuthData() *AuthAtom {
 	return req.authData
 }
 
+// Binds a Go struct to the data passed in this request.  Used for special cases or when
+// the func reflection binding is not sufficient.  Used just like json.Unmarshal().
 func (req *AppRequest) BindData(obj interface{}) error {
 	if req.rawData.DataJson == "" {
 		return nil
@@ -92,6 +101,8 @@ func (req *AppRequest) BindData(obj interface{}) error {
 	return err
 }
 
+// Binds a Go struct to the application state passed in this request.  Used for special
+// cases when the Runtime's AppState is not sufficient.
 func (req *AppRequest) BindAppState(obj interface{}) error {
 	if req.rawData.AppStateJson == "" {
 		return nil
@@ -114,8 +125,9 @@ func (req *AppRequest) clearActions() []*dashproto.RRAction {
 	return rtn
 }
 
-// SetBlobData sends blob data to the server.
-// Note that SetBlob will flush any pending actions to the server
+// SetBlobData sets blob data at a particular FE path.  Often calling SetBlob can be
+// easier than creating a separate handler that returns BlobData -- e.g. getting
+// a data-table and a graph image.
 func (req *AppRequest) SetBlob(path string, mimeType string, reader io.Reader) error {
 	if req.isDone {
 		return fmt.Errorf("Cannot call SetBlob(), path=%s, Request is already done", path)
@@ -130,6 +142,9 @@ func (req *AppRequest) SetBlob(path string, mimeType string, reader io.Reader) e
 	return nil
 }
 
+// Calls SetBlobData with the the contents of fileName.  Do not confuse path with fileName.
+// path is the location in the FE data model to set the data.  fileName is the local fileName
+// to read blob data from.
 func (req *AppRequest) SetBlobFromFile(path string, mimeType string, fileName string) error {
 	fd, err := os.Open(fileName)
 	if err != nil {
@@ -143,7 +158,8 @@ func (req *AppRequest) reqInfoStr() string {
 	return fmt.Sprintf("%s://%s", req.info.RequestType, req.info.Path)
 }
 
-// SetData is used to return data to the client.  Will replace the contents of path with data.
+// AddDataOp is a more generic form of SetData.  It allows for more advanced setting of data in
+// the frontend data model -- like "append" or "setunless".
 func (req *AppRequest) AddDataOp(op string, path string, data interface{}) error {
 	if req.isDone {
 		return fmt.Errorf("Cannot call SetData(), reqinfo=%s data-path=%s, Request is already done", req.reqInfoStr())
@@ -167,6 +183,7 @@ func (req *AppRequest) AddDataOp(op string, path string, data interface{}) error
 }
 
 // SetData is used to return data to the client.  Will replace the contents of path with data.
+// Calls AddDataOp with the op "set".
 func (req *AppRequest) SetData(path string, data interface{}) error {
 	return req.AddDataOp("set", path, data)
 }
@@ -204,10 +221,14 @@ func (req *AppRequest) setHtmlFromFile(fileName string) error {
 }
 
 // Call from a handler to force the client to invalidate and re-pull data that matches path.
-// Path is a regular expression. (e.g. use InvalidateData(".*") to invalidate all data).
+// Path is a regular expression. If pathRegexp is set to empty string, it will invalidate
+// all frontend data (equivalent to ".*").
 func (req *AppRequest) InvalidateData(pathRegexp string) error {
 	if req.isDone {
 		return fmt.Errorf("Cannot call InvalidateData(), path=%s, Request is already done", pathRegexp)
+	}
+	if pathRegexp == "" {
+		pathRegexp = ".*"
 	}
 	rrAction := &dashproto.RRAction{
 		Ts:         dashutil.Ts(),
@@ -241,10 +262,14 @@ func (req *AppRequest) isStream() bool {
 	return req.info.RequestType == requestTypeStream
 }
 
+// Returns the raw JSON request data (auth, app state, and parameter data).  Used when
+// you require special/custom JSON handling that the other API functions cannot handle.
 func (req *AppRequest) RawData() RawRequestData {
 	return req.rawData
 }
 
+// Returns true once the response has already been sent back to the Dashborg service.
+// Most methods will return errors (or have no effect) once the request is done.
 func (req *AppRequest) IsDone() bool {
 	return req.isDone
 }
@@ -298,14 +323,20 @@ func (req *AppRequest) getRRA() []*dashproto.RRAction {
 	return req.rrActions
 }
 
+// Returns the error (if any) that has been set on this request.
 func (req *AppRequest) GetError() error {
 	return req.err
 }
 
+// Sets an error to be returned from this request.  Normally you can just return the
+// error from your top-level handler function.  This method is for special cases
+// where that's not possible.
 func (req *AppRequest) SetError(err error) {
 	req.err = err
 }
 
+// Should normally call NavToPage (if PagesEnabled).  This call is a low-level call
+// that swaps out the HTML view on the frontend.  It does not update the URL.
 func (req *AppRequest) SetHtmlPage(htmlPage string) error {
 	_, _, err := dashutil.ParseHtmlPage(htmlPage)
 	if err != nil {
@@ -315,6 +346,7 @@ func (req *AppRequest) SetHtmlPage(htmlPage string) error {
 	return nil
 }
 
+// Returns the current frontend page name that generated this request.
 func (req *AppRequest) GetPageName() string {
 	var state dashborgState
 	err := req.BindAppState(&state)
@@ -328,6 +360,8 @@ func (req *AppRequest) GetPageName() string {
 	return strRtn
 }
 
+// Navigates the application to the given pageName with the given parameters.
+// Should only be called for apps that have PagesEnabled.
 func (req *AppRequest) NavToPage(pageName string, params interface{}) error {
 	rrAction := &dashproto.RRAction{
 		Ts:         dashutil.Ts(),
