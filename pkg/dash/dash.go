@@ -1,7 +1,7 @@
 // Provides all of the functionality to create and deploy web applications with the Dashborg framework.
 package dash
 
-const ClientVersion = "go-0.7.3"
+const ClientVersion = "go-0.7.4"
 
 const (
 	RoleSuper  = "*"
